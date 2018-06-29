@@ -86,4 +86,4 @@ DYNARR_END : '}';
 DYNARR_START : '{';
 KEYWORD : IDENTIFIER COLON;
 BLOCK_PARAM : COLON IDENTIFIER;
-CHARACTER_CONSTANT : '$' [0-9a-zA-Z!@#$%^&*()\[\]{}\-+=|\\'":;,.<>?/~`];
+CHARACTER_CONSTANT : '$' ('[' | ']' | '-' | [0-9a-zA-Z!@#$%^&*(){}+=|'":;,.<>?/~`]);

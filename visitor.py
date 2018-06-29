@@ -247,6 +247,15 @@ class PAnswer(PBase):
     else:
       s.add(BCAnswer())
 
+class PSequence(PBase):
+  def __init__(self, temps=[], code=[]):
+    self.temps = temps
+    self.code = code
+
+  def compile(self, s):
+    for c in self.code:
+      c.compile(s)
+
 
 def tokensToString(tokens):
   return "".join([t.getText() for t in tokens])
@@ -258,8 +267,6 @@ class MistVisitor(SmalltalkVisitor):
     self.blockDepth = 0
 
     # TODO: Add globals here - builtin classes?
-    self.scope.add("another", KIND_TEMP)
-    self.scope.add("loc", KIND_INST_VAR)
 
   def popScope(self):
     self.scope = self.scope.parent
@@ -289,7 +296,7 @@ class MistVisitor(SmalltalkVisitor):
     if ctx.statementBlock() is not None:
       statements = self.visit(ctx.statementBlock())
 
-    return (temps, statements)
+    return PSequence(temps, statements)
 
   # temps: PIPE (ws? IDENTIFIER)+ ws? PIPE;   -> [string]
   def visitTemps(self, ctx):
@@ -395,7 +402,7 @@ class MistVisitor(SmalltalkVisitor):
 
     seq = self.visit(ctx.sequence())
     self.blockDepth -= 1
-    return PBlock(params, seq[0], seq[1])
+    return PBlock(params, seq.temps, seq.code)
 
   def visitBlockParamList(self, ctx):
     return [ t.getText()[1:] for t in ctx.BLOCK_PARAM() ]
@@ -468,9 +475,7 @@ class MistVisitor(SmalltalkVisitor):
   # variable: IDENTIFIER
   def visitReference(self, ctx):
     var = self.visit(ctx.variable())
-    self.scope.dump()
     kind = self.scope.lookup(var)
-    print("lookup of " + var + " got kind: " + str(kind))
     if kind is None:
       self.error(ctx.variable().IDENTIFIER(),
         "Unknown identifier '{:s}'".format(var))

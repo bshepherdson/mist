@@ -17,11 +17,10 @@ if __name__ == '__main__':
   stream.reset()
   parser = SmalltalkParser(stream)
 
-  tree = parser.statementBlock()
+  tree = parser.sequence()
 
   visitor = MistVisitor()
   result = visitor.visit(tree)
   bcs = BytecodeStream()
-  for r in result:
-      r.compile(bcs)
+  result.compile(bcs)
   print(json.dumps(bcs.contents))
