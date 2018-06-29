@@ -17,7 +17,7 @@ if __name__ == '__main__':
   stream.reset()
   parser = SmalltalkParser(stream)
 
-  tree = parser.sequence()
+  tree = parser.script()
 
   visitor = MistVisitor()
   result = visitor.visit(tree)

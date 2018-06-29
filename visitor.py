@@ -257,6 +257,29 @@ class PSequence(PBase):
       c.compile(s)
 
 
+class PMethod(PBase):
+  def __init__(self, selector, args, temps, code):
+    self.selector = selector
+    self.args = args
+    self.temps = temps
+    self.code = code
+
+  def compile(self, s):
+    self.stream = BytecodeStream()
+    for c in self.code:
+      c.compile(self.stream)
+
+    s.add(self)
+
+  def emit(self):
+    return {
+        "method": self.selector,
+        "args": self.args,
+        "temps": self.temps,
+        "code": self.stream.contents,
+        }
+
+
 def tokensToString(tokens):
   return "".join([t.getText() for t in tokens])
 
@@ -280,6 +303,56 @@ class MistVisitor(SmalltalkVisitor):
     print("{:s} {:d}:{:d}  {:s}".format(filename, sym.line,
       sym.column, msg))
     sys.exit(1)
+
+
+  # method : methodHeader sequence;
+  # unaryHeader : unarySelector;                       -> (sel, [args])
+  # binaryHeader : BINARY_SELECTOR ws? IDENTIFIER;     -> (sel, [args])
+  # keywordHeader : (keywordHeaderPair ws_oneline?)+;  -> (sel, [args])
+  # keywordHeaderPair : KEYWORD ws? IDENTIFIER;        -> (keyword, arg)
+  # methodHeader : (keywordHeader | binaryHeader | unaryHeader) ws_oneline? NEWLINE;
+  def visitUnaryHeader(self, ctx):
+    sel = self.visit(ctx.unarySelector())
+    return (sel, [])
+
+  def visitBinaryHeader(self, ctx):
+    sel = ctx.BINARY_SELECTOR().getText()
+    arg = ctx.IDENTIFIER().getText()
+    return (sel, [arg])
+
+  def visitKeywordHeaderPair(self, ctx):
+    return (ctx.KEYWORD().getText(), ctx.IDENTIFIER().getText())
+
+  def visitKeywordHeader(self, ctx):
+    pairs = ctx.keywordHeaderPair()
+    keyword = ""
+    args = []
+    for p in pairs:
+      p2 = self.visit(p)
+      keyword += p2[0]
+      args.append(p2[1])
+    return (keyword, args)
+
+  def visitMethodHeader(self, ctx):
+    if ctx.keywordHeader() is not None:
+      return self.visit(ctx.keywordHeader())
+    elif ctx.binaryHeader() is not None:
+      return self.visit(ctx.binaryHeader())
+    elif ctx.unaryHeader() is not None:
+      return self.visit(ctx.unaryHeader())
+
+  def visitMethod(self, ctx):
+    header = self.visit(ctx.methodHeader())
+    self.pushScope()
+    for arg in header[1]:
+      self.scope.add(arg, KIND_ARG)
+    seq = self.visit(ctx.sequence())
+    self.popScope()
+    return PMethod(header[0], header[1], seq.temps, seq.code)
+
+  def visitScript(self, ctx):
+    return self.visit(ctx.method())
+
 
   # sequence: temps ws? statements? | ws? statements;   -> ([temp_names], [stmt])
   def visitSequence(self, ctx):

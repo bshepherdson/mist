@@ -7,9 +7,11 @@
 
 grammar Smalltalk;
 
-script : sequence EOF;
+script : method EOF;
+method : methodHeader ws? sequence;
 sequence : temps ws? statementBlock? | ws? statementBlock;
-ws : (SEPARATOR | COMMENT)+;
+ws : (NEWLINE | WHITESPACE | COMMENT)+;
+ws_oneline : (WHITESPACE | COMMENT)+;
 temps : PIPE (ws? IDENTIFIER)+ ws? PIPE;
 statementBlock : answer ws? # StatementAnswer
            | statements ws? PERIOD ws? answer # StatementExpressionsAnswer
@@ -56,7 +58,14 @@ reference : variable;
 binaryTail : binaryMessage binaryTail?;
 binaryMessage : ws? BINARY_SELECTOR ws? (unarySend | operand);
 
-SEPARATOR : [ \t\r\n];
+unaryHeader : unarySelector;
+binaryHeader : BINARY_SELECTOR ws? IDENTIFIER;
+keywordHeader : (keywordHeaderPair ws_oneline?)+;
+keywordHeaderPair : KEYWORD ws_oneline? IDENTIFIER;
+methodHeader : (keywordHeader | binaryHeader | unaryHeader) ws_oneline? NEWLINE;
+
+NEWLINE : '\n';
+WHITESPACE : [ \t\r];
 STRING : '\'' (.)*? '\'';
 COMMENT : '"' (.)*? '"';
 BLOCK_START : '[';
