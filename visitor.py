@@ -60,17 +60,18 @@ class PSelf(POperand):
     s.add(BCPushSelf())
 
 class PReference(POperand):
-  def __init__(self, name, kind):
+  def __init__(self, name, kind, index):
     self.name = name
     self.kind = kind
+    self.index = index
 
   def compile(self, s):
     if self.kind == KIND_GLOBAL:
       s.add(BCPushGlobal(self.name))
     elif self.kind == KIND_TEMP or self.kind == KIND_ARG:
-      s.add(BCPushLocal(self.name))
+      s.add(BCPushLocal(self.index))
     elif self.kind == KIND_INST_VAR:
-      s.add(BCPushInstVar(self.name))
+      s.add(BCPushInstVar(self.index))
     else:
       raise Exception("Unknown reference type: " + self.kind)
 
@@ -205,9 +206,10 @@ class PCascade(PBase):
 
 
 class PAssignment(PBase):
-  def __init__(self, name, kind, value):
+  def __init__(self, name, kind, index, value):
     self.name = name
     self.kind = kind
+    self.index = index
     self.value = value
 
   def compile(self, s):
@@ -215,9 +217,9 @@ class PAssignment(PBase):
     self.value.compile(s)
     # Then compile the store.
     if self.kind == KIND_TEMP:
-      s.add(BCStoreLocal(self.name))
+      s.add(BCStoreLocal(self.index))
     else:
-      s.add(BCStoreInstVar(self.name))
+      s.add(BCStoreInstVar(self.index))
 
 
 class PStatement(PBase):
@@ -290,6 +292,12 @@ class STClass:
     self.instanceVariables = []
     self.classVariables = []
     self.protocols = {}
+    self.classProtocols = {}
+
+  def addClassMethod(self, protocol, method):
+    if protocol not in self.classProtocols:
+      self.classProtocols[protocol] = {}
+    self.classProtocols[protocol][method.selector] = method
 
   def addMethod(self, protocol, method):
     if protocol not in self.protocols:
@@ -301,12 +309,19 @@ class STClass:
     for p in self.protocols.values():
       for m in p.values():
         methods[m.selector] = m.emit()
+
+    classMethods = {}
+    for p in self.classProtocols.values():
+      for m in p.values():
+        classMethods[m.selector] = m.emit()
+
     return {
         "name": self.name,
         "superclass": self.parentName,
         "instanceVariables": len(self.instanceVariables),
         "classVariables": len(self.classVariables),
         "methods": methods,
+        "classMethods": classMethods,
         }
 
 
@@ -318,9 +333,12 @@ class MistVisitor(SmalltalkVisitor):
     self.currentProtocol = None
     self.initBlocks = [] # List of PFoos whose code goes at the top level.
     self.classes = {}
+    self.nextLocal = 0
+
+
     # TODO: Add globals here - builtin classes?
 
-    self.scope.add("Object", KIND_GLOBAL)
+    self.scope.add("Object", (KIND_GLOBAL, None))
 
   def popScope(self):
     self.scope = self.scope.parent
@@ -444,13 +462,29 @@ class MistVisitor(SmalltalkVisitor):
 
   def visitMethod(self, ctx):
     header = self.visit(ctx.methodHeader())
+    self.scope = self.rootScope
     self.pushScope()
+    self.nextLocal = 1
     for arg in header[1]:
-      self.scope.add(arg, KIND_ARG)
+      self.scope.add(arg, (KIND_ARG, self.nextLocal))
+      self.nextLocal += 1
+
+    classLevel = ctx.CARROT() is not None
+    if classLevel:
+      varNames = self.currentClass.classVariables
+    else:
+      varNames = self.currentClass.instanceVariables
+
+    for idx, var in enumerate(varNames):
+      self.scope.add(var, (KIND_INST_VAR, idx))
+
     seq = self.visit(ctx.sequence())
     self.popScope()
     m = PMethod(header[0], header[1], seq.temps, seq.code)
-    self.currentClass.addMethod(self.currentProtocol, m)
+    if classLevel:
+      self.currentClass.addClassMethod(self.currentProtocol, m)
+    else:
+      self.currentClass.addMethod(self.currentProtocol, m)
 
 
   # sequence: temps ws? statements? | ws? statements;   -> ([temp_names], [stmt])
@@ -462,7 +496,8 @@ class MistVisitor(SmalltalkVisitor):
     # Add those temps into a new scope as locals.
     self.pushScope()
     for t in temps:
-      self.scope.add(t, KIND_TEMP)
+      self.scope.add(t, (KIND_TEMP, self.nextLocal))
+      self.nextLocal += 1
 
     statements = []
     if ctx.statementBlock() is not None:
@@ -570,7 +605,9 @@ class MistVisitor(SmalltalkVisitor):
 
     self.pushScope()
     for p in params:
-      self.scope.add(p, KIND_ARG)
+      self.scope.add(p, (KIND_ARG, self.nextLocal))
+      self.nextLocal += 1
+
 
     seq = self.visit(ctx.sequence())
     self.blockDepth -= 1
@@ -587,9 +624,9 @@ class MistVisitor(SmalltalkVisitor):
     elif s == "super":
       return PSuper()
     elif s == "nil":
-      return PReference("null", KIND_GLOBAL)
+      return PReference("null", KIND_GLOBAL, "null")
     else:
-      return PReference(s, KIND_GLOBAL)
+      return PReference(s, KIND_GLOBAL, s)
 
   # parsetimeLiteral: pseudoVariable | number | charConstant | literalArray | string | symbol
   def visitParsetimeLiteral(self, ctx):
@@ -647,11 +684,12 @@ class MistVisitor(SmalltalkVisitor):
   # variable: IDENTIFIER
   def visitReference(self, ctx):
     var = self.visit(ctx.variable())
-    kind = self.scope.lookup(var)
-    if kind is None:
+    sv = self.scope.lookup(var)
+    if sv is None:
       self.error(ctx.variable().IDENTIFIER(),
         "Unknown identifier '{:s}'".format(var))
-    return PReference(var, kind)
+    return PReference(var, sv[0], sv[1])
+
   def visitVariable(self, ctx):
     return ctx.IDENTIFIER().getText()
 
@@ -681,16 +719,16 @@ class MistVisitor(SmalltalkVisitor):
     name = self.visit(ctx.variable())
     value = self.visit(ctx.expression())
 
-    kind = self.scope.lookup(name)
+    sv = self.scope.lookup(name)
     tok = ctx.variable().IDENTIFIER()
-    if kind is None:
+    if sv is None:
       self.error(tok, "Unknown identifier '{:s}'".format(name))
-    elif kind is KIND_GLOBAL:
+    elif sv[0] is KIND_GLOBAL:
       self.error(tok, "Cannot assign to global {:s}".format(name))
-    elif kind is KIND_ARG:
+    elif sv[0] is KIND_ARG:
       self.error(tok, "Cannot assign to input parameter {:s}".format(name))
 
-    return PAssignment(name, kind, value)
+    return PAssignment(name, sv[0], sv[1], value)
 
   # primitive : LT ws? KEYWORD ws? stringLit ws? GT;
   def visitPrimitive(self, ctx):

@@ -11,7 +11,7 @@ script : bodyBlock* EOF;
 bodyBlock: classDecl | protocol | method;
 classDecl : BANG BANG BANG ws? keywordSend ws?;
 protocol : BANG BANG ws_oneline? IDENTIFIER ws_oneline? NEWLINE ws?;
-method : BANG ws_oneline? methodHeader ws? sequence ws?;
+method : BANG CARROT? ws_oneline? methodHeader ws? sequence ws?;
 sequence : temps ws? statementBlock? | ws? statementBlock;
 ws : (NEWLINE | WHITESPACE | COMMENT)+;
 ws_oneline : (WHITESPACE | COMMENT)+;

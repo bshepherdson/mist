@@ -28,14 +28,6 @@ class Scope:
       return self.parent.lookup(key)
     return None
 
-  def dump(self):
-    for k, v in self.map.items():
-      print(k + ": " + v)
-
-    if self.parent is not None:
-      print("======")
-      self.parent.dump()
-
 
 class Bytecode:
   def __init__(self, codename, bcnum):
