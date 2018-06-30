@@ -7,8 +7,11 @@
 
 grammar Smalltalk;
 
-script : method EOF;
-method : methodHeader ws? sequence;
+script : bodyBlock* EOF;
+bodyBlock: classDecl | protocol | method;
+classDecl : BANG BANG BANG ws? keywordSend ws?;
+protocol : BANG BANG ws_oneline? IDENTIFIER ws_oneline? NEWLINE ws?;
+method : BANG ws_oneline? methodHeader ws? sequence ws?;
 sequence : temps ws? statementBlock? | ws? statementBlock;
 ws : (NEWLINE | WHITESPACE | COMMENT)+;
 ws_oneline : (WHITESPACE | COMMENT)+;
@@ -86,6 +89,7 @@ FLOAT : INTEGER PERIOD INTEGER;
 EXP : (FLOAT | INTEGER) 'e' INTEGER;
 IDENTIFIER : [a-zA-Z]+[a-zA-Z0-9_]*;
 CARROT : '^';
+BANG: '!';
 COLON : ':';
 ASSIGNMENT : ':=';
 HASH : '#';

@@ -13,7 +13,7 @@ if __name__ == '__main__':
   lexer = SmalltalkLexer(input)
   stream = CommonTokenStream(lexer)
   stream.fill()
-  print([ SmalltalkLexer.symbolicNames[t.type] for t in stream.getTokens(0, 1000) ])
+  #print([ SmalltalkLexer.symbolicNames[t.type] for t in stream.getTokens(0, 1000) ])
   stream.reset()
   parser = SmalltalkParser(stream)
 
@@ -21,6 +21,9 @@ if __name__ == '__main__':
 
   visitor = MistVisitor()
   result = visitor.visit(tree)
-  bcs = BytecodeStream()
-  result.compile(bcs)
-  print(json.dumps(bcs.contents))
+
+  out = []
+  for cls in result.values():
+    out.append(cls.compile())
+
+  print(json.dumps(out))

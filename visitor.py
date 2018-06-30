@@ -265,18 +265,17 @@ class PMethod(PBase):
     self.code = code
 
   def compile(self, s):
-    self.stream = BytecodeStream()
-    for c in self.code:
-      c.compile(self.stream)
-
-    s.add(self)
+    raise Exception("Don't call compile on methods")
 
   def emit(self):
+    stream = BytecodeStream()
+    for c in self.code:
+      c.compile(stream)
     return {
         "method": self.selector,
-        "args": self.args,
-        "temps": self.temps,
-        "code": self.stream.contents,
+        "args": len(self.args),
+        "temps": len(self.temps),
+        "code": stream.contents,
         }
 
 
@@ -284,12 +283,44 @@ def tokensToString(tokens):
   return "".join([t.getText() for t in tokens])
 
 
+class STClass:
+  def __init__(self, name, parentName):
+    self.name = name
+    self.parentName = parentName
+    self.instanceVariables = []
+    self.classVariables = []
+    self.protocols = {}
+
+  def addMethod(self, protocol, method):
+    if protocol not in self.protocols:
+      self.protocols[protocol] = {}
+    self.protocols[protocol][method.selector] = method
+
+  def compile(self):
+    methods = {}
+    for p in self.protocols.values():
+      for m in p.values():
+        methods[m.selector] = m.emit()
+    return {
+        "name": self.name,
+        "superclass": self.parentName,
+        "instanceVariables": len(self.instanceVariables),
+        "classVariables": len(self.classVariables),
+        "methods": methods,
+        }
+
+
 class MistVisitor(SmalltalkVisitor):
   def __init__(self):
-    self.scope = Scope()
+    self.rootScope = self.scope = Scope()
     self.blockDepth = 0
-
+    self.currentClass = None
+    self.currentProtocol = None
+    self.initBlocks = [] # List of PFoos whose code goes at the top level.
+    self.classes = {}
     # TODO: Add globals here - builtin classes?
+
+    self.scope.add("Object", KIND_GLOBAL)
 
   def popScope(self):
     self.scope = self.scope.parent
@@ -304,8 +335,78 @@ class MistVisitor(SmalltalkVisitor):
       sym.column, msg))
     sys.exit(1)
 
+  def protocol(self):
+    if self.currentProtocol is None:
+      self.currentProtocol = "unspecified"
+    return self.currentProtocol
 
-  # method : methodHeader sequence;
+
+  # protocol : BANG BANG ws_oneline? IDENTIFIER ws_oneline? NEWLINE ws?;
+  def visitProtocol(self, ctx):
+    if self.currentClass is None:
+      self.error(ctx.BANG(0),
+        "Protocol '{:s}' is outside any class".format(ctx.IDENTIFIER().getText()))
+    self.currentProtocol = ctx.IDENTIFIER().getText()
+
+
+  # script : bodyBlock* EOF;
+  def visitScript(self, ctx):
+    for b in ctx.bodyBlock():
+      self.visit(b)
+    return self.classes
+
+  # bodyBlock : classDecl | protocol | method
+  def visitBodyBlock(self, ctx):
+    if ctx.classDecl() is not None:
+      self.visit(ctx.classDecl())
+    elif ctx.protocol() is not None:
+      self.visit(ctx.protocol())
+    elif ctx.method() is not None:
+      self.visit(ctx.method())
+
+
+  # classDecl : BANG BANG BANG ws? keywordSend ws?;
+  def visitClassDecl(self, ctx):
+    send = self.visit(ctx.keywordSend())
+    # We expect the first argument to that send to be the symbol giving the
+    # class name.
+    nameArg = send.args[0]
+    if not isinstance(nameArg, PSymbol):
+      self.error(ctx.BANG(0), "Could not recognize class name in declaration")
+    name = nameArg.value
+
+    # The receiver of the message should be a global variable, naming another
+    # class.
+    parentArg = send.receiver
+    if not isinstance(parentArg, PReference):
+      self.error(ctx.BANG(0),
+          "Receiver of new class ('{:s}') should be a global.".format(name))
+    parentName = parentArg.name
+
+    if name in self.classes:
+      self.error(ctx.BANG(0), "Duplicate class name '{:s}'".format(name))
+    self.initBlocks.append(send)
+    self.currentClass = STClass(name, parentName)
+
+    # One of the args might be "instanceVariableNames:"
+    parts = send.selector.split(":")
+    try:
+      idx = parts.index("instanceVariableNames")
+      self.currentClass.instanceVariables = send.args[idx].value.split(' ')
+    except:
+      pass
+
+    # Likewise, one might be "classVariableNames:"
+    parts = send.selector.split(":")
+    try:
+      idx = parts.index("classVariableNames")
+      self.currentClass.classVariables = send.args[idx].value.split(' ')
+    except:
+      pass
+
+    self.classes[name] = self.currentClass
+
+  # method : BANG ws_oneline? methodHeader ws? sequence ws?;
   # unaryHeader : unarySelector;                       -> (sel, [args])
   # binaryHeader : BINARY_SELECTOR ws? IDENTIFIER;     -> (sel, [args])
   # keywordHeader : (keywordHeaderPair ws_oneline?)+;  -> (sel, [args])
@@ -348,10 +449,8 @@ class MistVisitor(SmalltalkVisitor):
       self.scope.add(arg, KIND_ARG)
     seq = self.visit(ctx.sequence())
     self.popScope()
-    return PMethod(header[0], header[1], seq.temps, seq.code)
-
-  def visitScript(self, ctx):
-    return self.visit(ctx.method())
+    m = PMethod(header[0], header[1], seq.temps, seq.code)
+    self.currentClass.addMethod(self.currentProtocol, m)
 
 
   # sequence: temps ws? statements? | ws? statements;   -> ([temp_names], [stmt])
