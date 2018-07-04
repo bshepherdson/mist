@@ -22,8 +22,8 @@ if __name__ == '__main__':
   visitor = MistVisitor()
   result = visitor.visit(tree)
 
-  out = []
-  for cls in result.values():
-    out.append(cls.compile())
+  out = BytecodeStream()
+  for c in result:
+    c.compile(out)
 
-  print(json.dumps(out))
+  print(json.dumps(out.contents))

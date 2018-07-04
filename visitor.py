@@ -267,18 +267,13 @@ class PMethod(PBase):
     self.code = code
 
   def compile(self, s):
-    raise Exception("Don't call compile on methods")
-
-  def emit(self):
-    stream = BytecodeStream()
+    compiledCode = BytecodeStream()
     for c in self.code:
-      c.compile(stream)
-    return {
-        "method": self.selector,
-        "args": len(self.args),
-        "temps": len(self.temps),
-        "code": stream.contents,
-        }
+      c.compile(compiledCode)
+
+    s.add(BCCreateMethod(self.selector, len(self.args), len(self.temps),
+      len(compiledCode.contents)))
+    s.contents.extend(compiledCode.contents)
 
 
 def tokensToString(tokens):
@@ -334,6 +329,7 @@ class MistVisitor(SmalltalkVisitor):
     self.initBlocks = [] # List of PFoos whose code goes at the top level.
     self.classes = {}
     self.nextLocal = 0
+    self.statementsDepth = 0
 
 
     # TODO: Add globals here - builtin classes?
@@ -358,71 +354,105 @@ class MistVisitor(SmalltalkVisitor):
       self.currentProtocol = "unspecified"
     return self.currentProtocol
 
+  def prepareInstanceVariables(self, token):
+    """Examine self.lastBinaryLHS; it should be a class or metaclass. Which is
+    to say either a global reference, or SomeClass class unary expression."""
+    if self.lastBinaryLHS is None:
+      self.error(token,
+          "Attempt to build a method outside the context of a >> send")
+
+    if isinstance(self.lastBinaryLHS, PSend):
+      if self.lastBinaryLHS.selector != "class":
+        self.error(token, "Attempt to build a method on non-class")
+
+      return self.prepareInstanceVariablesInner(token,
+          self.lastBinaryLHS.receiver, True)
+
+    elif isinstance(self.lastBinaryLHS, PReference):
+      return self.prepareInstanceVariablesInner(token, self.lastBinaryLHS)
+    else:
+      self.error(token, "Broken >> send; shouldn't happen.")
+
+  def prepareInstanceVariablesInner(self, token, target, classLevel=False):
+    if isinstance(target, PReference):
+      if target.kind != KIND_GLOBAL:
+        self.error(token,
+            "Constructing a method on something other than a global class")
+      name = target.name
+      if name not in self.classes:
+        self.error(token, "Unknown class '%s'".format(name))
+
+      cls = self.classes[name]
+      if classLevel:
+        self.instanceVariables = cls.instanceVariables
+      else:
+        self.instanceVariables = cls.classVariables
+
 
   # protocol : BANG BANG ws_oneline? IDENTIFIER ws_oneline? NEWLINE ws?;
-  def visitProtocol(self, ctx):
-    if self.currentClass is None:
-      self.error(ctx.BANG(0),
-        "Protocol '{:s}' is outside any class".format(ctx.IDENTIFIER().getText()))
-    self.currentProtocol = ctx.IDENTIFIER().getText()
+  #def visitProtocol(self, ctx):
+  #  if self.currentClass is None:
+  #    self.error(ctx.BANG(0),
+  #      "Protocol '{:s}' is outside any class".format(ctx.IDENTIFIER().getText()))
+  #  self.currentProtocol = ctx.IDENTIFIER().getText()
 
 
-  # script : bodyBlock* EOF;
+  # script : statements PERIOD? EOF;
+  # TODO: Capture any metadata we want about classes on the way by.
   def visitScript(self, ctx):
-    for b in ctx.bodyBlock():
-      self.visit(b)
-    return self.classes
+    return self.visit(ctx.statements())
+
 
   # bodyBlock : classDecl | protocol | method
-  def visitBodyBlock(self, ctx):
-    if ctx.classDecl() is not None:
-      self.visit(ctx.classDecl())
-    elif ctx.protocol() is not None:
-      self.visit(ctx.protocol())
-    elif ctx.method() is not None:
-      self.visit(ctx.method())
+  #def visitBodyBlock(self, ctx):
+  #  if ctx.classDecl() is not None:
+  #    self.visit(ctx.classDecl())
+  #  elif ctx.protocol() is not None:
+  #    self.visit(ctx.protocol())
+  #  elif ctx.method() is not None:
+  #    self.visit(ctx.method())
 
 
   # classDecl : BANG BANG BANG ws? keywordSend ws?;
-  def visitClassDecl(self, ctx):
-    send = self.visit(ctx.keywordSend())
-    # We expect the first argument to that send to be the symbol giving the
-    # class name.
-    nameArg = send.args[0]
-    if not isinstance(nameArg, PSymbol):
-      self.error(ctx.BANG(0), "Could not recognize class name in declaration")
-    name = nameArg.value
+  #def visitClassDecl(self, ctx):
+  #  send = self.visit(ctx.keywordSend())
+  #  # We expect the first argument to that send to be the symbol giving the
+  #  # class name.
+  #  nameArg = send.args[0]
+  #  if not isinstance(nameArg, PSymbol):
+  #    self.error(ctx.BANG(0), "Could not recognize class name in declaration")
+  #  name = nameArg.value
 
-    # The receiver of the message should be a global variable, naming another
-    # class.
-    parentArg = send.receiver
-    if not isinstance(parentArg, PReference):
-      self.error(ctx.BANG(0),
-          "Receiver of new class ('{:s}') should be a global.".format(name))
-    parentName = parentArg.name
+  #  # The receiver of the message should be a global variable, naming another
+  #  # class.
+  #  parentArg = send.receiver
+  #  if not isinstance(parentArg, PReference):
+  #    self.error(ctx.BANG(0),
+  #        "Receiver of new class ('{:s}') should be a global.".format(name))
+  #  parentName = parentArg.name
 
-    if name in self.classes:
-      self.error(ctx.BANG(0), "Duplicate class name '{:s}'".format(name))
-    self.initBlocks.append(send)
-    self.currentClass = STClass(name, parentName)
+  #  if name in self.classes:
+  #    self.error(ctx.BANG(0), "Duplicate class name '{:s}'".format(name))
+  #  self.initBlocks.append(send)
+  #  self.currentClass = STClass(name, parentName)
 
-    # One of the args might be "instanceVariableNames:"
-    parts = send.selector.split(":")
-    try:
-      idx = parts.index("instanceVariableNames")
-      self.currentClass.instanceVariables = send.args[idx].value.split(' ')
-    except:
-      pass
+  #  # One of the args might be "instanceVariableNames:"
+  #  parts = send.selector.split(":")
+  #  try:
+  #    idx = parts.index("instanceVariableNames")
+  #    self.currentClass.instanceVariables = send.args[idx].value.split(' ')
+  #  except:
+  #    pass
 
-    # Likewise, one might be "classVariableNames:"
-    parts = send.selector.split(":")
-    try:
-      idx = parts.index("classVariableNames")
-      self.currentClass.classVariables = send.args[idx].value.split(' ')
-    except:
-      pass
+  #  # Likewise, one might be "classVariableNames:"
+  #  parts = send.selector.split(":")
+  #  try:
+  #    idx = parts.index("classVariableNames")
+  #    self.currentClass.classVariables = send.args[idx].value.split(' ')
+  #  except:
+  #    pass
 
-    self.classes[name] = self.currentClass
+  #  self.classes[name] = self.currentClass
 
   # method : BANG ws_oneline? methodHeader ws? sequence ws?;
   # unaryHeader : unarySelector;                       -> (sel, [args])
@@ -469,23 +499,14 @@ class MistVisitor(SmalltalkVisitor):
       self.scope.add(arg, (KIND_ARG, self.nextLocal))
       self.nextLocal += 1
 
-    classLevel = ctx.CARROT() is not None
-    if classLevel:
-      varNames = self.currentClass.classVariables
-    else:
-      varNames = self.currentClass.instanceVariables
-
-    for idx, var in enumerate(varNames):
+    for var in self.instanceVariables:
+      idx = self.nextLocal
+      self.nextLocal += 1
       self.scope.add(var, (KIND_INST_VAR, idx))
 
     seq = self.visit(ctx.sequence())
     self.popScope()
-    m = PMethod(header[0], header[1], seq.temps, seq.code)
-    if classLevel:
-      self.currentClass.addClassMethod(self.currentProtocol, m)
-    else:
-      self.currentClass.addMethod(self.currentProtocol, m)
-
+    return PMethod(header[0], header[1], seq.temps, seq.code)
 
   # sequence: temps ws? statements? | ws? statements;   -> ([temp_names], [stmt])
   def visitSequence(self, ctx):
@@ -511,7 +532,10 @@ class MistVisitor(SmalltalkVisitor):
 
   # statements: statement (PERIOD statements)?   [PStatement]
   def visitStatements(self, ctx):
+    self.statementsDepth += 1
     stmt = self.visit(ctx.statement())
+    self.statementsDepth -= 1
+
     if ctx.statements() is None:
       return [stmt]
     stmts = self.visit(ctx.statements())
@@ -555,6 +579,8 @@ class MistVisitor(SmalltalkVisitor):
       return self.visit(ctx.reference())
     elif ctx.subexpression() is not None:
       return self.visit(ctx.subexpression())
+    elif ctx.method() is not None:
+      return self.visit(ctx.method())
 
   # literal: runtimeLiteral | parsetimeLiteral   -> PThings
   def visitLiteral(self, ctx):
@@ -768,11 +794,18 @@ class MistVisitor(SmalltalkVisitor):
     return expr
 
 
+  # Special case: If the selector is >> this is a new method being added.
+  # We need to set the current instance variables based on the LHS before
+  # visiting the RHS.
+  #
   # binarySend: unarySend binaryTail?                            -> PSend?
   # binaryTail: binaryMessage binaryTail?                        -> [(sel, rhs)]
   # binaryMessage: ws? BINARY_SELECTOR ws? (unarySend | operand) -> (sel, rhs)
   def visitBinaryMessage(self, ctx):
     sel = ctx.BINARY_SELECTOR().getText()
+    if sel == ">>":
+      self.prepareInstanceVariables(ctx.BINARY_SELECTOR())
+
     if ctx.unarySend() is not None:
       rhs = self.visit(ctx.unarySend())
     else:
@@ -791,6 +824,7 @@ class MistVisitor(SmalltalkVisitor):
 
   def visitBinarySend(self, ctx):
     expr = self.visit(ctx.unarySend())
+    self.lastBinaryLHS = expr
     tail = []
     if ctx.binaryTail() is not None:
       tail = self.visit(ctx.binaryTail())
@@ -817,10 +851,36 @@ class MistVisitor(SmalltalkVisitor):
     pairs = self.visit(ctx.keywordMessage())
     selector = ""
     args = []
+    argsByName = {}
 
-    for p in pairs:
+    subclass = -1
+
+    for idx, p in enumerate(pairs):
+      if p[0] == "subclass:" and self.statementsDepth == 1:
+        subclass = idx
+
       selector = selector + p[0]
       args.append(p[1])
+      argsByName[p[0]] = p[1]
+
+    if subclass >= 0:
+      if not isinstance(base, PReference):
+        self.error(ctx.binarySend(), "Receiver of %s is not a reference".format(selector))
+      superclass = base.name
+
+      if not isinstance(args[subclass], PSymbol):
+        self.error(ctx.keywordMessage(subclass),
+            "Subclass name is not a symbol")
+      newClass = args[subclass].value
+
+      cls = STClass(newClass, superclass)
+      self.classes[newClass] = cls
+      self.rootScope.add(newClass, (KIND_GLOBAL, newClass))
+
+      if "instanceVariableNames:" in argsByName:
+        cls.instanceVariables = argsByName["instanceVariableNames:"].value.split(' ')
+      if "classVariableNames:" in argsByName:
+        cls.classVariables = argsByName["classVariableNames:"].value.split(' ')
 
     return PSend(base, selector, args)
 

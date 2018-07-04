@@ -104,6 +104,22 @@ class BCStartBlock(Bytecode):
   def emit(self):
     return {**super().emit(), "argc": self.argc, "length": self.codeLen}
 
+class BCCreateMethod(Bytecode):
+  def __init__(self, selector, argc, tempCount, codeLen):
+    super().__init__("startMethod", 13)
+    self.selector = selector
+    self.argc = argc
+    self.tempCount = tempCount
+    self.codeLen = codeLen
+
+  def emit(self):
+    return {
+        **super().emit(),
+        "selector": self.selector,
+        "argc": self.argc,
+        "temps": self.tempCount,
+        "length": self.codeLen,
+        }
 
 class BCSend(Bytecode):
   def __init__(self, selector, values):
@@ -137,4 +153,4 @@ class BCAnswerBlock(Bytecode):
   def __init__(self):
     super().__init__("answer", 12)
 
-# next ID: 13
+# next ID: 14

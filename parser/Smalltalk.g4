@@ -7,11 +7,11 @@
 
 grammar Smalltalk;
 
-script : bodyBlock* EOF;
-bodyBlock: classDecl | protocol | method;
-classDecl : BANG BANG BANG ws? keywordSend ws?;
-protocol : BANG BANG ws_oneline? IDENTIFIER ws_oneline? NEWLINE ws?;
-method : BANG CARROT? ws_oneline? methodHeader ws? sequence ws?;
+script : statements PERIOD? ws? EOF;
+// bodyBlock: classDecl | protocol | method;
+// classDecl : BANG BANG BANG ws? keywordSend ws?;
+// protocol : BANG BANG ws_oneline? IDENTIFIER ws_oneline? NEWLINE ws?;
+method : BANG ws_oneline? methodHeader ws? sequence ws? BANG ws? ;
 sequence : temps ws? statementBlock? | ws? statementBlock;
 ws : (NEWLINE | WHITESPACE | COMMENT)+;
 ws_oneline : (WHITESPACE | COMMENT)+;
@@ -21,7 +21,7 @@ statementBlock : answer ws? # StatementAnswer
            | statements PERIOD? ws? # StatementExpressions
            ;
 answer : CARROT ws? expression ws? PERIOD?;
-statements : statement (PERIOD statements)?;
+statements : statement ws? (PERIOD ws? statements)?;
 statement : expression;
 cascade : (keywordSend | binarySend) (ws? SEMI_COLON ws? message)+;
 expression : assignment | cascade | keywordSend | binarySend | primitive;
@@ -33,7 +33,7 @@ unarySend : operand ws? unaryTail?;
 keywordSend : binarySend keywordMessage;
 keywordMessage : ws? (keywordPair ws?)+;
 keywordPair : KEYWORD ws? binarySend ws?;
-operand : literal | reference | subexpression;
+operand : method | literal | reference | subexpression;
 subexpression : OPEN_PAREN ws? expression ws? CLOSE_PAREN;
 literal : runtimeLiteral | parsetimeLiteral;
 runtimeLiteral : dynamicDictionary | dynamicArray | block;
@@ -68,7 +68,7 @@ keywordHeaderPair : KEYWORD ws_oneline? IDENTIFIER;
 methodHeader : (keywordHeader | binaryHeader | unaryHeader) ws_oneline? NEWLINE;
 
 NEWLINE : '\n';
-WHITESPACE : [ \t\r];
+WHITESPACE : [ \t\r]+;
 STRING : '\'' (.)*? '\'';
 COMMENT : '"' (.)*? '"';
 BLOCK_START : '[';
