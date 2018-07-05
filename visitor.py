@@ -78,8 +78,9 @@ class PReference(POperand):
 class PBlock(POperand):
   # Takes an array of arg names (no colons) and an array of temp names.
   # BytecodeStream includes add() and the code field.
-  def __init__(self, args=[], temps=[], code=[]):
+  def __init__(self, args, argStart, temps=[], code=[]):
     self.args = args
+    self.argStart = argStart
     self.temps = temps
     self.code = code
 
@@ -90,7 +91,7 @@ class PBlock(POperand):
       c.compile(stream)
 
     # Emit the start-block bytecode first.
-    s.add(BCStartBlock(len(self.args), len(stream.contents)))
+    s.add(BCStartBlock(len(self.args), self.argStart, len(stream.contents)))
     s.contents.extend(stream.contents)
 
 class PDynArray(POperand):
@@ -384,9 +385,9 @@ class MistVisitor(SmalltalkVisitor):
 
       cls = self.classes[name]
       if classLevel:
-        self.instanceVariables = cls.instanceVariables
-      else:
         self.instanceVariables = cls.classVariables
+      else:
+        self.instanceVariables = cls.instanceVariables
 
 
   # protocol : BANG BANG ws_oneline? IDENTIFIER ws_oneline? NEWLINE ws?;
@@ -630,6 +631,7 @@ class MistVisitor(SmalltalkVisitor):
       params = []
 
     self.pushScope()
+    paramStart = self.nextLocal # Index of the first parameter (if any).
     for p in params:
       self.scope.add(p, (KIND_ARG, self.nextLocal))
       self.nextLocal += 1
@@ -637,7 +639,7 @@ class MistVisitor(SmalltalkVisitor):
 
     seq = self.visit(ctx.sequence())
     self.blockDepth -= 1
-    return PBlock(params, seq.temps, seq.code)
+    return PBlock(params, paramStart, seq.temps, seq.code)
 
   def visitBlockParamList(self, ctx):
     return [ t.getText()[1:] for t in ctx.BLOCK_PARAM() ]

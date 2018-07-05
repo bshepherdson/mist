@@ -61,12 +61,12 @@ class BCPushSelf(BCPushLocal):
     super().__init__(0)
 
 class BCPushInstVar(Bytecode):
-  def __init__(self, name):
+  def __init__(self, index):
     super().__init__("pushInstVar", 3)
-    self.name = name
+    self.index = index
 
   def emit(self):
-    return {**super().emit(), "name": self.name}
+    return {**super().emit(), "index": self.index}
 
 
 class BCPushLiteral(Bytecode):
@@ -87,22 +87,23 @@ class BCStoreLocal(Bytecode):
     return {**super().emit(), "index": self.index}
 
 class BCStoreInstVar(Bytecode):
-  def __init__(self, name):
+  def __init__(self, index):
     super().__init__("storeInstVar", 9)
-    self.name = name
+    self.index = index
 
   def emit(self):
-    return {**super().emit(), "name": self.name}
+    return {**super().emit(), "index": self.index}
 
 
 class BCStartBlock(Bytecode):
-  def __init__(self, argc, codeLen):
+  def __init__(self, argc, argStart, codeLen):
     super().__init__("startBlock", 4)
     self.argc = argc
+    self.argStart = argStart
     self.codeLen = codeLen
 
   def emit(self):
-    return {**super().emit(), "argc": self.argc, "length": self.codeLen}
+    return {**super().emit(), "argc": self.argc, "argStart": self.argStart, "length": self.codeLen}
 
 class BCCreateMethod(Bytecode):
   def __init__(self, selector, argc, tempCount, codeLen):
