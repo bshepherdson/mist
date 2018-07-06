@@ -32,46 +32,78 @@
 //                                       -> IndexedCollection -> Dictionary
 //                                                            -> HashedCollection
 
-// Class's instance variables: [name superclass instanceVariables classVariable]
-const CLASS_VAR_NAME = 0;
-const CLASS_VAR_SUPERCLASS = 1;
-const CLASS_VAR_INSTVAR_COUNT = 2;
-const CLASS_VAR_CLASSVAR_COUNT = 3;
+// Make "global" be "global", on Node and browsers.
+(function() {
+  this.global = this;
+})();
 
 const classes = {};
 
 classes['Metaclass'] = {};
-classes['Object class'] = {$class: classes['Metaclass']};
-classes['Object'] = {$class: classes['Object_class']};
+
+function mkClass(name, superName, instVars, classVars) {
+  const meta = {
+    $class: classes['Metaclass'],
+    $vars: [
+      name + ' class',
+      classes[superName + ' class'],
+      classVars || 0,
+    ],
+  };
+
+  const cls = {
+    $class: meta,
+    $vars: [
+      name,
+      classes[superName],
+      instVars || 0,
+    ],
+  };
+
+  classes[name + ' class'] = meta;
+  classes[name] = cls;
+}
+
+mkClass('Object', 'nil', 0);
+mkClass('Behavior', 'Object', 0);
+mkClass('ClassDescription', 'Behavior', 4); // name, superclass, instance variables, methodDict.
+mkClass('Class', 'ClassDescription', 0);
+mkClass('Metaclass', 'ClassDescription', 0);
+
+// HACK: These are hobo implementations of the String and Symbol classes, which
+// will get upgraded later.
+mkClass('String', 'Object', 1);
+mkClass('Symbol', 'String', 0, 1);
+mkClass('Number', 'Object', 1);
+
+const STRING_RAW = 0;
+const NUMBER_RAW = 0;
+const SYMBOL_CLASS_DICT = 5;
+
+// Class's instance variables: [name superclass instanceVariables methodDict]
+const CLASS_VAR_NAME = 0;
+const CLASS_VAR_SUPERCLASS = 1;
+const CLASS_VAR_INSTVAR_COUNT = 2;
+const CLASS_VAR_METHODS = 3;
+
 
 // Rule 10: The metaclass of Metaclass is an instance of Metaclass.
-classes['Metaclass class'] = {$class: classes['Metaclass']};
+classes['Metaclass class'].$class = classes['Metaclass'];
 classes['Metaclass'].$class = classes['Metaclass class'];
 
-// Block closures interact with the VM, so we allow raw construction here.
-classes['BlockClosure class'] = {$class: classes['Metaclass']};
-classes['BlockClosure'] = {
-  $class: classes['BlockClosure class'],
-};
+classes['Object class'].$vars[CLASS_VAR_SUPERCLASS] = classes['Class'];
+
+mkClass('BlockClosure', 'Object', 3); // Bytecode, argv, argc
+mkClass('CompiledMethod', 'Object', 4); // Bytecode, locals, argc, selector
 
 const CLOSURE_BYTECODE = 0;
 const CLOSURE_ARGV = 1;
 const CLOSURE_ARGC = 2;
 
-
-// Compiled methods are likewise integrated with the VM.
-const method = mkInstance(classes['CompiledMethod']);
-method.$vars[METHOD_BYTECODE] = ar.bytecode.slice(ar.pc, ar.pc + bc.length);
-method.$vars[METHOD_LOCALS] = 1 + bc.argc + bc.temps;
-method.$vars[METHOD_ARGC] = bc.argc;
-method.$vars[METHOD_SELECTOR] = bc.selector;
-
-// START HERE: Probably these could be refactored into a more properly
-// bootstrapped, less manually constructed style. We just need the fundamentals
-// of creating subclasses (subclass:) and instances (basicNew), plus Object,
-// Behavior, Class and Metaclass.
-// Everything else can spread from there, I think.
-
+const METHOD_BYTECODE = 0;
+const METHOD_LOCALS = 1;
+const METHOD_ARGC = 2;
+const METHOD_SELECTOR = 3;
 
 function mkInstance(cls) {
   return {
@@ -79,3 +111,33 @@ function mkInstance(cls) {
     $vars: [],
   };
 }
+
+function methodLookup(selector, cls) {
+  let c = cls;
+  while (c) {
+    const dict = c.$vars[CLASS_VAR_METHODS];
+    if (dict && dict[selector]) {
+      return dict[selector];
+    }
+    c = c.$vars[CLASS_VAR_SUPERCLASS];
+  }
+  return null;
+}
+
+const ERR_DOES_NOT_UNDERSTAND = 'doesNotUnderstand';
+const ERR_ARGC_MISMATCH = 'argcMismatch';
+
+// And the single method that starts the ball rolling: Class>>#>>
+const theMethod = mkInstance(classes['CompiledMethod']);
+theMethod.$vars[METHOD_BYTECODE] = [
+  {bytecode: 'primitive', keyword: 'builtin:', name: 'addMethod'},
+  {bytecode: 'answerSelf'},
+];
+theMethod.$vars[METHOD_ARGC] = 1;
+theMethod.$vars[METHOD_LOCALS] = 2; // receiver, 1 arg, no temps.
+theMethod.$vars[METHOD_SELECTOR] = '>>';
+
+classes['Class'].$vars[CLASS_VAR_METHODS] = {
+  '>>': theMethod,
+};
+

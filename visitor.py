@@ -75,6 +75,15 @@ class PReference(POperand):
     else:
       raise Exception("Unknown reference type: " + self.kind)
 
+class PPrimitive(PBase):
+  def __init__(self, keyword, name):
+    self.keyword = keyword
+    self.name = name
+
+  def compile(self, s):
+    s.add(BCPrimitive(self.keyword, self.name))
+
+
 class PBlock(POperand):
   # Takes an array of arg names (no colons) and an array of temp names.
   # BytecodeStream includes add() and the code field.
@@ -153,7 +162,7 @@ class PString(PLiteral):
 class PSymbol(PLiteral):
   def compile(self, s):
     super().compile(s)
-    s.add(BCSend("asSymbol", 2))
+    s.add(BCSend("asSymbol", 1))
 
 class PChar(PLiteral):
   def compile(self, s):
@@ -234,6 +243,9 @@ class PStatement(PBase):
     self.expr.compile(s)
     if not self.noDrop and not isinstance(self.expr, PAssignment):
       s.add(BCDrop())
+    elif self.noDrop:
+      # This is only set inside a block; so we answer instead of dropping.
+      s.add(BCAnswer())
 
 
 class PAnswer(PBase):
@@ -244,6 +256,11 @@ class PAnswer(PBase):
     self.inBlock = inBlock
 
   def compile(self, s):
+    if isinstance(self.expr, PSelf):
+      # Special case: PAnswer + PSelf is BCAnswerSelf.
+      s.add(BCAnswerSelf())
+      return
+
     self.expr.compile(s) # The answer is on the stack now.
     if self.inBlock:
       s.add(BCAnswerBlock())
@@ -332,10 +349,21 @@ class MistVisitor(SmalltalkVisitor):
     self.nextLocal = 0
     self.statementsDepth = 0
 
-
-    # TODO: Add globals here - builtin classes?
+    self.classes["Object"] = STClass("Object", None)
+    self.classes["Behavior"] = STClass("Behavior", "Object")
+    self.classes["ClassDescription"] = STClass("ClassDescription", "Behavior")
+    self.classes["ClassDescription"].instanceVariables = [
+        "name", "superclass", "instanceVariables"]
+    self.classes["Class"] = STClass("Class", "ClassDescription")
+    self.classes["Metaclass"] = STClass("Metaclass", "ClassDescription")
+    self.classes["String"] = STClass("String", "Object")
 
     self.scope.add("Object", (KIND_GLOBAL, None))
+    self.scope.add("Behavior", (KIND_GLOBAL, None))
+    self.scope.add("Class", (KIND_GLOBAL, None))
+    self.scope.add("ClassDescription", (KIND_GLOBAL, None))
+    self.scope.add("Metaclass", (KIND_GLOBAL, None))
+    self.scope.add("String", (KIND_GLOBAL, None))
 
   def popScope(self):
     self.scope = self.scope.parent
@@ -381,13 +409,24 @@ class MistVisitor(SmalltalkVisitor):
             "Constructing a method on something other than a global class")
       name = target.name
       if name not in self.classes:
-        self.error(token, "Unknown class '%s'".format(name))
+        self.error(token, "Unknown class '{:s}'".format(name))
 
-      cls = self.classes[name]
-      if classLevel:
-        self.instanceVariables = cls.classVariables
-      else:
-        self.instanceVariables = cls.instanceVariables
+      self.instanceVariables = []
+      self.addVariables(self.classes[name], classLevel)
+      print("{:s} has {:d} vars: ".format(name, len(self.instanceVariables)) +
+          str(self.instanceVariables))
+    else:
+      self.error(token, "Uncertain target for method.")
+
+
+  def addVariables(self, cls, classLevel):
+    """Recursively add variables, postorder."""
+    if cls.parentName is not None:
+      self.addVariables(self.classes[cls.parentName], classLevel)
+
+    self.instanceVariables.extend(
+        cls.classVariables if classLevel else cls.instanceVariables)
+
 
 
   # protocol : BANG BANG ws_oneline? IDENTIFIER ws_oneline? NEWLINE ws?;
@@ -500,9 +539,7 @@ class MistVisitor(SmalltalkVisitor):
       self.scope.add(arg, (KIND_ARG, self.nextLocal))
       self.nextLocal += 1
 
-    for var in self.instanceVariables:
-      idx = self.nextLocal
-      self.nextLocal += 1
+    for idx, var in enumerate(self.instanceVariables):
       self.scope.add(var, (KIND_INST_VAR, idx))
 
     seq = self.visit(ctx.sequence())
@@ -531,17 +568,18 @@ class MistVisitor(SmalltalkVisitor):
   def visitTemps(self, ctx):
     return [ t.getText() for t in ctx.IDENTIFIER() ]
 
-  # statements: statement (PERIOD statements)?   [PStatement]
+  # statements: statement ws? (PERIOD ws? statementsTail ws?)*   [PStatement]
   def visitStatements(self, ctx):
     self.statementsDepth += 1
     stmt = self.visit(ctx.statement())
-    self.statementsDepth -= 1
-
-    if ctx.statements() is None:
-      return [stmt]
-    stmts = self.visit(ctx.statements())
+    stmts = [ self.visit(s) for s in ctx.statementsTail() ]
     stmts.insert(0, stmt)
+    self.statementsDepth -= 1
     return stmts
+
+  # statementsTail: PERIOD ws? statement ws?
+  def visitStatementsTail(self, ctx):
+    return self.visit(ctx.statement())
 
   # statement: expression
   # A statement is an expression that is followed by a Drop.
@@ -570,6 +608,9 @@ class MistVisitor(SmalltalkVisitor):
     stmts = self.visit(ctx.statements())
     if self.blockDepth > 0:
       stmts[-1].noDrop = True
+    elif self.blockDepth == 0:
+      # On the other hand, a method body without a block gets an answer self.
+      stmts.append(PAnswer(PSelf()))
     return stmts
 
   # operand: literal | reference | subexpression
@@ -867,7 +908,7 @@ class MistVisitor(SmalltalkVisitor):
 
     if subclass >= 0:
       if not isinstance(base, PReference):
-        self.error(ctx.binarySend(), "Receiver of %s is not a reference".format(selector))
+        self.error(ctx.binarySend(), "Receiver of {:s} is not a reference".format(selector))
       superclass = base.name
 
       if not isinstance(args[subclass], PSymbol):

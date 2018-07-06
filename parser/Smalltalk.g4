@@ -7,10 +7,7 @@
 
 grammar Smalltalk;
 
-script : statements PERIOD? ws? EOF;
-// bodyBlock: classDecl | protocol | method;
-// classDecl : BANG BANG BANG ws? keywordSend ws?;
-// protocol : BANG BANG ws_oneline? IDENTIFIER ws_oneline? NEWLINE ws?;
+script : ws? statements PERIOD? ws? EOF;
 method : BANG ws_oneline? methodHeader ws? sequence ws? BANG ws? ;
 sequence : temps ws? statementBlock? | ws? statementBlock;
 ws : (NEWLINE | WHITESPACE | COMMENT)+;
@@ -21,7 +18,8 @@ statementBlock : answer ws? # StatementAnswer
            | statements PERIOD? ws? # StatementExpressions
            ;
 answer : CARROT ws? expression ws? PERIOD?;
-statements : statement ws? (PERIOD ws? statements)?;
+statements : statement ws? statementsTail*;
+statementsTail : PERIOD ws? statement ws?;
 statement : expression;
 cascade : (keywordSend | binarySend) (ws? SEMI_COLON ws? message)+;
 expression : assignment | cascade | keywordSend | binarySend | primitive;
@@ -79,9 +77,9 @@ PIPE : '|';
 PERIOD : '.';
 SEMI_COLON : ';';
 MINUS : '-';
-BINARY_SELECTOR : ('\\' | '+' | '*' | '/' | '=' | '>' | '<' | ',' | '@' | '%' | '~' | PIPE | '&' | MINUS | '?')+;
 LT : '<';
 GT : '>';
+BINARY_SELECTOR : ('\\' | '+' | '*' | '/' | '=' | GT | LT | ',' | '@' | '%' | '~' | PIPE | '&' | MINUS | '?')+;
 RESERVED_WORD : 'nil' | 'true' | 'false' | 'self' | 'super';
 HEX : '16r' ([0-9a-fA-F]+);
 INTEGER : [0-9]+;

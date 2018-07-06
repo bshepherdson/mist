@@ -11,16 +11,10 @@
 //   stack: The stack of Smalltalk objects in the VM's working space.
 // }
 
-function activationRecord(from, locals, self, args, bytecode, pc) {
-  const ls = new Array(locals);
-  ls[0] = self;
-  for (let i = 0; i < args.length; i++) {
-    ls[i+1] = args[i];
-  }
-
+function activationRecord(from, locals, bytecode, pc) {
   return {
     bytecode: bytecode,
-    locals: ls,
+    locals: locals,
     pc: pc || 0,
     parent: from,
     thread: from.thread,
@@ -74,13 +68,25 @@ class Thread {
   tick() {
     const ar = this.activation;
     const bc = ar.bytecode[ar.pc++];
+    if (!bc) {
+      throw new InternalError('Compiler failed to insert an answer bytecode.');
+    }
     execute(vm, ar, bc);
   }
-}
 
-function newThread() {
-  return {
-  };
+  push(ar) {
+    this.activation = ar;
+  }
+
+  // Pops a single activation record.
+  pop() {
+    this.activation = this.activation.parent;
+  }
+
+  // Pops records until the given record is on top.
+  popTo(target) {
+    this.activation = target;
+  }
 }
 
 
@@ -113,6 +119,7 @@ class VM {
   }
 
   pushReady(thread) {
+    thread.state = T_READY;
     if (this.lastReady === null) {
       thread.next = null;
       this.nextReady = this.lastReady = thread;
@@ -134,12 +141,26 @@ class VM {
     if (!this.nextReady) {
       this.lastReady = null;
     }
+    this.currentThread = t;
+    t.state = T_RUNNING;
+  }
+
+  runningThread() {
+    if (this.currentThread && this.currentThread.state === T_RUNNING) {
+      return this.currentThread;
+    }
+    if (this.currentThread) {
+      this.yield();
+      return this.runningThread();
+    }
+    this.popReady();
+    return this.currentThread;
   }
 
   // Call this to begin the cycling of the VM.
   run() {
     if (!this.lastIdleCallback) {
-      this.lastIdleCallback = window.requestIdleCallback((deadline) => {
+      this.lastIdleCallback = global.requestIdleCallback((deadline) => {
         this.tick(deadline);
       }, {timeout: 300});
     }
@@ -148,7 +169,7 @@ class VM {
   // Cancels any future idle callbacks, and stops me running for now.
   stop() {
     if (this.lastIdleCallback) {
-      window.cancelIdleCallback(this.lastIdleCallback);
+      global.cancelIdleCallback(this.lastIdleCallback);
       this.lastIdleCallback = null;
     }
   }
@@ -159,6 +180,7 @@ class VM {
     const start = performance.now();
     let total = 0;
     while (deadline.timeRemaining() < IDLE_DEADLINE_MARGIN) {
+      this.runningThread();
       for (let i = 0; this.currentThread && i < OPCODES_PER_TIME_SLICE; i++) {
         this.currentThread.tick();
         total++;
@@ -175,81 +197,17 @@ class VM {
 }
 
 
-window.vm = new VM();
-
-function bootstrap(json) {
-  debugger;
-}
+global.vm = new VM();
 
 const BYTECODE_HANDLERS = {};
 
-BYTECODE_HANDLERS.pushLocal = function(ar, bc) {
-  ar.stack.push(ar.locals[bc.index]);
-};
-
-BYTECODE_HANDLERS.pushGlobal = function(ar, bc) {
-  const g = classes[bc.name];
-  if (!g) {
-    throw new Error('Unknown global ' + bc.name);
-  }
-  ar.stack.push(g);
-};
-
-BYTECODE_HANDLERS.pushSelf = function(ar, bc) {
-  ar.stack.push(ar.locals[0]);
-};
-
-BYTECODE_HANDLERS.pushInstVar = function(ar, bc) {
-  ar.stack.push(ar.locals[0].$vars[bc.index]);
-};
-
-BYTECODE_HANDLERS.pushLiteral = function(ar, bc) {
-  ar.stack.push(bc.value);
-};
-
-BYTECODE_HANDLERS.storeLocal = function(ar, bc) {
-  ar.locals[bc.index] = ar.stack.pop();
-};
-
-BYTECODE_HANDLERS.storeInstVar = function(ar, bc) {
-  ar.locals[0].$vars[bc.index] = ar.stack.pop();
-};
-
-BYTECODE_HANDLERS.startBlock = function(ar, bc) {
-  // Bytecode gives argc, argStart and length (in bytecodes).
-  // The current PC is the start, and we can give it a slice of args.
-  // We construct a BlockClosure, push it, and move the outer PC.
-  const closure = mkInstance(classes['BlockClosure']);
-  closure.$vars[CLOSURE_BYTECODE] = ar.bytecode.slice(ar.pc, ar.pc + bc.length);
-  closure.$vars[CLOSURE_ARGC] = bc.argc;
-  closure.$vars[CLOSURE_ARGV] = ar.locals.slice(bc.argStart);
-
-  ar.stack.push(closure);
-  ar.pc += bc.length;
-};
-
-BYTECODE_HANDLERS.startMethod = function(ar, bc) {
-  // Bytecode gives: selector, argc, temps count, length in bytecodes.
-  // We built the CompiledMethod instance with those values, push it, and skip
-  // over the code.
-  const method = mkInstance(classes['CompiledMethod']);
-  method.$vars[METHOD_BYTECODE] = ar.bytecode.slice(ar.pc, ar.pc + bc.length);
-  method.$vars[METHOD_LOCALS] = 1 + bc.argc + bc.temps;
-  method.$vars[METHOD_ARGC] = bc.argc;
-  method.$vars[METHOD_SELECTOR] = bc.selector;
-  ar.stack.push(method);
-  ar.pc += bc.length;
-};
-
-BYTECODE_HANDLERS.send = function(ar, bc) {
-  // First, look up the target method. We need to check its arg count and such.
-};
-
 // The fundamental function that executes a single bytecode!
 function execute(vm, ar, bc) {
+  const h = BYTECODE_HANDLERS[bc.bytecode];
+  if (!h) {
+    throw new UnknownBytecodeError(bc.bytecode);
+  }
 
+  h(ar, bc);
 }
-
-
-
 

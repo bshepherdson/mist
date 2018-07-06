@@ -1,0 +1,19 @@
+<html>
+  <head>
+    <script src="all.js"></script>
+ <script>
+   fetch('st.json').then((json) => json.json()).then((bytecode) => {
+     const loadingThread = new Thread();
+     loadingThread.push({
+       bytecode: bytecode,
+       locals: [],
+       pc: 0,
+       parent: null,
+       thread: loadingThread,
+       stack: [],
+     });
+     global.vm.pushReady(loadingThread);
+     debugger;
+     global.vm.run();
+   });
+  </script>

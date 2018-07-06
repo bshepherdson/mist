@@ -152,6 +152,21 @@ class BCAnswer(Bytecode):
 
 class BCAnswerBlock(Bytecode):
   def __init__(self):
-    super().__init__("answer", 12)
+    super().__init__("answerBlock", 12)
 
-# next ID: 14
+class BCAnswerSelf(Bytecode):
+  """Slightly premature optimization; this gets inserted at the end of method
+  bodies that don't end with an answer. Blocks get a normal answer."""
+  def __init__(self):
+    super().__init__("answerSelf", 15)
+
+class BCPrimitive(Bytecode):
+  def __init__(self, keyword, name):
+    super().__init__("primitive", 14)
+    self.keyword = keyword
+    self.name = name
+
+  def emit(self):
+    return {**super().emit(), "keyword": self.keyword, "name": self.name}
+
+# next ID: 16
