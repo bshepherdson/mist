@@ -73,3 +73,34 @@ builtins['toSymbol'] = function(ar) {
   ar.stack.push(dict[raw]);
 };
 
+builtins['runBlock'] = function(ar) {
+  debugger;
+};
+
+function numericBinOp(fn) {
+  return function(ar) {
+    const a = ar.locals[0].$vars[NUMBER_RAW];
+    const b = ar.locals[1].$vars[NUMBER_RAW];
+    const c = fn(a, b);
+    ar.stack.push(wrapLiteral(c));
+  };
+}
+
+builtins['+']  = numericBinOp((a, b) => a + b);
+builtins['-']  = numericBinOp((a, b) => a - b);
+builtins['*']  = numericBinOp((a, b) => a * b);
+builtins['/']  = numericBinOp((a, b) => a / b);
+builtins['%']  = numericBinOp((a, b) => a % b);
+builtins['<']  = numericBinOp((a, b) => a < b);
+builtins['num='] = numericBinOp((a, b) => a === b);
+
+builtins['='] = function(ar) {
+  const res = ar.locals[0] === ar.locals[1];
+  ar.stack.push(res ? stTrue : stFalse);
+};
+
+// Logs the *first argument* (not self).
+builtins['console.log'] = function(ar) {
+  console.log(ar.locals[1]);
+};
+

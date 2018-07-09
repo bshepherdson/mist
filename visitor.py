@@ -357,6 +357,10 @@ class MistVisitor(SmalltalkVisitor):
     self.classes["Class"] = STClass("Class", "ClassDescription")
     self.classes["Metaclass"] = STClass("Metaclass", "ClassDescription")
     self.classes["String"] = STClass("String", "Object")
+    self.classes["NullObject"] = STClass("NullObject", "Object")
+    self.classes["Boolean"] = STClass("Boolean", "Object")
+    self.classes["True"] = STClass("True", "Boolean")
+    self.classes["False"] = STClass("False", "Boolean")
 
     self.scope.add("Object", (KIND_GLOBAL, None))
     self.scope.add("Behavior", (KIND_GLOBAL, None))
@@ -364,6 +368,10 @@ class MistVisitor(SmalltalkVisitor):
     self.scope.add("ClassDescription", (KIND_GLOBAL, None))
     self.scope.add("Metaclass", (KIND_GLOBAL, None))
     self.scope.add("String", (KIND_GLOBAL, None))
+    self.scope.add("NullObject", (KIND_GLOBAL, None))
+    self.scope.add("Boolean", (KIND_GLOBAL, None))
+    self.scope.add("True", (KIND_GLOBAL, None))
+    self.scope.add("False", (KIND_GLOBAL, None))
 
   def popScope(self):
     self.scope = self.scope.parent
@@ -377,11 +385,6 @@ class MistVisitor(SmalltalkVisitor):
     print("{:s} {:d}:{:d}  {:s}".format(filename, sym.line,
       sym.column, msg))
     sys.exit(1)
-
-  def protocol(self):
-    if self.currentProtocol is None:
-      self.currentProtocol = "unspecified"
-    return self.currentProtocol
 
   def prepareInstanceVariables(self, token):
     """Examine self.lastBinaryLHS; it should be a class or metaclass. Which is
@@ -428,71 +431,11 @@ class MistVisitor(SmalltalkVisitor):
         cls.classVariables if classLevel else cls.instanceVariables)
 
 
-
-  # protocol : BANG BANG ws_oneline? IDENTIFIER ws_oneline? NEWLINE ws?;
-  #def visitProtocol(self, ctx):
-  #  if self.currentClass is None:
-  #    self.error(ctx.BANG(0),
-  #      "Protocol '{:s}' is outside any class".format(ctx.IDENTIFIER().getText()))
-  #  self.currentProtocol = ctx.IDENTIFIER().getText()
-
-
   # script : statements PERIOD? EOF;
   # TODO: Capture any metadata we want about classes on the way by.
   def visitScript(self, ctx):
     return self.visit(ctx.statements())
 
-
-  # bodyBlock : classDecl | protocol | method
-  #def visitBodyBlock(self, ctx):
-  #  if ctx.classDecl() is not None:
-  #    self.visit(ctx.classDecl())
-  #  elif ctx.protocol() is not None:
-  #    self.visit(ctx.protocol())
-  #  elif ctx.method() is not None:
-  #    self.visit(ctx.method())
-
-
-  # classDecl : BANG BANG BANG ws? keywordSend ws?;
-  #def visitClassDecl(self, ctx):
-  #  send = self.visit(ctx.keywordSend())
-  #  # We expect the first argument to that send to be the symbol giving the
-  #  # class name.
-  #  nameArg = send.args[0]
-  #  if not isinstance(nameArg, PSymbol):
-  #    self.error(ctx.BANG(0), "Could not recognize class name in declaration")
-  #  name = nameArg.value
-
-  #  # The receiver of the message should be a global variable, naming another
-  #  # class.
-  #  parentArg = send.receiver
-  #  if not isinstance(parentArg, PReference):
-  #    self.error(ctx.BANG(0),
-  #        "Receiver of new class ('{:s}') should be a global.".format(name))
-  #  parentName = parentArg.name
-
-  #  if name in self.classes:
-  #    self.error(ctx.BANG(0), "Duplicate class name '{:s}'".format(name))
-  #  self.initBlocks.append(send)
-  #  self.currentClass = STClass(name, parentName)
-
-  #  # One of the args might be "instanceVariableNames:"
-  #  parts = send.selector.split(":")
-  #  try:
-  #    idx = parts.index("instanceVariableNames")
-  #    self.currentClass.instanceVariables = send.args[idx].value.split(' ')
-  #  except:
-  #    pass
-
-  #  # Likewise, one might be "classVariableNames:"
-  #  parts = send.selector.split(":")
-  #  try:
-  #    idx = parts.index("classVariableNames")
-  #    self.currentClass.classVariables = send.args[idx].value.split(' ')
-  #  except:
-  #    pass
-
-  #  self.classes[name] = self.currentClass
 
   # method : BANG ws_oneline? methodHeader ws? sequence ws?;
   # unaryHeader : unarySelector;                       -> (sel, [args])
@@ -505,7 +448,7 @@ class MistVisitor(SmalltalkVisitor):
     return (sel, [])
 
   def visitBinaryHeader(self, ctx):
-    sel = ctx.BINARY_SELECTOR().getText()
+    sel = self.visit(ctx.binarySelector())
     arg = ctx.IDENTIFIER().getText()
     return (sel, [arg])
 
@@ -610,7 +553,7 @@ class MistVisitor(SmalltalkVisitor):
       stmts[-1].noDrop = True
     elif self.blockDepth == 0:
       # On the other hand, a method body without a block gets an answer self.
-      stmts.append(PAnswer(PSelf()))
+      stmts.append(PAnswer(PSelf(), False))
     return stmts
 
   # operand: literal | reference | subexpression
@@ -716,12 +659,12 @@ class MistVisitor(SmalltalkVisitor):
     return PChar(ctx.CHARACTER_CONSTANT().getText()[1:])
 
   # symbol: HASH bareSymbol
-  # bareSymbol: (IDENTIFIER | BINARY_SELECTOR) | KEYWORD+ | stringLit -> string
+  # bareSymbol: (IDENTIFIER | binarySelector) | KEYWORD+ | stringLit -> string
   def visitBareSymbol(self, ctx):
     if ctx.IDENTIFIER() is not None:
       return PSymbol(ctx.IDENTIFIER().getText())
-    elif ctx.BINARY_SELECTOR() is not None:
-      return PSymbol(ctx.BINARY_SELECTOR().getText())
+    elif ctx.binarySelector() is not None:
+      return PSymbol(self.visit(ctx.binarySelector()))
     elif ctx.stringLit() is not None:
       return PSymbol(self.visit(ctx.stringLit()))
     else:
@@ -844,10 +787,14 @@ class MistVisitor(SmalltalkVisitor):
   # binarySend: unarySend binaryTail?                            -> PSend?
   # binaryTail: binaryMessage binaryTail?                        -> [(sel, rhs)]
   # binaryMessage: ws? BINARY_SELECTOR ws? (unarySend | operand) -> (sel, rhs)
+  # binarySelector : (MINUS | LT | GT | PIPE | BINARY_SELECTOR)+;
+  def visitBinarySelector(self, ctx):
+    return ctx.getText()
+
   def visitBinaryMessage(self, ctx):
-    sel = ctx.BINARY_SELECTOR().getText()
+    sel = self.visit(ctx.binarySelector())
     if sel == ">>":
-      self.prepareInstanceVariables(ctx.BINARY_SELECTOR())
+      self.prepareInstanceVariables(ctx.binarySelector().getChild(0))
 
     if ctx.unarySend() is not None:
       rhs = self.visit(ctx.unarySend())

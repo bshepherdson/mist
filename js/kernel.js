@@ -76,6 +76,20 @@ mkClass('String', 'Object', 1);
 mkClass('Symbol', 'String', 0, 1);
 mkClass('Number', 'Object', 1);
 
+
+mkClass('NullObject', 'Object');
+const stNil = mkInstance(classes['NullObject']);
+classes['nil'] = stNil;
+
+mkClass('Boolean', 'Object');
+mkClass('True', 'Boolean');
+mkClass('False', 'Boolean');
+const stTrue = mkInstance(classes['True']);
+const stFalse = mkInstance(classes['False']);
+classes['true'] = stTrue;
+classes['false'] = stFalse;
+
+
 const STRING_RAW = 0;
 const NUMBER_RAW = 0;
 const SYMBOL_CLASS_DICT = 5;
@@ -89,16 +103,16 @@ const CLASS_VAR_METHODS = 3;
 
 // Rule 10: The metaclass of Metaclass is an instance of Metaclass.
 classes['Metaclass class'].$class = classes['Metaclass'];
-classes['Metaclass'].$class = classes['Metaclass class'];
 
 classes['Object class'].$vars[CLASS_VAR_SUPERCLASS] = classes['Class'];
 
-mkClass('BlockClosure', 'Object', 3); // Bytecode, argv, argc
+mkClass('BlockClosure', 'Object', 4); // Bytecode, argv, argc, methodRecord
 mkClass('CompiledMethod', 'Object', 4); // Bytecode, locals, argc, selector
 
 const CLOSURE_BYTECODE = 0;
 const CLOSURE_ARGV = 1;
 const CLOSURE_ARGC = 2;
+const CLOSURE_METHOD_RECORD = 3; // The activationRecord for my method. Used to implement block returns.
 
 const METHOD_BYTECODE = 0;
 const METHOD_LOCALS = 1;
@@ -137,7 +151,7 @@ theMethod.$vars[METHOD_ARGC] = 1;
 theMethod.$vars[METHOD_LOCALS] = 2; // receiver, 1 arg, no temps.
 theMethod.$vars[METHOD_SELECTOR] = '>>';
 
-classes['Class'].$vars[CLASS_VAR_METHODS] = {
+classes['ClassDescription'].$vars[CLASS_VAR_METHODS] = {
   '>>': theMethod,
 };
 

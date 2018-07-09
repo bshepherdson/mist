@@ -18,7 +18,8 @@ if __name__ == '__main__':
     lexer = SmalltalkLexer(input)
     stream = CommonTokenStream(lexer)
     stream.fill()
-    print([ SmalltalkLexer.symbolicNames[t.type] for t in stream.getTokens(0, 1000) ])
+    print("\n".join([ SmalltalkLexer.symbolicNames[t.type] + ': ' + t.text for t
+        in stream.getTokens(0, 1000) ]))
     stream.reset()
     parser = SmalltalkParser(stream)
 
