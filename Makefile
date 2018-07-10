@@ -10,7 +10,8 @@ ANTLR_FLAGS=-Dlanguage=Python3 -no-listener -visitor
 JS_FILES=kernel.js errors.js builtins.js vm.js bytecodes.js
 JS_FILES_EXPANDED=$(foreach js,$(JS_FILES),js/$(js))
 
-ST_FILES=Kernel.st
+ST_FILES=Kernel.st Exceptions.st Collection.st Collections-Array.st Collections-Unordered.st \
+	 SUnit.st
 ST_FILES_EXPANDED=$(foreach st,$(ST_FILES),st/$(st))
 
 PYTHON_FILES=main.py bytecodes.py visitor.py

@@ -35,7 +35,7 @@ operand : method | literal | reference | subexpression;
 subexpression : OPEN_PAREN ws? expression ws? CLOSE_PAREN;
 literal : runtimeLiteral | parsetimeLiteral;
 runtimeLiteral : dynamicDictionary | dynamicArray | block;
-block : BLOCK_START (blockParamList PIPE)? ws? sequence? BLOCK_END;
+block : BLOCK_START (blockParamList ws? PIPE)? ws? sequence? BLOCK_END;
 blockParamList : (ws? BLOCK_PARAM)+;
 expressions : expression (PERIOD expressions)?;
 dynamicDictionary : DYNDICT_START ws? expressions? ws? DYNARR_END;

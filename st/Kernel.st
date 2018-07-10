@@ -24,6 +24,17 @@ Object >> ! class
 !.
 
 
+Object >> ! yourself
+  ^ self
+!.
+
+Object >> ! species
+  "Provides the best class to use to clone the receiver. Defaults to self class
+  but might be something different. Eg. Interval's species is Array."
+  ^ self class
+!.
+
+
 "Add the asSymbol method to strings."
 String >> ! asSymbol
   ^ <builtin: 'toSymbol'>
@@ -44,6 +55,13 @@ Class >> ! subclass: aSymbol instanceVariableNames: aString classVariableNames: 
 Class >> ! superclass
   ^ superclass
 !.
+
+Class >> ! selectors
+  "Answers an Array of Symbols for the methods on this class."
+  ^ <builtin: 'selectors'>
+!.
+
+
 
 Object subclass: #BlockClosure
   instanceVariableNames: 'bytecode argv argc methodRecord'.
@@ -76,6 +94,13 @@ BlockClosure >> ! value: arg1 value: arg2 value: arg3 value: arg4
   ^ <builtin: 'runBlock'>
 !.
 
+BlockClosure >> ! cull: aValue
+  "Runs the receiver with 0 or 1 arguments, depending on what it expects.
+  Allows flexible code that doesn't need to care if a block takes an argument."
+  ^ argc = 0
+    ifTrue: [self value]
+    ifFalse: [self value: aValue]
+!.
 
 
 "Nil and basic checking."
@@ -144,8 +169,8 @@ Transcript class >> ! show: aValue
 !.
 
 
-Object >> ! = anObject
-  ^ <builtin: '='>
+Object >> ! == anObject
+  ^ <builtin: '=='>
 !.
 Object >> ! ~= anObject
   ^ (self = anObject) not
@@ -190,5 +215,45 @@ Number >> ! ~= aNumber
   ^ (self = aNumber) not
 !.
 
-Transcript show: 7 - 4.
+Number >> ! bitOr: aNumber
+  ^ <builtin: '|'>
+!.
+Number >> ! bitAnd: aNumber
+  ^ <builtin: '&'>
+!.
+Number >> ! bitXor: aNumber
+  ^ <builtin: '^'>
+!.
+Number >> ! bitInvert
+  ^ <builtin: '^-1'>
+!.
+
+
+Object subclass: #Exception
+  instanceVariableNames: 'context message'.
+
+Exception >> ! message
+  ^ message
+!.
+
+Exception >> ! message: aString
+  message := aString
+!.
+
+Exception class >> ! cause: aString
+  | e |
+  e := self new.
+  e message: aString.
+  ^ e
+!.
+
+
+Exception subclass: #AbstractMethod.
+AbstractMethod >> ! message
+  ^ 'Send reached an abstract method - missing implementation'
+!.
+
+Object >> ! subclassResponsibility
+  self error: AbstractMethod new
+!.
 

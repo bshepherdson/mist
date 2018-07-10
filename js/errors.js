@@ -12,6 +12,12 @@ class ArgumentCountMismatchError extends Error {
   }
 }
 
+class BlockArgumentCountMismatchError extends Error {
+  constructor(expected, actual) {
+    super('Block expected ' + expected + ' arguments, but got ' + actual);
+  }
+}
+
 class UnknownBuiltinError extends Error {
   constructor(builtinName) {
     super('Unknown builtin: ' + builtinName);

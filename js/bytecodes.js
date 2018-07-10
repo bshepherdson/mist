@@ -52,7 +52,8 @@ BYTECODE_HANDLERS.startBlock = function(ar, bc) {
   const closure = mkInstance(classes['BlockClosure']);
   closure.$vars[CLOSURE_BYTECODE] = ar.bytecode.slice(ar.pc, ar.pc + bc.length);
   closure.$vars[CLOSURE_ARGC] = bc.argc;
-  closure.$vars[CLOSURE_ARGV] = ar.locals.slice(bc.argStart);
+  closure.$vars[CLOSURE_ARGV] = bc.argStart;
+  closure.$vars[CLOSURE_METHOD_RECORD] = ar;
 
   ar.stack.push(closure);
   ar.pc += bc.length;

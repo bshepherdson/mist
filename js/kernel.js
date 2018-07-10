@@ -119,6 +119,8 @@ const METHOD_LOCALS = 1;
 const METHOD_ARGC = 2;
 const METHOD_SELECTOR = 3;
 
+const DICTIONARY_RAW = 0;
+
 function mkInstance(cls) {
   return {
     $class: cls,
@@ -154,4 +156,12 @@ theMethod.$vars[METHOD_SELECTOR] = '>>';
 classes['ClassDescription'].$vars[CLASS_VAR_METHODS] = {
   '>>': theMethod,
 };
+
+// Upgrade standard Javascript arrays to become Smalltalk objects.
+Object.defineProperty(Array.prototype, '$class', {
+  configurable: false,
+  enumerable: false,
+  writable: false,
+  get: () => classes['Array'],
+});
 

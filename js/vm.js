@@ -22,23 +22,6 @@ function activationRecord(from, locals, bytecode, pc) {
   };
 }
 
-// Block activation records share a pointer to the locals with their parent.
-function blockActivationRecord(from, argIndex, args, bytecode, pc) {
-  const ls = from.locals;
-  for (let i = 0; i < args.length; i++) {
-    ls[argIndex + i] = args[i];
-  }
-  return {
-    bytecode: bytecode,
-    pc: pc || 0,
-    locals: ls,
-    parent: from,
-    thread: from.thread,
-    stack: [],
-  };
-}
-
-
 
 // Thread
 // A thread is one line of execution, and it runs concurrently with other

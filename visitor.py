@@ -181,7 +181,11 @@ class PSend(PBase):
   def compile(self, s):
     # Compile the receiver first, then each argument, then the send.
     # If the receiver is super, do the special send.
-    self.receiver.compile(s)
+    if self.receiver.isSuper():
+      s.add(BCPushSelf())
+    else:
+      self.receiver.compile(s)
+
     for a in self.args:
       a.compile(s)
 
@@ -416,8 +420,7 @@ class MistVisitor(SmalltalkVisitor):
 
       self.instanceVariables = []
       self.addVariables(self.classes[name], classLevel)
-      print("{:s} has {:d} vars: ".format(name, len(self.instanceVariables)) +
-          str(self.instanceVariables))
+      #print(name + ' has variables ' + str(self.instanceVariables))
     else:
       self.error(token, "Uncertain target for method.")
 

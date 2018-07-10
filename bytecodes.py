@@ -134,7 +134,7 @@ class BCSend(Bytecode):
 
 class BCSuperSend(BCSend):
   def emit(self):
-    return {**super().emit(), "super": true}
+    return {**super().emit(), "super": True}
 
 
 class BCDup(Bytecode):

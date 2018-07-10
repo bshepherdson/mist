@@ -13,22 +13,21 @@ if __name__ == '__main__':
   out = BytecodeStream()
 
   files = sys.argv[1:]
+  visitor = MistVisitor()
   for f in files:
-    input = FileStream(sys.argv[1])
+    input = FileStream(f)
     lexer = SmalltalkLexer(input)
     stream = CommonTokenStream(lexer)
     stream.fill()
-    print("\n".join([ SmalltalkLexer.symbolicNames[t.type] + ': ' + t.text for t
-        in stream.getTokens(0, 1000) ]))
+    #print("\n".join([ SmalltalkLexer.symbolicNames[t.type] + ': ' + t.text for t
+    #    in stream.getTokens(0, 10000) ]))
     stream.reset()
     parser = SmalltalkParser(stream)
 
     tree = parser.script()
-
-    visitor = MistVisitor()
     result = visitor.visit(tree)
 
     for c in result:
       c.compile(out)
 
-  json.dump(out.contents, open(outputFile, 'w'))
+  json.dump(out.contents, open(outputFile, 'w'), indent=2)
