@@ -17,7 +17,7 @@ temps:     '|' ID* '|';
 
 unit:      ID | literal | block | arrayconstructor | '(' expr ')';
 unaryexpr: unit ID+;
-primary:   unit | unaryexpr;
+primary:   unaryexpr | unit;
 exprs:     (expr '.')* ('^'? expr)?;
 expr:      (ID ':=')* expr2;
 expr2:     primary | msgexpr (';' cascade)*;
