@@ -17,7 +17,7 @@ func main() {
 		p := parser.NewSmalltalkParser(stream)
 		p.AddErrorListener(antlr.NewDiagnosticErrorListener(true))
 		p.BuildParseTrees = true
-		tree := p.Id()
+		tree := p.Methods()
 		antlr.ParseTreeWalkerDefault.Walk(NewTreeShapeListener(), tree)
 	}
 }

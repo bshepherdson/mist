@@ -9,52 +9,51 @@ grammar Smalltalk;
 
 /* MethodsFor protocol thing is not included here. */
 script:    (methods | expr '.')+;
-methods:   '!' id (WS 'class')? '!' (method '!')+ '!';
+methods:   '!' ID (WS 'class')? '!' (method '!')+ '!';
 method:    message pragma? temps? exprs;
-message:   id | binsel id | (keysel id)+;
+message:   ID | binsel ID | (keysel ID)+;
 pragma:    '<' keymsg '>';
-temps:     '|' id* '|';
+temps:     '|' ID* '|';
 
-unit:      id | literal | block | arrayconstructor | '(' expr ')';
-unaryexpr: unit id+;
+unit:      ID | literal | block | arrayconstructor | '(' expr ')';
+unaryexpr: unit ID+;
 primary:   unit | unaryexpr;
 exprs:     (expr '.')* ('^'? expr)?;
-expr:      (id ':=')* expr2;
+expr:      (ID ':=')* expr2;
 expr2:     primary | msgexpr (';' cascade)*;
 
 msgexpr:   unaryexpr | binexpr | keyexpr;
-cascade:   id | binmsg | keymsg;
+cascade:   ID | binmsg | keymsg;
 binexpr:   primary binmsg+;
 binmsg:    binsel primary;
-binsel:    binchar binchar?;
+binsel:    BINCHAR BINCHAR?;
 keyexpr:   keyexpr2 keymsg;
 keyexpr2:  binexpr | primary;
 keymsg:    (keysel keyexpr2)+;
-keysel:    id ':';
+keysel:    ID ':';
 
-block:     '[' ((':' id)* '|')? temps? exprs ']';
+block:     '[' ((':' ID)* '|')? temps? exprs ']';
 arrayconstructor: '{' exprs '}';
-literal:   number | stringlit | charconst | symconst | arrayconst | binding | eval;
+literal:   number | STRINGLIT | charconst | symconst | arrayconst | binding | eval;
 arrayconst: '#' array | '#' bytearray;
 bytearray:  '[' number* ']';
 array:      '(' (literal | array | bytearray | arraysym )* ')';
-number:     (DIG+ 'r')? '-'? alphanum+ ('.' alphanum+)? (exp '-'? DIG+)?;
-stringlit:     '\'' CHAR* '\'';
+number:     (DIG 'r')? '-'? ALPHANUM1 ('.' ALPHANUM1)? (exp '-'? DIG)?;
 charconst:  '$' CHAR;
-symconst:   '#' symbol | '#' stringlit;
-arraysym:   (id | ':')+;
+symconst:   '#' symbol | '#' STRINGLIT;
+arraysym:   (ID | ':')+;
 exp:        'd' | 'e' | 'q' | 's';
-binding:    '#{' (id '.')* id '}';
-symbol:     id | binsel | keysel+;
+binding:    '#{' (ID '.')* ID '}';
+symbol:     ID | binsel | keysel+;
 eval:       '##(' temps? exprs ')';
-binchar:    '+' | '-' | '*' | '/' | '~' | '|' | ',' | '<' | '>' | '=' | '&' | '@' | '?' | '\\' | '%';
-id:         (LETTER | '_')(LETTER | DIG | '_')*;
-alphanum:   LETTER | DIG;
 
 
-LETTER:    'A'..'Z' | 'a'..'z';
-DIG:       '0'..'9';
-CHAR:      [0-9A-Za-z!@#$%^&*()[\]+=_~-];
-WS:        [ \t\r\n]+ -> channel(HIDDEN);
-COMMENT:   '"' .*? '"' -> skip;
+BINCHAR:    [+*/~|,<>=&@?\\%-];
+ID:         [A-Za-z_][A-Za-z0-9_]*;
+ALPHANUM1:  [A-Za-z0-9]+;
+DIG:        ('0'..'9')+;
+STRINGLIT:  ['] (~['])* ['];
+CHAR:       [0-9A-Za-z!@#$%^&*()[\]+=_~-];
+WS:         [ \t\r\n]+ -> channel(HIDDEN);
+COMMENT:    '"' .*? '"' -> skip;
 
