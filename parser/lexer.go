@@ -14,33 +14,47 @@ type Token interface {
 	Id() TokenId
 	SourceLoc() *Loc
 	String() string
+	Desc() string // Human-friendly short description, eg. "identifier", "number"
 }
 
 type Lexer struct {
-	buffer  Token
-	loc     *Loc
-	scanner *scanner
+	buffer   [2]Token
+	buffered int
+	loc      *Loc
+	scanner  *scanner
+
+	// Unfortunately the lexer needs a bit of state - inside a #(constant array)
+	// symbols containing colons are allowed.
+	// This value is set by the parser dynamically, as soon as it consumes the
+	// opening #( of the array, and cleared when we leave it.
+	constArrayDepth int
 }
 
 func (l *Lexer) Advance() Token {
-	if l.buffer != nil {
-		ret := l.buffer
-		l.buffer = nil
+	if l.buffered > 0 {
+		ret := l.buffer[l.buffered]
+		l.buffered--
 		return ret
 	}
 
 	t, err := l.scan()
 	if err != nil {
-		return &eof{}
+		return &Eof{}
 	}
 	return t
 }
 
 func (l *Lexer) Rewind(token Token) {
-	if l.buffer != nil {
-		panic("can't rewind more than 1 step")
+	if token == nil {
+		// This happens sometimes; just ignore it.
+		return
 	}
-	l.buffer = token
+
+	if l.buffered >= 2 {
+		panic("can't rewind more than 2 step")
+	}
+	l.buffer[l.buffered] = token
+	l.buffered++
 }
 
 func (l *Lexer) AdvanceUntil(id TokenId) []Token {
@@ -55,11 +69,16 @@ const (
 	TNumber
 	TChar
 	TString
+	TKeyword
+	TSymbol
 
 	TColon
 	TCaret
 	TBang
+	TPipe
 	THash
+	TDot
+	TAssign
 
 	TBinary
 
@@ -94,6 +113,10 @@ func isWhitespace(r rune) bool {
 	return r == ' ' || r == '\t' || r == '\r' || r == '\n'
 }
 
+func eof(t Token) bool {
+	return t.Id() == TEof
+}
+
 // The main entry point for scanning a new token.
 // White space is skipped; the only places where whitespace is significant is
 // in separating adjacent identifiers.
@@ -118,8 +141,18 @@ func (l *Lexer) scan() (Token, error) {
 	} else if r == '"' {
 		l.skipComment()
 		return l.scan()
+	} else if r == ':' {
+		// Might be a singleton colon, or might be an assignment.
+		if next, eof := l.scanner.lookahead(); !eof && next == '=' {
+			l.scanner.read()
+			// Slight abuse.
+			return &singleton{id: TAssign, loc: &loc, ch: next}, nil
+		}
+		return &singleton{id: TColon, loc: &loc, ch: r}, nil
 	} else if r == '\'' {
 		return l.scanString(&loc)
+	} else if r == '#' {
+		return l.scanHash(&loc)
 	} else if _, ok := binchars[r]; ok {
 		return l.scanBinary(&loc, r)
 	} else if identStart(r) {
@@ -149,10 +182,10 @@ type singleton struct {
 
 // Single-character tokens go in a map for quick checks.
 var singletons map[rune]TokenId = map[rune]TokenId{
-	':': TColon,
 	'^': TCaret,
 	'!': TBang,
-	'#': THash,
+	'|': TPipe,
+	'.': TDot,
 	'[': TBlockOpen,
 	']': TBlockClose,
 	'(': TParenOpen,
@@ -170,44 +203,97 @@ func (s *singleton) SourceLoc() *Loc {
 func (s *singleton) String() string {
 	return string(s.ch)
 }
+func (s *singleton) Desc() string {
+	return string(s.ch)
+}
 
 func (l *Lexer) scanCharLiteral(loc *Loc) (Token, error) {
 	r, err := l.read()
 	if err != nil {
 		return nil, err
 	}
-	return &charLit{r, loc}, nil
+	return &CharLit{r, loc}, nil
 }
 
-type charLit struct {
-	ch  rune
+type CharLit struct {
+	Ch  rune
 	loc *Loc
 }
 
-func (c *charLit) Id() TokenId {
+func (c *CharLit) Id() TokenId {
 	return TChar
 }
 
-func (c *charLit) SourceLoc() *Loc {
+func (c *CharLit) SourceLoc() *Loc {
 	return c.loc
 }
 
-func (c *charLit) String() string {
-	return "$" + string(c.ch)
+func (c *CharLit) String() string {
+	return "$" + string(c.Ch)
 }
 
-type eof struct {
+func (c *CharLit) Desc() string {
+	return "char literal"
+}
+
+func (l *Lexer) scanHash(loc *Loc) (Token, error) {
+	// Might be #(...) or #[...], then we emit THash alone.
+	// But if it's followed by ' or identifier characters, we need to parse the
+	// whole symbol or string literal.
+	r, eof := l.scanner.lookahead()
+	if eof {
+		return nil, eofError
+	}
+
+	if r == '\'' {
+		l.scanner.read() // Skip opening
+		s := string(l.scanner.readWhile(nonQuote))
+		return &Symbol{Str: s, loc: loc}, nil
+	} else if r == '[' || r == '(' {
+		return &singleton{id: THash, loc: loc, ch: '#'}, nil
+	} else if identStart(r) {
+		s := string(l.scanner.readWhile(symbolContinue))
+		return &Symbol{Str: s, loc: loc}, nil
+	}
+	return nil, fmt.Errorf("Unexpected %v after #", r)
+}
+
+type Symbol struct {
+	Str string
 	loc *Loc
 }
 
-func (e *eof) Id() TokenId {
+func (s *Symbol) Id() TokenId {
+	return TSymbol
+}
+
+func (s *Symbol) SourceLoc() *Loc {
+	return s.loc
+}
+
+func (s *Symbol) String() string {
+	return "Symbol<" + s.Str + ">"
+}
+
+func (s *Symbol) Desc() string {
+	return "symbol"
+}
+
+type Eof struct {
+	loc *Loc
+}
+
+func (e *Eof) Id() TokenId {
 	return TEof
 }
-func (e *eof) SourceLoc() *Loc {
+func (e *Eof) SourceLoc() *Loc {
 	return e.loc
 }
-func (e *eof) String() string {
+func (e *Eof) String() string {
 	return "<EOF>"
+}
+func (e *Eof) Desc() string {
+	return "EOF"
 }
 
 // Binary operations
@@ -217,31 +303,35 @@ func (l *Lexer) scanBinary(loc *Loc, r rune) (Token, error) {
 	next, err := l.peek()
 	s := string(r)
 	if err != nil {
-		return &binOp{s, loc}, nil
+		return &BinOp{s, loc}, nil
 	}
 
 	if _, ok := binchars[next]; ok {
 		s += string(next)
 	}
 
-	return &binOp{s, loc}, nil
+	return &BinOp{s, loc}, nil
 }
 
-type binOp struct {
-	op  string
+type BinOp struct {
+	Op  string
 	loc *Loc
 }
 
-func (b *binOp) Id() TokenId {
+func (b *BinOp) Id() TokenId {
 	return TBinary
 }
 
-func (b *binOp) SourceLoc() *Loc {
+func (b *BinOp) SourceLoc() *Loc {
 	return b.loc
 }
 
-func (b *binOp) String() string {
-	return b.op
+func (b *BinOp) String() string {
+	return b.Op
+}
+
+func (b *BinOp) Desc() string {
+	return "binary selector"
 }
 
 var binchars map[rune]bool = map[rune]bool{
@@ -268,24 +358,44 @@ func (l *Lexer) scanIdent(loc *Loc) (Token, error) {
 	if len(runes) == 0 {
 		panic("can't happen - first character was already checked")
 	}
-	return &ident{string(runes), loc}, nil
+	keyword := false
+	if r, eof := l.scanner.lookahead(); !eof && r == ':' {
+		l.scanner.read()
+		keyword = true
+	}
+
+	return &Ident{keyword, string(runes), loc}, nil
 }
 
-type ident struct {
-	text string
-	loc  *Loc
+type Ident struct {
+	Keyword bool
+	Text    string
+	loc     *Loc
 }
 
-func (i *ident) Id() TokenId {
+func (i *Ident) Id() TokenId {
+	if i.Keyword {
+		return TKeyword
+	}
 	return TIdent
 }
 
-func (i *ident) SourceLoc() *Loc {
+func (i *Ident) SourceLoc() *Loc {
 	return i.loc
 }
 
-func (i *ident) String() string {
-	return "Ident<" + i.text + ">"
+func (i *Ident) String() string {
+	if i.Keyword {
+		return "Keyword<" + i.Text + ":>"
+	}
+	return "Ident<" + i.Text + ">"
+}
+
+func (i *Ident) Desc() string {
+	if i.Keyword {
+		return "keyword"
+	}
+	return "identifier"
 }
 
 // TODO These don't really support Unicode identifiers!
@@ -297,49 +407,57 @@ func identContinue(r rune) bool {
 	return identStart(r) || digit(r)
 }
 
+func symbolContinue(r rune) bool {
+	return identContinue(r) || r == ':'
+}
+
 func digit(r rune) bool {
 	return '0' <= r && r <= '9'
 }
 
-type number struct {
-	base     int
-	negative bool
-	integral string
-	floating string
-	exp      string
+type Number struct {
+	Base     int
+	Negative bool
+	Integral string
+	Floating string
+	Exp      string
 	loc      *Loc
 }
 
-func (n *number) Id() TokenId {
+func (n *Number) Id() TokenId {
 	return TNumber
 }
 
-func (n *number) SourceLoc() *Loc {
+func (n *Number) SourceLoc() *Loc {
 	return n.loc
 }
 
-func (n *number) String() string {
+func (n *Number) String() string {
 	base := ""
-	if n.base != 10 {
-		base = fmt.Sprintf("%dr", n.base)
+	if n.Base != 10 {
+		base = fmt.Sprintf("%dr", n.Base)
 	}
 
 	neg := ""
-	if n.negative {
+	if n.Negative {
 		neg = "-"
 	}
 
 	floating := ""
-	if n.floating != "" {
-		floating = "." + n.floating
+	if n.Floating != "" {
+		floating = "." + n.Floating
 	}
 
 	exp := ""
-	if n.exp != "" {
-		exp = "e" + n.exp
+	if n.Exp != "" {
+		exp = "e" + n.Exp
 	}
 
-	return "Number<" + base + neg + n.integral + floating + exp + ">"
+	return "Number<" + base + neg + n.Integral + floating + exp + ">"
+}
+
+func (n *Number) Desc() string {
+	return "number literal"
 }
 
 func (l *Lexer) scanNumber(loc *Loc) (Token, error) {
@@ -354,27 +472,27 @@ func (l *Lexer) scanNumber(loc *Loc) (Token, error) {
 	if r, eof := l.scanner.lookahead(); !eof && r == 'r' {
 		l.scanner.read() // Consume the r.
 		base, _ := strconv.Atoi(string(integral))
-		n := &number{base: base, loc: loc}
+		n := &Number{Base: base, loc: loc}
 
 		// Possibly a minus sign now.
 		if r, eof := l.scanner.lookahead(); !eof && r == '-' {
 			l.scanner.read()
-			n.negative = true
+			n.Negative = true
 		}
 
 		// Checking that these characters are valid under the base is the parser's
 		// problem.
-		n.integral = string(l.scanner.readWhile(identContinue))
+		n.Integral = string(l.scanner.readWhile(identContinue))
 		return n, nil
 	}
 
 	// Decimal number with possible float and exp parts.
-	n := &number{base: 10, loc: loc, integral: integral}
+	n := &Number{Base: 10, loc: loc, Integral: integral}
 
 	r, eof := l.scanner.lookahead()
 	if !eof && r == '.' {
 		l.scanner.read() // Consume the .
-		n.floating = string(l.scanner.readWhile(digit))
+		n.Floating = string(l.scanner.readWhile(digit))
 
 		// Replace the "next character".
 		r, eof = l.scanner.lookahead()
@@ -382,7 +500,7 @@ func (l *Lexer) scanNumber(loc *Loc) (Token, error) {
 
 	if !eof && r == 'e' {
 		l.scanner.read() // Consume the e
-		n.exp = string(l.scanner.readWhile(digit))
+		n.Exp = string(l.scanner.readWhile(digit))
 	}
 
 	return n, nil
@@ -413,22 +531,26 @@ func (l *Lexer) scanString(loc *Loc) (Token, error) {
 		// post-quote character.
 	}
 
-	return &stringLit{string(runes), loc}, nil
+	return &StringLit{string(runes), loc}, nil
 }
 
-type stringLit struct {
-	str string
+type StringLit struct {
+	Str string
 	loc *Loc
 }
 
-func (s *stringLit) Id() TokenId {
+func (s *StringLit) Id() TokenId {
 	return TString
 }
 
-func (s *stringLit) SourceLoc() *Loc {
+func (s *StringLit) SourceLoc() *Loc {
 	return s.loc
 }
 
-func (s *stringLit) String() string {
-	return "String<" + s.str + ">"
+func (s *StringLit) String() string {
+	return "String<" + s.Str + ">"
+}
+
+func (s *StringLit) Desc() string {
+	return "string literal"
 }
