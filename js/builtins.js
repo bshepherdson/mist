@@ -132,9 +132,10 @@ builtins['console.log'] = function(ar) {
 };
 
 
-// Working with a raw Javascript map. Expects the map to be instance variable 0.
+// Working with a raw Javascript map. Puts that map in the first instance
+// variable.
 builtins['new object'] = function(ar) {
-  ar.stack.push({});
+  ar.locals[0].$vars[DICTIONARY_RAW] = {};
 };
 
 builtins['dict_at:'] = function(ar) {

@@ -11,70 +11,60 @@ Object subclass: #TestCase
   instanceVariableNames: 'tests'.
   "A Dictionary of test method names and their TestResults."
 
-TestCase >> ! setUp
+! TestCase
+! setUp
   "Do nothing. Override to run before each test method."
-!.
-TestCase >> ! tearDown
+! tearDown
   "Do nothing. Override to run after each test method."
-!.
-
 
 "Test assertions."
-TestCase >> ! assert: aBoolean
+! assert: aBoolean
   aBoolean ifTrue: [ self pass ] ifFalse: [ self fail ]
-!.
-
-TestCase >> ! deny: aBoolean
+! deny: aBoolean
   aBoolean ifTrue: [ self fail ] ifFalse: [ self pass ]
-!.
 
-TestCase >> ! run
+! run
   | result |
   result := TestResult new.
   self run: result.
   ^ result
-!.
 
-TestCase >> ! run: aResult
+! run: aResult
   aResult runCase: self
-!.
 
-TestCase >> ! runCase
+! runCase
   [ self setUp. self performTest ] ensure: [ self tearDown ]
-!.
+!!
 
 
-TestCase class >> ! buildSuiteFromSelectors
+! TestCase class
+! buildSuiteFromSelectors
   "Returns a TestSuite containing all the test methods defined on my class."
   | suite |
   suite := TestSuite new.
   self testSelectors do: [ :each | suite addTest: each ].
   ^ suite
-!.
 
-
-TestCase class >> ! testSelectors
+! testSelectors
   ^ self selectors asArray sorted select: [ :each |
     (each startsWith: 'test') and: [ each numArgs = 0 ]]
-!.
 
-
-TestCase class >> ! run
+! run
   ^ self buildSuiteFromSelectors run
-!.
+!!
 
 
 Object subclass: #TestResult
   instanceVariableNames: 'passed failed errors'.
 
-TestResult >> initialize
+! TestResult
+! initialize
   super initialize.
   passed := Array new.
   failed := Array new.
   errors := Array new
-!.
 
-TestResult >> runCase: aTestCase
+! runCase: aTestCase
   | tcPassed |
   tcPassed := true.
   [ [aTestCase runCase]
@@ -89,35 +79,31 @@ TestResult >> runCase: aTestCase
           tcPassed := false.
           signal return: false].
   tcPassed ifTrue: [ passed add: aTestCase ]
-!.
-
+!!
 
 
 Object subclass: #TestSuite
   instanceVariableNames: 'tests'.
 
-TestSuite >> initialize
+! TestSuite
+! initialize
   super initialize.
   tests := Array new
-!.
 
-TestSuite >> tests
+! tests
   ^ tests
-!.
 
-TestSuite >> addTest: aTestCase
+! addTest: aTestCase
   tests add: aTestCase
-!.
 
-TestSuite >> run
+! run
   | result |
   result := TestResult new.
   [self run: result] ensure: [ nil ].
   ^ result
-!.
 
-TestSuite >> run: aResult
+! run: aResult
   self tests do: [ :each |
     "self changed: each.   TODO: What is this for?"
     each run: aResult ]
-!.
+!!

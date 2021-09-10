@@ -13,119 +13,91 @@ into Smalltalk values."
 Collection subclass: #Array.
 
 "First, a block of the abstract methods all subclasses must provide."
-Collection >> ! species
+! Collection
+! species
   self subclassResponsibility
-!.
-
-Collection >> ! do: aBlock
+! do: aBlock
   self subclassResponsibility
-!.
-
-Collection >> ! remove: oldObject ifAbsent: exceptionBlock
+! remove: oldObject ifAbsent: exceptionBlock
   self subclassResponsibility
-!.
+!!
 
 
 "The errors a Collection can emit."
 Error subclass: #NotFound
   instanceVariableNames: 'object'.
 
-NotFound >> ! object: anObject
+! NotFound
+! object: anObject
   object := anObject
-!.
+!!
 
-NotFound class >> ! signalFor: anItem
+! NotFound class
+! signalFor: anItem
   ^ self new object: anItem
-!.
+!!
 
 
 
 
-Collection >> ! addAll: aCollection
+! Collection
+! addAll: aCollection
   aCollection do: [ :each | self add: each ].
   ^ aCollection
-!.
-
-Collection >> ! addIfNotPresent: anObject
+! addIfNotPresent: anObject
   (self includes: anObject) ifFalse: [ self add: anObject ].
   ^ anObject
-!.
-
-Collection >> ! allSatisfy: aBlock
+! allSatisfy: aBlock
   self do: [:each | (aBlock value: each) ifFalse: [^ false]].
   ^ true
-!.
-
-Collection >> ! anySatisfy: aBlock
+! anySatisfy: aBlock
   self do: [:each | (aBlock value: each) ifTrue: [^ true]].
   ^ false
-!.
-
-Collection >> ! asArray
+! asArray
   | array index |
   array := Array new: self size.
   index := 0.
   self do: [:each | array at: (index := index + 1) put: each].
   ^ array
-!.
-
-Collection >> ! capacity
+! capacity
   ^ self size
-!.
 
-Collection >> ! collect: aBlock
+! collect: aBlock
   | newCollection |
   newCollection := self species new.
   self do: [:each | newCollection add: (aBlock value: each)].
   ^ newCollection
-!.
-
-Collection >> ! collect: aBlock as: aClass
+! collect: aBlock as: aClass
   "Evaluates aBlock with each of the receiver's elements.
   Collects the resulting values into a new instance of aClass, and answers it."
   ^ (aClass new: self size) fillFrom: self with: aBlock
-!.
-
-Collection >> ! collect: aBlock into: aCollection
+! collect: aBlock into: aCollection
   ^ aCollection fillFrom: self with: aBlock
-!.
 
-Collection >> ! contents
+! contents
   ^ self
-!.
-
-Collection >> ! copyEmpty
+! copyEmpty
   ^ self species new
-!.
-
-Collection >> ! count: aBlock
+! count: aBlock
   "Answers the number of elements for which the block answers true.
   Equivalent to (self select: aBlock) size, but faster."
   | sum |
   sum := 0.
   self do: [ :each | (aBlock value: each) ifTrue: [sum := sum + 1]].
   ^ sum
-!.
 
-Collection >> ! detect: aBlock
+! detect: aBlock
   ^ self detect: aBlock ifNone: [self errorNotFound: aBlock]
-!.
-
-Collection >> ! detect: detectBlock ifFound: foundBlock
+! detect: detectBlock ifFound: foundBlock
   self detect: detectBlock ifFound: foundBlock ifNone: [ 7 "Do nothing." ]
-!.
-
-Collection >> ! detect: aBlock ifFound: foundBlock ifNone: exceptionBlock
+! detect: aBlock ifFound: foundBlock ifNone: exceptionBlock
   self do: [ :each |
     (aBlock value: each) ifTrue: [ ^ foundBlock cull: each ] ].
   ^ exceptionBlock value
-!.
-
-Collection >> ! detect: aBlock ifNone: exceptionBlock
+! detect: aBlock ifNone: exceptionBlock
   ^ self detect: aBlock ifFound: [ :el | el ] ifNone: exceptionBlock
-!.
 
-Collection >> ! do: elementBlock separatedBy: separatorBlock
+! do: elementBlock separatedBy: separatorBlock
   | beforeFirst |
   beforeFirst := true.
   self do:
@@ -134,140 +106,110 @@ Collection >> ! do: elementBlock separatedBy: separatorBlock
         ifTrue: [beforeFirst := false]
         ifFalse: [separatorBlock value].
       elementBlock value: each]
-!.
 
-Collection >> ! do: aBlock without: anItem
+! do: aBlock without: anItem
   ^ self do: [:each | anItem = each ifFalse: [aBlock value: each]]
-!.
 
-Collection >> ! fillFrom: aCollection with: aBlock
+! fillFrom: aCollection with: aBlock
   "Evaluate aBlock for each of aCollection's elements. Collect the resulting
   values into self. Answer self."
   aCollection do: [ :each | self add: (aBlock value: each) ]
-!.
-
-Collection >> ! hash
+! hash
   | hash |
   hash := self species hash.
   self size <= 10 ifTrue:
     [self do: [:each | hash := hash bitXor: each hash]].
   ^ hash bitXor: self size hash
-!.
 
-Collection >> ! ifEmpty: aBlock
+! ifEmpty: aBlock
   ^ self isEmpty ifTrue: [ aBlock value ] ifFalse: [ self ]
-!.
-
-Collection >> ! ifEmpty: emptyBlock ifNotEmpty: notEmptyBlock
+! ifEmpty: emptyBlock ifNotEmpty: notEmptyBlock
   self isEmpty ifTrue: [ ^ emptyBlock value ].
   ^ notEmptyBlock cull: self
-!.
-
-Collection >> ! ifNotEmpty: aBlock
+! ifNotEmpty: aBlock
   ^ self isEmpty ifTrue: [ self ] ifFalse: [ aBlock cull: self ]
-!.
 
-Collection >> ! includes: anObject
+! includes: anObject
   ^ self anySatisfy: [ :each | each = anObject ]
-!.
-
-Collection >> ! includesAll: aCollection
+! includesAll: aCollection
   aCollection do: [ :each | (self includes: each) ifFalse: [ ^ false] ].
   ^ true
-!.
-
-Collection >> ! includesAny: aCollection
+! includesAny: aCollection
   aCollection do: [ :each | (self includes: each) ifTrue: [ ^ true ] ].
   ^ false
-!.
 
-Collection >> ! inject: thisValue into: binaryBlock
+! inject: thisValue into: binaryBlock
   | nextValue |
   nextValue := thisValue.
   self do: [ :each | nextValue := binaryBlock value: nextValue value: each ].
   ^ nextValue
-!.
 
-Collection >> ! isCollection
+! isCollection
   ^ true
-!.
-Object >> ! isCollection
-  ^ false
-!.
-
-Collection >> ! isEmpty
+! isEmpty
   ^self size = 0
-!.
-
-Collection >> ! isEmptyOrNil
+! isEmptyOrNil
   ^ self isEmpty
-!.
-NullObject >> ! isEmptyOrNil
-  ^ true
-!.
-Object >> ! isEmptyOrNil
-  ^ false
-!.
-
-Collection >> ! isNotEmpty
+! isNotEmpty
   ^ self isEmpty not
-!.
 
-Collection >> ! isSequenceable
+! isSequenceable
   ^ false
-!.
+!!
 
-Collection >> ! noneSatisfy: aBlock
+! NullObject
+! isEmptyOrNil
+  ^ true
+!!
+
+! Object
+! isEmptyOrNil
+  ^ false
+! isCollection
+  ^ false
+!!
+
+
+
+! Collection
+! noneSatisfy: aBlock
   self do: [ :each | (aBlock value: each) ifTrue: [ ^ false ] ].
   ^ true
-!.
 
-Collection >> ! occurrencesOf: anObject
+! occurrencesOf: anObject
   | tally |
   tally := 0.
   self do: [ :each | anObject = each ifTrue: [ tally := tally + 1 ] ].
   ^ tally
-!.
 
-Collection >> ! reject: aBlock
+! reject: aBlock
   ^ self select: [ :each | (aBlock value: each) == false ]
-!.
-
-Collection >> ! remove: oldObject
+! remove: oldObject
   ^ self remove: oldObject ifAbsent: [self errorNotFound: oldObject]
-!.
-
-Collection >> ! removeAll
+! removeAll
   self do: [:each | self remove: each]
-!.
-
-Collection >> ! removeAll: aCollection
+! removeAll: aCollection
   aCollection == self ifTrue: [ ^self removeAll ].
   aCollection do: [:each | self remove: each].
   ^ aCollection
-!.
 
-Collection >> ! select: aBlock
+! select: aBlock
   | newCollection |
   newCollection := self copyEmpty.
   self do: [ :each |
     (aBlock value: each)
       ifTrue: [ newCollection add: each ]].
   ^ newCollection
-!.
 
-Collection >> ! size
+! size
   | tally |
   tally := 0.
   self do: [ :each | tally := tally + 1].
   ^ tally
-!.
 
-Collection >> ! sorted
+! sorted
   ^ self asArray sorted
-!.
-
-Collection >> ! sorted: aSortBlockOrNil
+! sorted: aSortBlockOrNil
   ^ self asArray sort: aSortBlockOrNil
-!.
+!!
 
