@@ -199,28 +199,30 @@ Object subclass: #Number
 Object subclass: #Exception
   instanceVariableNames: 'context message'.
 
-Exception >> ! message
+! Exception
+! message
   ^ message
-!.
-
-Exception >> ! message: aString
+! message: aString
   message := aString
-!.
+!!
 
-Exception class >> ! cause: aString
+! Exception class
+! cause: aString
   | e |
   e := self new.
   e message: aString.
   ^ e
-!.
+!!
 
 
 Exception subclass: #AbstractMethod.
-AbstractMethod >> ! message
+! AbstractMethod
+! message
   ^ 'Send reached an abstract method - missing implementation'
-!.
+!!
 
-Object >> ! subclassResponsibility
+! Object
+! subclassResponsibility
   self error: AbstractMethod new
-!.
+!!
 

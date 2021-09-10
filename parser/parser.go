@@ -28,6 +28,10 @@ func NewParser(filename string, reader io.RuneReader, listener Listener) *Parser
 	}
 }
 
+func (p *Parser) Debug(d bool) {
+	p.lexer.debug = d
+}
+
 func (p *Parser) Parse() {
 	// The top level is a stream of singular expressions with periods, and method
 	// creations with bangs.
@@ -62,8 +66,8 @@ func (p *Parser) expect(id TokenId, human string) Token {
 }
 
 func ident(t Token) string {
-	if t.Id() != TIdent {
-		panic("tried to ident() a non-Ident")
+	if t.Id() != TIdent && t.Id() != TKeyword {
+		panic(fmt.Sprintf("tried to ident() a non-Ident: %v", t))
 	}
 	return t.(*Ident).Text
 }
@@ -112,26 +116,45 @@ func (p *Parser) parseMethod() {
 		return
 	}
 
-	p.out.EnterMethod(signature)
+	// Possibly | locals |
+	var locals []string
+	t := p.lexer.Advance()
+	if t.Id() == TPipe {
+		locals = p.parseLocals()
+		t = p.lexer.Advance()
+	}
+
+	// Either way t is the next token.
+	p.out.EnterMethod(signature, locals)
 
 	// Then 0 or more lines of code, ending with dots or a bang.
-	t := p.lexer.Advance()
-	if t.Id() == TBang {
-		p.out.LeaveMethod()
-		return
-	}
-	p.lexer.Rewind(t)
+	if t.Id() != TBang {
+		p.lexer.Rewind(t)
+		//fmt.Printf("Parsing exprs\n")
+		p.parseExprs()
+		//fmt.Printf("Done Parsing exprs\n")
 
-	p.parseExprs()
+		if p.expect(TBang, "! at end of method's code") == nil {
+			return
+		}
+	}
+
 	p.out.LeaveMethod()
 }
 
+// Parses a chain of expressions, expects either a ! or ] at the end but does
+// *not* consume it!
 func (p *Parser) parseExprs() {
 	last := false
 	for {
 		// First, check for possible caret, since those are only allowed in final
 		// position.
 		t := p.lexer.Advance()
+		fmt.Printf("\tTop of exprs loop: %v\n", t)
+		if t == nil {
+			p.out.Error(fmt.Errorf("unexpected EOF in expr block"))
+			return
+		}
 		if t.Id() == TCaret {
 			p.out.EnterReturn()
 			p.parseExpr()
@@ -139,22 +162,23 @@ func (p *Parser) parseExprs() {
 			last = true
 		} else {
 			p.lexer.Rewind(t)
-			p.parseExpr()
+			p.parseExprLine()
 		}
 
-		// If last is set, only bang is allowed.
+		// If last is set, only bang or ] to end is allowed.
 		t = p.lexer.Advance()
-		if t.Id() == TBang {
+		fmt.Printf("\tAfter expr: %v\n", t)
+		if t.Id() == TBang || t.Id() == TBlockClose {
+			p.lexer.Rewind(t)
 			break
 		}
-
-		if !last {
-			p.unexpected(t, "! at end of method")
+		if last {
+			p.unexpected(t, "! or ] at end of method")
 			return
 		}
 
 		if t.Id() != TDot {
-			p.unexpected(t, "dot", "!")
+			p.unexpected(t, "dot", "!", "]")
 			return
 		}
 
@@ -201,6 +225,7 @@ func (p *Parser) parseKeywordSignature() *MessageSignature {
 	for {
 		keyword := p.lexer.Advance()
 		if keyword == nil || keyword.Id() != TKeyword {
+			p.lexer.Rewind(keyword)
 			break
 		}
 		param := p.expect(TIdent, "parameter name")
@@ -224,27 +249,36 @@ func (p *Parser) parseKeywordSignature() *MessageSignature {
 }
 
 func (p *Parser) parseTopExpr() {
-	p.parseExpr()
+	p.parseExprLine()
 	p.expect(TDot, "dot")
 }
 
-func (p *Parser) parseExpr() {
+// Parses an expression on a whole line. Does not leave anything on the stack.
+func (p *Parser) parseExprLine() {
 	// First possibility, primitives: <keyword: string>
 	t1 := p.lexer.Advance()
 	if t1 != nil && t1.Id() == TBinary && t1.(*BinOp).Op == "<" {
 		// Keyword, colon and string.
-		keyword := p.expect(TIdent, "identifier")
-		colon := p.expect(TColon, "colon")
+		keyword := p.expect(TKeyword, "keyword")
 		str := p.expect(TString, "string literal")
 		gt := p.expect(TBinary, "> closing bracket")
-		if keyword == nil || colon == nil || str == nil || gt == nil || gt.(*BinOp).Op != ">" {
+		if keyword == nil || str == nil || gt == nil || gt.(*BinOp).Op != ">" {
+			p.out.Error(fmt.Errorf("Malformed primitive: got %v %v %v\n", keyword, str, gt))
 			return
 		}
 		p.out.VisitPrimitive(ident(keyword), str.(*StringLit).Str)
 		return
 	}
 
-	// Second possibility: ident := expr
+	p.lexer.Rewind(t1)
+	p.out.EnterExprLine()
+	p.parseExpr()
+	p.out.LeaveExprLine()
+}
+
+// Parses an inner expression, leaving it on the stack.
+func (p *Parser) parseExpr() {
+	t1 := p.lexer.Advance()
 	t2 := p.lexer.Advance()
 
 	if t1 != nil && t1.Id() == TIdent && t2 != nil && t2.Id() == TAssign {
@@ -259,6 +293,13 @@ func (p *Parser) parseExpr() {
 	p.lexer.Rewind(t1)
 	p.out.EnterCascade()
 	p.parseKeywordSend()
+
+	t := p.lexer.Advance()
+	if t.Id() == TSemi {
+		// TODO Cascades are useful
+		panic("cascades are not supported")
+	}
+	p.lexer.Rewind(t)
 	p.out.LeaveCascade()
 }
 
@@ -277,7 +318,9 @@ func (p *Parser) parseKeywordSend() {
 	// Have to actually parse the keyword expression.
 	var keywords []string
 	for {
-		if t := p.lexer.Advance(); t.Id() != TKeyword {
+		t = p.lexer.Advance()
+		fmt.Printf("\tKeyword send loop: %v\n", t)
+		if t.Id() != TKeyword {
 			p.lexer.Rewind(t)
 			break
 		}
@@ -430,6 +473,7 @@ func (p *Parser) parseBlock() {
 	// Now its the expression chain.
 	p.out.EnterBlock(params, locals)
 	p.parseExprs()
+	p.expect(TBlockClose, "] at end of block")
 	p.out.LeaveBlock()
 }
 

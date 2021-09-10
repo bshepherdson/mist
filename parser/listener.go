@@ -4,7 +4,7 @@ type Listener interface {
 	EnterMethods(*MethodsTarget)
 	LeaveMethods()
 
-	EnterMethod(*MessageSignature)
+	EnterMethod(sig *MessageSignature, locals []string)
 	LeaveMethod()
 
 	EnterReturn()
@@ -13,6 +13,11 @@ type Listener interface {
 	EnterAssignment()
 	LeaveAssignment(string)
 
+	// An expression on its own line, leaving nothing on the stack.
+	EnterExprLine()
+	LeaveExprLine()
+
+	// An inner expression, a single message send. No assignments, etc.
 	EnterCascade()
 	LeaveCascade()
 

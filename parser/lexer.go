@@ -28,12 +28,17 @@ type Lexer struct {
 	// This value is set by the parser dynamically, as soon as it consumes the
 	// opening #( of the array, and cleared when we leave it.
 	constArrayDepth int
+
+	debug bool
 }
 
 func (l *Lexer) Advance() Token {
 	if l.buffered > 0 {
-		ret := l.buffer[l.buffered]
 		l.buffered--
+		ret := l.buffer[l.buffered]
+		if l.debug {
+			fmt.Printf("LLL (buffered) %v\n", ret)
+		}
 		return ret
 	}
 
@@ -41,10 +46,16 @@ func (l *Lexer) Advance() Token {
 	if err != nil {
 		return &Eof{}
 	}
+	if l.debug {
+		fmt.Printf("LLL %v\n", t)
+	}
 	return t
 }
 
 func (l *Lexer) Rewind(token Token) {
+	if l.debug {
+		fmt.Printf("LLL Rewind: %v\n", token)
+	}
 	if token == nil {
 		// This happens sometimes; just ignore it.
 		return
@@ -76,6 +87,7 @@ const (
 	TCaret
 	TBang
 	TPipe
+	TSemi
 	THash
 	TDot
 	TAssign
@@ -186,6 +198,7 @@ var singletons map[rune]TokenId = map[rune]TokenId{
 	'!': TBang,
 	'|': TPipe,
 	'.': TDot,
+	';': TSemi,
 	'[': TBlockOpen,
 	']': TBlockClose,
 	'(': TParenOpen,
@@ -308,6 +321,7 @@ func (l *Lexer) scanBinary(loc *Loc, r rune) (Token, error) {
 
 	if _, ok := binchars[next]; ok {
 		s += string(next)
+		l.read()
 	}
 
 	return &BinOp{s, loc}, nil
