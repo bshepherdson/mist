@@ -128,6 +128,18 @@ function mkInstance(cls) {
   };
 }
 
+function wrapNumber(n) {
+  const inst = mkInstance(classes['Number']);
+  inst.$vars[NUMBER_RAW] = n;
+  return inst;
+}
+
+function wrapString(s) {
+  const inst = mkInstance(classes['String']);
+  inst.$vars[STRING_RAW] = s;
+  return inst;
+}
+
 function methodLookup(selector, cls) {
   let c = cls;
   while (c) {
@@ -150,8 +162,9 @@ const createMethod = mkInstance(classes['CompiledMethod']);
 createMethod.$vars[METHOD_BYTECODE] = [
   {bytecode: 'primitive', keyword: 'builtin:', name: 'defineMethod'},
 ];
-createMethod.$vars[METHOD_ARGC] = 3;
-createMethod.$vars[METHOD_LOCALS] = 1 + 3 + 0; // receiver, 3 args, no temps.
+createMethod.$vars[METHOD_ARGC] = wrapNumber(3);
+// receiver, 3 args, no temps.
+createMethod.$vars[METHOD_LOCALS] = wrapNumber(1 + 3 + 0);
 classes['CompiledMethod class'].$vars[CLASS_VAR_METHODS] = {
   'argc:locals:length:': createMethod,
 };
@@ -160,8 +173,9 @@ const attachMethod = mkInstance(classes['CompiledMethod']);
 attachMethod.$vars[METHOD_BYTECODE] = [
   {bytecode: 'primitive', keyword: 'builtin:', name: 'addMethod'},
 ];
-attachMethod.$vars[METHOD_ARGC] = 2;
-attachMethod.$vars[METHOD_LOCALS] = 1 + 2 + 0; // receiver, 2 args, no temps.
+attachMethod.$vars[METHOD_ARGC] = wrapNumber(2);
+// receiver, 2 args, no temps.
+attachMethod.$vars[METHOD_LOCALS] = wrapNumber(1 + 2 + 0);
 classes['ClassDescription'].$vars[CLASS_VAR_METHODS] = {
   'method:selector:': attachMethod,
 };
@@ -170,8 +184,8 @@ const asSymbolMethod = mkInstance(classes['CompiledMethod']);
 asSymbolMethod.$vars[METHOD_BYTECODE] = [
   {bytecode: 'primitive', keyword: 'builtin:', name: 'toSymbol'},
 ];
-asSymbolMethod.$vars[METHOD_ARGC] = 0;
-asSymbolMethod.$vars[METHOD_LOCALS] = 1 // Receiver, nothing else.
+asSymbolMethod.$vars[METHOD_ARGC] = wrapNumber(0);
+asSymbolMethod.$vars[METHOD_LOCALS] = wrapNumber(1); // Just receiver.
 classes['String'].$vars[CLASS_VAR_METHODS] = {
   'asSymbol': asSymbolMethod,
 };

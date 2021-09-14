@@ -442,7 +442,7 @@ func (l *STL) LeaveBlock() {
 }
 
 func (l *STL) EnterConstArray() {
-	// TODO
+	// TODO Constant arrays
 	panic("Constant arrays are not yet supported")
 }
 
@@ -507,7 +507,7 @@ func (l *STL) VisitPrimitive(keyword, parameter string) {
 	if keyword != "builtin" {
 		l.Error(fmt.Errorf("Only primitives with 'builtin' are allowed (got %s)", keyword))
 	}
-	l.cp.primitive(parameter)
+	l.cp.primitive(keyword+":", parameter)
 	l.answered = true // Primitives all return something already.
 }
 

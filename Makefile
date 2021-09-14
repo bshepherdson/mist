@@ -12,12 +12,6 @@ ST_FILES=Kernel.st Exceptions.st \
 				 SUnit.st Test.st
 ST_FILES_EXPANDED=$(foreach st,$(ST_FILES),st/$(st))
 
-parser/SmalltalkVisitor.py: parser/Smalltalk.g4
-	$(ANTLR) $(ANTLR_FLAGS_PYTHON) parser/Smalltalk.g4
-
-parser/smalltalk_listener.go: parser/Smalltalk.g4
-	$(ANTLR) $(ANTLR_FLAGS) parser/Smalltalk.g4
-
 all.js: js/*.js
 	cat $(JS_FILES_EXPANDED) > $@
 

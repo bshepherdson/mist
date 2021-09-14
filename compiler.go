@@ -7,16 +7,17 @@ import (
 
 type Bytecode struct {
 	Bytecode string  `json:"bytecode"`
-	Index    int     `json:"index"`
-	Name     string  `json:"name"`
-	Value    float64 `json:"value"`
+	Index    int     `json:"index,omitempty"`
+	Name     string  `json:"name,omitempty"`
+	Keyword  string  `json:"keyword,omitempty"`
+	Value    float64 `json:"value,omitempty"`
 
-	Length   int    `json:"length"`
-	Argc     int    `json:"argc"`
-	ArgStart int    `json:"argStart"`
-	Temps    int    `json:"temps"`
-	Selector string `json:"selector"`
-	Super    bool   `json:"super"`
+	Length   int    `json:"length,omitempty"`
+	Argc     int    `json:"argc,omitempty"`
+	ArgStart int    `json:"argStart,omitempty"`
+	Temps    int    `json:"temps,omitempty"`
+	Selector string `json:"selector,omitempty"`
+	Super    bool   `json:"super,omitempty"`
 }
 
 type Method struct {
@@ -102,8 +103,8 @@ func (c *Compiler) send(super bool, argc int, selector string) {
 	})
 }
 
-func (c *Compiler) primitive(name string) {
-	c.compile(&Bytecode{Bytecode: "primitive", Name: name})
+func (c *Compiler) primitive(keyword, name string) {
+	c.compile(&Bytecode{Bytecode: "primitive", Name: name, Keyword: keyword})
 }
 
 func (c *Compiler) dup() {

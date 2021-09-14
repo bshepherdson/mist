@@ -1,5 +1,5 @@
 BYTECODE_HANDLERS.pushLocal = function(ar, bc) {
-  ar.stack.push(ar.locals[bc.index]);
+  ar.stack.push(ar.locals[bc.index || 0]);
 };
 
 BYTECODE_HANDLERS.pushGlobal = function(ar, bc) {
@@ -15,23 +15,11 @@ BYTECODE_HANDLERS.pushSelf = function(ar, bc) {
 };
 
 BYTECODE_HANDLERS.pushInstVar = function(ar, bc) {
-  ar.stack.push(ar.locals[0].$vars[bc.index]);
+  ar.stack.push(ar.locals[0].$vars[bc.index || 0]);
 };
 
-function wrapNumber(n) {
-  const inst = mkInstance(classes['Number']);
-  inst.$vars[NUMBER_RAW] = n;
-  return inst;
-}
-
-function wrapString(s) {
-  const inst = mkInstance(classes['String']);
-  inst.$vars[STRING_RAW] = s;
-  return inst;
-}
-
 BYTECODE_HANDLERS.pushNumber = function(ar, bc) {
-  ar.stack.push(wrapNumber(bc.value));
+  ar.stack.push(wrapNumber(bc.value || 0));
 };
 
 BYTECODE_HANDLERS.pushString = function(ar, bc) {
@@ -43,11 +31,11 @@ BYTECODE_HANDLERS.pushBool = function(ar, bc) {
 };
 
 BYTECODE_HANDLERS.storeLocal = function(ar, bc) {
-  ar.locals[bc.index] = ar.stack.pop();
+  ar.locals[bc.index || 0] = ar.stack.pop();
 };
 
 BYTECODE_HANDLERS.storeInstVar = function(ar, bc) {
-  ar.locals[0].$vars[bc.index] = ar.stack.pop();
+  ar.locals[0].$vars[bc.index || 0] = ar.stack.pop();
 };
 
 BYTECODE_HANDLERS.startBlock = function(ar, bc) {
@@ -55,20 +43,24 @@ BYTECODE_HANDLERS.startBlock = function(ar, bc) {
   // The current PC is the start, and we can give it a slice of args.
   // We construct a BlockClosure, push it, and move the outer PC.
   const closure = mkInstance(classes['BlockClosure']);
-  closure.$vars[CLOSURE_BYTECODE] = ar.bytecode.slice(ar.pc, ar.pc + bc.length);
-  closure.$vars[CLOSURE_ARGC] = bc.argc;
-  closure.$vars[CLOSURE_ARGV] = bc.argStart;
+  closure.$vars[CLOSURE_BYTECODE] =
+      ar.bytecode.slice(ar.pc, ar.pc + (bc.length || 0));
+  closure.$vars[CLOSURE_ARGC] = wrapNumber(bc.argc);
+  closure.$vars[CLOSURE_ARGV] = wrapNumber(bc.argStart);
+  // TODO: This probably needs to be a proper ActivationRecord instance or some
+  // kind of wrapper.
   closure.$vars[CLOSURE_METHOD_RECORD] = ar;
 
   ar.stack.push(closure);
-  ar.pc += bc.length;
+  ar.pc += bc.length || 0;
 };
 
 
 BYTECODE_HANDLERS.send = function(ar, bc) {
   // First, look up the target method. We need to check its arg count and such.
   // The receiver is on the stack followed by its arguments: rcvr arg1 arg2...
-  const ixReceiver = ar.stack.length - bc.argc - 1;
+  const argc = bc.argc || 0;
+  const ixReceiver = ar.stack.length - argc - 1;
   const receiver = ar.stack[ixReceiver];
   let startingClass = receiver.$class;
   if (bc.super) {
@@ -81,10 +73,10 @@ BYTECODE_HANDLERS.send = function(ar, bc) {
         startingClass.$vars[CLASS_VAR_NAME], bc.selector);
   }
 
-  if (method.$vars[METHOD_ARGC] !== bc.argc) {
+  const methodArgc = method.$vars[METHOD_ARGC].$vars[NUMBER_RAW];
+  if (methodArgc !== argc) {
     throw new ArgumentCountMismatchError(
-        startingClass.$vars[CLASS_VAR_NAME], bc.selector,
-        method.$vars[METHOD_ARGC], bc.argc);
+        startingClass.$vars[CLASS_VAR_NAME], bc.selector, methodArgc, argc);
   }
 
   // All is good: found the method and it has the right arg count for this send.
@@ -128,6 +120,8 @@ BYTECODE_HANDLERS.primitive = function(ar, bc) {
       throw new UnknownBuiltinError(bc.name);
     }
     builtin(ar);
+  } else {
+    throw new UnknownBuiltinError(bc.keyword + ': ' + bc.name);
   }
 };
 

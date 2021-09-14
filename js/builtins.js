@@ -34,7 +34,7 @@ function mkSubclass(ar, instanceVariables, classVariables) {
   classVars = classVars ? classVars.split(/ +/).length : 0;
 
   mkClass(name, parent.$vars[CLASS_VAR_NAME], instVars, classVars);
-  ar.stack.push(classes[name]);
+  return classes[name];
 }
 
 // Called from Class>>subclass:, expects receiver to be the parent class and
