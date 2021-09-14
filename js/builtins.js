@@ -1,14 +1,19 @@
 const builtins = {};
 
+function answer(ar, value) {
+  ar.thread.pop();
+  ar.parent.stack.push(value);
+}
+
 // Called from Class>>basicNew, expects the receiver to be the class.
-// Pushes a new instance of that class.
+// Answers the new instance.
 builtins.basicNew = function(ar) {
-  ar.stack.push(mkInstance(ar.locals[0]));
+  answer(ar, mkInstance(ar.locals[0]));
 };
 
-// Called from Object>>class, pushes the class of the receiver.
+// Called from Object>>class, answers the class of the receiver.
 builtins.class = function(ar) {
-  ar.stack.push(ar.locals[0].$class);
+  answer(ar, ar.locals[0].$class);
 };
 
 function mkSubclass(ar, instanceVariables, classVariables) {
@@ -33,32 +38,54 @@ function mkSubclass(ar, instanceVariables, classVariables) {
 }
 
 // Called from Class>>subclass:, expects receiver to be the parent class and
-// the first arg to be the new name. Pushes the resulting class.
+// the first arg to be the new name. Answers the resulting class.
 builtins['subclass:'] = function(ar) {
-  mkSubclass(ar, false, false);
+  answer(ar, mkSubclass(ar, false, false));
 };
 builtins['subclass:instanceVariableNames:'] = function(ar) {
-  mkSubclass(ar, true, false);
+  answer(ar, mkSubclass(ar, true, false));
 };
 builtins['subclass:instanceVariableNames:classVariableNames:'] = function(ar) {
-  mkSubclass(ar, true, true);
+  answer(ar, mkSubclass(ar, true, true));
 };
 
-// Called from Class>>#>>. Receiver is the class itself, argv[0] the method.
-// The method knows its own selector, and the class has a method dictionary.
+// Called from CompiledMethod class >> argc:locals:length: to consume the
+// following bytecodes from the caller's scope.
+// Answers the new CompiledMethod instance.
+builtins['defineMethod'] = function(ar) {
+  // Parent's PC is the start of the method, and needs to be advanced.
+  const start = ar.parent.pc;
+  const argc = ar.locals[1].$vars[NUMBER_RAW];
+  const temps = ar.locals[2].$vars[NUMBER_RAW];
+  const len = ar.locals[3].$vars[NUMBER_RAW];
+
+  const method = mkInstance(classes['CompiledMethod']);
+  method.$vars[METHOD_BYTECODE] = ar.parent.bytecode.slice(start, start + len);
+  method.$vars[METHOD_LOCALS] = wrapNumber(1 + argc + temps);
+  method.$vars[METHOD_ARGC] = ar.locals[1];
+  ar.parent.pc += len; // Advance the PC past the method we just compiled.
+  answer(ar, method);
+}
+
+// Called from Class>>method:selector: Receiver is the class itself,
+// argv[0] the method.
+// The class has a method dictionary.
+// Answers 'self', the class.
 builtins['addMethod'] = function(ar) {
   const self = ar.locals[0];
   const method = ar.locals[1];
+  const selector = ar.locals[2].$vars[STRING_RAW];
   let dict = self.$vars[CLASS_VAR_METHODS];
   if (!dict) {
     self.$vars[CLASS_VAR_METHODS] = dict = {};
   }
 
-  dict[method.$vars[METHOD_SELECTOR]] = method;
+  dict[selector] = method;
+  answer(ar, self);
 };
 
 // Called by String>>#asSymbol. The (wrapped) String is the receiver.
-// Pushes the Symbol version of this string.
+// Answers the Symbol version of this string.
 builtins['toSymbol'] = function(ar) {
   const raw = ar.locals[0].$vars[STRING_RAW];
   let dict = classes['Symbol class'].$vars[SYMBOL_CLASS_DICT];
@@ -70,7 +97,7 @@ builtins['toSymbol'] = function(ar) {
     dict[raw] = mkInstance(classes['Symbol']);
     dict[raw].$vars[STRING_RAW] = raw;
   }
-  ar.stack.push(dict[raw]);
+  answer(ar, dict[raw]);
 };
 
 builtins['runBlock'] = function(ar) {
@@ -92,6 +119,11 @@ builtins['runBlock'] = function(ar) {
   const newAR = activationRecord(ar, outerAR.locals,
       block.$vars[CLOSURE_BYTECODE], 0);
   newAR.methodRecord = outerAR;
+
+  // This primitive is called from inside eg. BlockClosure value: x but there's
+  // no need to add an extra layer to the return.
+  // This returns directly from the block to the caller.
+  ar.thread.pop();
   ar.thread.push(newAR);
 };
 
@@ -100,7 +132,7 @@ function numericBinOp(fn) {
     const a = ar.locals[0].$vars[NUMBER_RAW];
     const b = ar.locals[1].$vars[NUMBER_RAW];
     const c = fn(a, b);
-    ar.stack.push(wrapLiteral(c));
+    answer(ar, wrapNumber(c));
   };
 }
 
@@ -118,36 +150,42 @@ builtins['num='] = numericBinOp((a, b) => a === b);
 // Identity
 builtins['=='] = function(ar) {
   const res = ar.locals[0] === ar.locals[1];
-  ar.stack.push(res ? stTrue : stFalse);
+  answer(ar, res ? stTrue : stFalse);
 };
 
 builtins['^-1'] = function(ar) {
   const value = ar.locals[0].$vars[NUMBER_RAW];
-  ar.stack.push(wrapLiteral(value & -1));
+  answer(ar, wrapNumber(value & -1));
 };
 
 // Logs the *first argument* (not self).
+// Answers that argument.
 builtins['console.log'] = function(ar) {
   console.log(ar.locals[1]);
+  answer(ar, ar.locals[1]);
 };
 
 
 // Working with a raw Javascript map. Puts that map in the first instance
-// variable.
+// variable. Answers self.
 builtins['new object'] = function(ar) {
   ar.locals[0].$vars[DICTIONARY_RAW] = {};
+  answer(ar, ar.locals[0]);
 };
 
+// Answers the value looked up.
 builtins['dict_at:'] = function(ar) {
   const key = ar.locals[1].$vars[STRING_RAW];
   const map = ar.locals[0].$vars[DICTIONARY_RAW];
-  ar.stack.push(map[key] || stNil);
+  answer(ar, map[key] || stNil);
 };
+// Answers self.
 builtins['dict_at:put:'] = function(ar) {
   const key = ar.locals[1].$vars[STRING_RAW];
   const map = ar.locals[0].$vars[DICTIONARY_RAW];
   const value = ar.locals[2];
   map[key] = value;
+  answer(ar, ar.locals[0]);
 };
 
 function stArray(array) {
@@ -159,11 +197,11 @@ function stArray(array) {
 
 builtins['dict_values'] = function(ar) {
   const map = ar.locals[0].$vars[DICTIONARY_RAW];
-  ar.stack.push(stArray(Object.values(map)));
+  answer(ar, stArray(Object.values(map)));
 };
 builtins['dict_keys'] = function(ar) {
   const map = ar.locals[0].$vars[DICTIONARY_RAW];
-  ar.stack.push(stArray(Object.keys(map)));
+  answer(ar, stArray(Object.keys(map)));
 };
 
 
@@ -171,20 +209,21 @@ builtins['dict_keys'] = function(ar) {
 // Working with a raw Javascript array.
 // Expects the array to be instance variable 0.
 builtins['new array'] = function(ar) {
-  ar.stack.push([]);
+  answer(ar, []);
 };
 
 builtins['array_at:'] = function(ar) {
   const key = ar.locals[1].$vars[NUMBER_RAW];
-  ar.stack.push(ar.locals[0][key]);
+  answer(ar, ar.locals[0][key]);
 };
 builtins['array_at:put:'] = function(ar) {
   const key = ar.locals[1].$vars[NUMBER_RAW];
   ar.locals[0][key] = ar.locals[2];
+  answer(ar, ar.locals[0]);
 };
 
 builtins['array_length'] = function(ar) {
   const array = ar.locals[0];
-  ar.stack.push(wrapLiteral(array.length));
+  answer(ar, wrapNumber(array.length));
 };
 

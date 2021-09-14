@@ -14,6 +14,9 @@
 ! rawAt: index put: value
   "0-based Javascript index"
   <builtin: 'array_at:put:'>
+! add: aValue
+  self at: self size put: aValue
+  "TODO This is not super fast, and could be sped up with a push builtin."
 
 ! at: index ifAbsent: exceptionBlock
   "1-based Smalltalk index."

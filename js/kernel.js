@@ -69,6 +69,7 @@ mkClass('Behavior', 'Object', 0);
 mkClass('ClassDescription', 'Behavior', 4); // name, superclass, instance variables, methodDict.
 mkClass('Class', 'ClassDescription', 0);
 mkClass('Metaclass', 'ClassDescription', 0);
+mkClass('CompiledMethod', 'Object', 3); // argc, locals, first BC
 
 // HACK: These are hobo implementations of the String and Symbol classes, which
 // will get upgraded later.
@@ -114,10 +115,9 @@ const CLOSURE_ARGV = 1;
 const CLOSURE_ARGC = 2;
 const CLOSURE_METHOD_RECORD = 3; // The activationRecord for my method. Used to implement block returns.
 
-const METHOD_BYTECODE = 0;
+const METHOD_ARGC = 0;
 const METHOD_LOCALS = 1;
-const METHOD_ARGC = 2;
-const METHOD_SELECTOR = 3;
+const METHOD_BYTECODE = 2;
 
 const DICTIONARY_RAW = 0;
 
@@ -143,25 +143,44 @@ function methodLookup(selector, cls) {
 const ERR_DOES_NOT_UNDERSTAND = 'doesNotUnderstand';
 const ERR_ARGC_MISMATCH = 'argcMismatch';
 
-// And the single method that starts the ball rolling: Class>>#>>
-const theMethod = mkInstance(classes['CompiledMethod']);
-theMethod.$vars[METHOD_BYTECODE] = [
-  {bytecode: 'primitive', keyword: 'builtin:', name: 'addMethod'},
-  {bytecode: 'answerSelf'},
+// Two key built-in methods that are used to compile more:
+// - CompiledMethod class >> argc:locals:length: to create new methods.
+// - Class >> method:selector: for attaching them to a class's dictionary.
+const createMethod = mkInstance(classes['CompiledMethod']);
+createMethod.$vars[METHOD_BYTECODE] = [
+  {bytecode: 'primitive', keyword: 'builtin:', name: 'defineMethod'},
 ];
-theMethod.$vars[METHOD_ARGC] = 1;
-theMethod.$vars[METHOD_LOCALS] = 2; // receiver, 1 arg, no temps.
-theMethod.$vars[METHOD_SELECTOR] = '>>';
+createMethod.$vars[METHOD_ARGC] = 3;
+createMethod.$vars[METHOD_LOCALS] = 1 + 3 + 0; // receiver, 3 args, no temps.
+classes['CompiledMethod class'].$vars[CLASS_VAR_METHODS] = {
+  'argc:locals:length:': createMethod,
+};
 
+const attachMethod = mkInstance(classes['CompiledMethod']);
+attachMethod.$vars[METHOD_BYTECODE] = [
+  {bytecode: 'primitive', keyword: 'builtin:', name: 'addMethod'},
+];
+attachMethod.$vars[METHOD_ARGC] = 2;
+attachMethod.$vars[METHOD_LOCALS] = 1 + 2 + 0; // receiver, 2 args, no temps.
 classes['ClassDescription'].$vars[CLASS_VAR_METHODS] = {
-  '>>': theMethod,
+  'method:selector:': attachMethod,
+};
+
+const asSymbolMethod = mkInstance(classes['CompiledMethod']);
+asSymbolMethod.$vars[METHOD_BYTECODE] = [
+  {bytecode: 'primitive', keyword: 'builtin:', name: 'toSymbol'},
+];
+asSymbolMethod.$vars[METHOD_ARGC] = 0;
+asSymbolMethod.$vars[METHOD_LOCALS] = 1 // Receiver, nothing else.
+classes['String'].$vars[CLASS_VAR_METHODS] = {
+  'asSymbol': asSymbolMethod,
 };
 
 // Upgrade standard Javascript arrays to become Smalltalk objects.
 Object.defineProperty(Array.prototype, '$class', {
   configurable: false,
   enumerable: false,
-  writable: false,
+  //writable: false,
   get: () => classes['Array'],
 });
 

@@ -44,6 +44,7 @@ type Listener interface {
 	EnterConstArray()
 	LeaveConstArray()
 	EnterDynArray()
+	VisitArrayElement()
 	LeaveDynArray()
 
 	VisitIdentifier(*Ident)

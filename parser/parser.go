@@ -150,7 +150,7 @@ func (p *Parser) parseExprs() {
 		// First, check for possible caret, since those are only allowed in final
 		// position.
 		t := p.lexer.Advance()
-		fmt.Printf("\tTop of exprs loop: %v\n", t)
+		//fmt.Printf("\tTop of exprs loop: %v\n", t)
 		if t == nil {
 			p.out.Error(fmt.Errorf("unexpected EOF in expr block"))
 			return
@@ -167,7 +167,7 @@ func (p *Parser) parseExprs() {
 
 		// If last is set, only bang or ] to end is allowed.
 		t = p.lexer.Advance()
-		fmt.Printf("\tAfter expr: %v\n", t)
+		//fmt.Printf("\tAfter expr: %v\n", t)
 		if t.Id() == TBang || t.Id() == TBlockClose {
 			p.lexer.Rewind(t)
 			break
@@ -319,7 +319,7 @@ func (p *Parser) parseKeywordSend() {
 	var keywords []string
 	for {
 		t = p.lexer.Advance()
-		fmt.Printf("\tKeyword send loop: %v\n", t)
+		//fmt.Printf("\tKeyword send loop: %v\n", t)
 		if t.Id() != TKeyword {
 			p.lexer.Rewind(t)
 			break
@@ -536,6 +536,7 @@ func (p *Parser) parseDynArray() {
 
 		for {
 			p.parseExpr()
+			p.out.VisitArrayElement()
 			t = p.lexer.Advance()
 			if t.Id() == TBraceClose {
 				break

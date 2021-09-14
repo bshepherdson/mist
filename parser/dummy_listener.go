@@ -101,6 +101,9 @@ func (l *dummyListener) EnterDynArray() {
 func (l *dummyListener) LeaveDynArray() {
 }
 
+func (l *dummyListener) VisitArrayElement() {
+}
+
 func (l *dummyListener) VisitIdentifier(id *Ident) {
 }
 

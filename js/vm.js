@@ -50,10 +50,11 @@ class Thread {
 
   tick() {
     const ar = this.activation;
-    const bc = ar.bytecode[ar.pc++];
+    const bc = ar.bytecode[ar.pc];
     if (!bc) {
       throw new InternalError('Compiler failed to insert an answer bytecode.');
     }
+    ar.pc++;
     execute(vm, ar, bc);
   }
 

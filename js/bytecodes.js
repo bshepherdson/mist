@@ -18,23 +18,28 @@ BYTECODE_HANDLERS.pushInstVar = function(ar, bc) {
   ar.stack.push(ar.locals[0].$vars[bc.index]);
 };
 
-function wrapLiteral(rcvr) {
-  if (typeof rcvr === 'string') {
-    const inst = mkInstance(classes['String']);
-    inst.$vars[STRING_RAW] = rcvr;
-    return inst;
-  } else if (typeof rcvr === 'number') {
-    const inst = mkInstance(classes['Number']);
-    inst.$vars[NUMBER_RAW] = rcvr;
-    return inst;
-  } else if (typeof rcvr === 'boolean') {
-    return rcvr ? classes['true'] : classes['false'];
-  }
-  return rcvr;
+function wrapNumber(n) {
+  const inst = mkInstance(classes['Number']);
+  inst.$vars[NUMBER_RAW] = n;
+  return inst;
 }
 
-BYTECODE_HANDLERS.pushLiteral = function(ar, bc) {
-  ar.stack.push(wrapLiteral(bc.value));
+function wrapString(s) {
+  const inst = mkInstance(classes['String']);
+  inst.$vars[STRING_RAW] = s;
+  return inst;
+}
+
+BYTECODE_HANDLERS.pushNumber = function(ar, bc) {
+  ar.stack.push(wrapNumber(bc.value));
+};
+
+BYTECODE_HANDLERS.pushString = function(ar, bc) {
+  ar.stack.push(wrapString(bc.name));
+};
+
+BYTECODE_HANDLERS.pushBool = function(ar, bc) {
+  ar.stack.push(bc.super ? classes['true'] : classes['false']);
 };
 
 BYTECODE_HANDLERS.storeLocal = function(ar, bc) {
@@ -59,24 +64,11 @@ BYTECODE_HANDLERS.startBlock = function(ar, bc) {
   ar.pc += bc.length;
 };
 
-BYTECODE_HANDLERS.startMethod = function(ar, bc) {
-  // Bytecode gives: selector, argc, temps count, length in bytecodes.
-  // We built the CompiledMethod instance with those values, push it, and skip
-  // over the code.
-  const method = mkInstance(classes['CompiledMethod']);
-  method.$vars[METHOD_BYTECODE] = ar.bytecode.slice(ar.pc, ar.pc + bc.length);
-  method.$vars[METHOD_LOCALS] = 1 + bc.argc + bc.temps;
-  method.$vars[METHOD_ARGC] = bc.argc;
-  method.$vars[METHOD_SELECTOR] = bc.selector;
-  ar.stack.push(method);
-  ar.pc += bc.length;
-};
-
 
 BYTECODE_HANDLERS.send = function(ar, bc) {
   // First, look up the target method. We need to check its arg count and such.
   // The receiver is on the stack followed by its arguments: rcvr arg1 arg2...
-  const ixReceiver = ar.stack.length - bc.values;
+  const ixReceiver = ar.stack.length - bc.argc - 1;
   const receiver = ar.stack[ixReceiver];
   let startingClass = receiver.$class;
   if (bc.super) {
@@ -89,10 +81,10 @@ BYTECODE_HANDLERS.send = function(ar, bc) {
         startingClass.$vars[CLASS_VAR_NAME], bc.selector);
   }
 
-  if (method.$vars[METHOD_ARGC] + 1 !== bc.values) {
+  if (method.$vars[METHOD_ARGC] !== bc.argc) {
     throw new ArgumentCountMismatchError(
         startingClass.$vars[CLASS_VAR_NAME], bc.selector,
-        method.$vars[METHOD_ARGC], bc.values - 1);
+        method.$vars[METHOD_ARGC], bc.argc);
   }
 
   // All is good: found the method and it has the right arg count for this send.

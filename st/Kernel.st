@@ -7,10 +7,11 @@ Javascript functions."
 ! basicNew
   <builtin: 'basicNew'>
 !  new
-  | inst |
+  ^ self basicNew initialize
+  "| inst |
   inst := self basicNew.
   inst initialize.
-  ^ inst
+  ^ inst"
 !!
 
 "Do nothing in #initialize by default."
@@ -25,13 +26,6 @@ Javascript functions."
   "Provides the best class to use to clone the receiver. Defaults to self class
   but might be something different. Eg. Interval's species is Array."
   ^ self class
-!!
-
-
-"Add the asSymbol method to strings."
-! String
-! asSymbol
-  <builtin: 'toSymbol'>
 !!
 
 
@@ -56,9 +50,11 @@ Javascript functions."
 Object subclass: #BlockClosure
   instanceVariableNames: 'bytecode argv argc methodRecord'.
 
+" This is already defined by the runtime.
 Object subclass: #CompiledMethod
-  instanceVariableNames: 'bytecode locals argc selector'.
+  instanceVariableNames: 'bytecode locals argc selector'."
 
+"START HERE: See if we can get this far."
 
 "Blocks and evaluating blocks."
 ! BlockClosure

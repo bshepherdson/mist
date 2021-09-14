@@ -173,6 +173,11 @@ func (l *debugListener) LeaveDynArray() {
 	l.inner.LeaveDynArray()
 }
 
+func (l *debugListener) VisitArrayElement() {
+	fmt.Printf("VisitArrayElement\n")
+	l.inner.VisitArrayElement()
+}
+
 func (l *debugListener) VisitIdentifier(id *Ident) {
 	fmt.Printf("VisitIdentifier: %s\n", ident(id))
 	l.inner.VisitIdentifier(id)
