@@ -448,7 +448,7 @@ func (p *Parser) parseBlock() {
 		params = append(params, ident(param))
 	}
 
-	// Two possibilities for t now:
+	// Three possibilities for t now:
 	// - If params is empty, it's the first token in the rest of the block.
 	// - If params is NOT empty, there must be a bar, then the rest of the block.
 	if params != nil && len(params) > 0 {
@@ -465,13 +465,16 @@ func (p *Parser) parseBlock() {
 	var locals []string
 	if t.Id() == TPipe {
 		locals = p.parseLocals() // Consumes the final | too.
-	} else {
-		// No locals, so rewind the token and start parsing expressions.
-		p.lexer.Rewind(t)
 	}
 
-	// Now its the expression chain.
 	p.out.EnterBlock(params, locals)
+	if t.Id() == TBlockClose {
+		p.out.LeaveBlock()
+		return
+	}
+	p.lexer.Rewind(t)
+
+	// Now its the expression chain.
 	p.parseExprs()
 	p.expect(TBlockClose, "] at end of block")
 	p.out.LeaveBlock()
