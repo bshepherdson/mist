@@ -236,3 +236,55 @@ HashedCollection subclass: #Dictionary
   ^ false
 !!
 
+"A Set is a HashedCollection without values, just membership.
+Implemented by using elements' hashes as keys and the elements as values."
+HashedCollection subclass: #Set.
+
+! Set class
+! new: aSize
+  "Size is actually ignored here, JS takes care of things."
+  ^ self new
+!!
+
+! Set
+! = aSet
+  self == aSet ifTrue: [^true]. "Avoids recursion."
+  (aSet isKindOf: Set) ifFalse: [^false].
+  self size = aSet size ifFalse: [^false].
+  self do: [:each | (aSet includes: each) ifFalse: [^false]].
+  ^ true
+
+! add: newObject
+  "Adds newObject to this Set, if it's not already present. Answers newObject."
+  self at: newObject hash put: newObject
+! collect: aBlock
+  | newSet |
+  newSet := self species new: self size.
+  self values do: [:each | newSet add: (aBlock value: each)].
+  ^ newSet
+! difference: aCollection
+  "Answer the set theoretic difference between two collections. This one is
+  specialized since no intermediate Set is necessary. The result is a new set
+  containing only those keys not found in aCollection."
+  | set |
+  set := self copy.
+  aCollection do: [:each | set remove: each ifAbsent: [ "Do nothing" ]].
+  ^ set
+
+! do: aBlock
+  self values do: aBlock
+
+! includes: anObject
+  ^ (self at: anObject hash) isNotNil
+
+! intersection: aCollection
+  | xsec |
+  xsec := self class new.
+  aCollection do: [:each | (self includes: each) ifTrue: [xsec add: each]].
+  ^ xsec
+
+! isHealthy
+  self associationsDo: [:each | each key = each value hash ifFalse: [^false]].
+  ^ true
+!!
+

@@ -1,7 +1,7 @@
 "Array was already defined in Collection.st"
 
 ! Array class
-! new
+! basicNew
   <builtin: 'new array'>
 !!
 
@@ -15,7 +15,7 @@
   "0-based Javascript index"
   <builtin: 'array_at:put:'>
 ! add: aValue
-  self at: self size put: aValue
+  self rawAt: self size put: aValue
   "TODO This is not super fast, and could be sped up with a push builtin."
 
 ! at: index ifAbsent: exceptionBlock
@@ -30,5 +30,13 @@
 
 ! do: aBlock
   1 to: self size do: [ :idx | aBlock value: (self at: idx) ]
+
+! shallowCopy
+  "This isn't supposed to be overridden, but since Array is magic and just a JS
+  array, it needs special handling."
+  | dst |
+  dst := self class new.
+  1 to: self size do: [:each | dst at: each put: (self at: each)].
+  ^ dst
 !!
 

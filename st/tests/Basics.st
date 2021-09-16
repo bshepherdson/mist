@@ -6,5 +6,6 @@ TestCase subclass: #Basics1.
 !!
 
 "Transcript show: (Basics1 new run)."
+Transcript show: 7 .
 7 halt.
 

@@ -34,6 +34,30 @@ Javascript functions."
 ! halt
   "Triggers the debugger!"
   <builtin: 'halt'>
+
+! instVarAt: anIndex
+  <builtin: 'instVarAt:'>
+! instVarAt: anIndex put: aValue
+  <builtin: 'instVarAt:put:'>
+
+! copy
+  "Copies this object. Implemented as a primitive for speed."
+  ^self shallowCopy postCopy
+! shallowCopy
+  "Shallow copy of this object, duplicating its instance variables. SHOULD NOT
+  be overridden. Override postCopy if you need custom copying behavior."
+  | class newObject index |
+  class := self class.
+  "TODO: Variable-size classes (eg. arrays) need special handling here."
+  newObject := class basicNew.
+  index := class instSize.
+  [index > 0] whileTrue:
+      [newObject instVarAt: index put: (self instVarAt: index).
+      index := index - 1].
+  ^ newObject
+! postCopy
+  "Does nothing by default."
+  ^ self
 !!
 
 
@@ -73,7 +97,7 @@ Object subclass: #BlockClosure
 "Blocks and evaluating blocks."
 ! Object
 ! isBlock
-  ^ true
+  ^ false
 !!
 
 ! BlockClosure
@@ -114,6 +138,8 @@ Object subclass: #BlockClosure
   ^ self
 ! isNil
   ^ false
+! isNotNil
+  ^ self isNil not
 !!
 
 
@@ -202,6 +228,18 @@ Object subclass: #Number
   <builtin: '^'>
 ! bitInvert
   <builtin: '^-1'>
+! to: end do: aBlock
+  | index |
+  index := self.
+  [index <= end] whileTrue:
+      [aBlock value: index.
+      index := index + 1]
+! timesDo: aBlock
+  | index |
+  index := self.
+  [index > 0] whileTrue:
+      [aBlock cull: index.
+      index := index - 1]
 !!
 
 
