@@ -5,20 +5,10 @@
     <script src="js/builtins.js"></script>
     <script src="js/vm.js"></script>
     <script src="js/bytecodes.js"></script>
- <script>
-   const bytecodeFile = window.location.search.indexOf('test=1') >= 0 ?
-        'testing.json' : 'plain.json';
-   fetch(bytecodeFile).then((json) => json.json()).then((bytecode) => {
-     const loadingThread = new Thread();
-     loadingThread.push({
-       bytecode: bytecode,
-       locals: [],
-       pc: 0,
-       parent: null,
-       thread: loadingThread,
-       stack: [],
-     });
-     global.vm.pushReady(loadingThread);
-     global.vm.run();
-   });
+  <script>
+    const bytecodeFile = window.location.search.indexOf('test=1') >= 0 ?
+         'testing.json' : 'plain.json';
+    fetch(bytecodeFile).then((json) => json.json()).then((bytecode) => {
+      global.vm.start(bytecode);
+    });
   </script>

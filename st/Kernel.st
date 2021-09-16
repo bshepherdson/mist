@@ -12,6 +12,9 @@ Javascript functions."
   inst := self basicNew.
   inst initialize.
   ^ inst"
+
+! methodDictionary
+  ^ methodDict
 !!
 
 "Do nothing in #initialize by default."
@@ -28,6 +31,9 @@ Javascript functions."
   ^ self class
 ! isKindOf: aClass
   ^ self class == aClass or: [ self class inheritsFrom: aClass ]
+! halt
+  "Triggers the debugger!"
+  <builtin: 'halt'>
 !!
 
 
@@ -65,19 +71,18 @@ Object subclass: #BlockClosure
   instanceVariableNames: 'bytecode argv argc methodRecord'.
 
 "Blocks and evaluating blocks."
-! BlockClosure
-! isBlock
-  ^ true
-!!
-
 ! Object
 ! isBlock
   ^ true
 !!
 
 ! BlockClosure
+! isBlock
+  ^ true
 ! value
   <builtin: 'runBlock'>
+! valueNoContextSwitch
+  <builtin: 'runBlockNCS'>
 ! value: arg1
   <builtin: 'runBlock'>
 ! value: arg1 value: arg2

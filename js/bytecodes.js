@@ -90,8 +90,8 @@ BYTECODE_HANDLERS.send = function(ar, bc) {
   // All is good: found the method and it has the right arg count for this send.
   // So we build a new activation record and set it up.
   const locals = ar.stack.splice(ixReceiver); // Removes them from the original, returns the removed items.
-  const newAR = new ActivationRecord(ar, locals, method);
-  newAR.thread.push(newAR);
+  const newAR = new ActivationRecord().init(ar, locals, method);
+  newAR.thread().push(newAR);
   // Execution will continue at this new location, then continue after the send.
 };
 

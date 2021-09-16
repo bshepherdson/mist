@@ -1,6 +1,5 @@
 // Virtual machine types and code.
 
-
 // Thread
 // A thread is one line of execution, and it runs concurrently with other
 // VM threads.
@@ -28,11 +27,10 @@ class Thread {
 
   tick() {
     const ar = this.activation;
-    const bc = ar.bytecode[ar.pc];
+    const bc = ar.next();
     if (!bc) {
       throw new InternalError('Compiler failed to insert an answer bytecode.');
     }
-    ar.pc++;
     execute(vm, ar, bc);
   }
 
@@ -42,7 +40,7 @@ class Thread {
 
   // Pops a single activation record.
   pop() {
-    this.activation = this.activation.parent;
+    this.activation = this.activation.parent();
   }
 
   // Pops records until the given record is on top.
@@ -123,13 +121,31 @@ class VM {
   run() {
     if (!this.lastIdleCallback) {
       this.lastIdleCallback = global.requestIdleCallback((deadline) => {
+        console.log('idle');
         this.tick(deadline);
+        this.lastIdleCallback = null;
+        if (!this.stopped) {
+          console.log('running again');
+          this.run();
+        }
       }, {timeout: 300});
     }
   }
 
+  // Called to kick off the VM process.
+  start(bytecode) {
+    const loadingThread = new Thread();
+    const method = mkMethod(0, 0, bytecode);
+    const ar = new ActivationRecord().init(null, null, method);
+    loadingThread.push(ar);
+    ar._thread = loadingThread;
+    global.vm.pushReady(loadingThread);
+    global.vm.run();
+  }
+
   // Cancels any future idle callbacks, and stops me running for now.
   stop() {
+    this.stopped = true;
     if (this.lastIdleCallback) {
       global.cancelIdleCallback(this.lastIdleCallback);
       this.lastIdleCallback = null;
@@ -141,7 +157,11 @@ class VM {
   tick(deadline) {
     const start = performance.now();
     let total = 0;
-    while (deadline.timeRemaining() < IDLE_DEADLINE_MARGIN) {
+
+    // Idle timeouts run either when the browser is legit idle, or when their
+    // max wait timeout has expired. In the latter case, deadline is 0.
+    // So we run at least one time slice, even if there's no idleness.
+    while (total === 0 || deadline.timeRemaining() > IDLE_DEADLINE_MARGIN) {
       this.runningThread();
       for (let i = 0; this.currentThread && i < OPCODES_PER_TIME_SLICE; i++) {
         this.currentThread.tick();
@@ -152,6 +172,7 @@ class VM {
         this.stop();
         break;
       }
+      if (deadline.didTimeout) break;
     }
     const elapsed = performance.now() - start;
     console.log('ran', total, 'opcodes in', elapsed, 'ms', (total/elapsed*1000), 'per second');

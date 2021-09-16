@@ -39,7 +39,7 @@ func (l *STL) initClasses() {
 	l.classes["ClassDescription"] = &class{
 		name:       "ClassDescription",
 		superclass: l.classes["Behavior"],
-		members:    instVars("name", "superclass", "instanceVariables"),
+		members:    instVars("name", "superclass", "instanceVariables", "methodDict"),
 	}
 	l.classes["Class"] = &class{
 		name:       "Class",
@@ -68,6 +68,11 @@ func (l *STL) initClasses() {
 	l.classes["False"] = &class{
 		name:       "False",
 		superclass: l.classes["Boolean"],
+	}
+	l.classes["MethodContext"] = &class{
+		name:       "MethodContext",
+		superclass: l.classes["Object"],
+		members:    instVars("method", "locals", "pc", "sender"),
 	}
 
 	l.scope.vars["Object"] = &cell{KindGlobal, 0}

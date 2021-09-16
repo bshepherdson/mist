@@ -118,9 +118,9 @@ builtins['runBlock'] = function(ar) {
   }
 
   // Now it's populated, so we set up the block's AR and call it.
-  const newAR = activationRecord(ar, outerAR.locals,
-      block.$vars[CLOSURE_BYTECODE], 0);
-  newAR.methodRecord = outerAR;
+  const newAR = new ActivationRecord().init(ar, outerAR.locals,
+      block.$vars[CLOSURE_BYTECODE]);
+  newAR.inBlockContext(outerAR);
 
   // This primitive is called from inside eg. BlockClosure value: x but there's
   // no need to add an extra layer to the return.
@@ -128,6 +128,11 @@ builtins['runBlock'] = function(ar) {
   ar.thread.pop();
   ar.thread.push(newAR);
 };
+
+// Exactly like runBlock except it prevents a context switch in between.
+// I'm not actually sure how vital this is - for now it's a copy of runBlock.
+// TODO Figure out this and other context switching things!
+builtins['runBlockNCS'] = builtins['runBlock'];
 
 function numericBinOp(fn) {
   return function(ar) {
@@ -231,5 +236,10 @@ builtins['array_at:put:'] = function(ar) {
 builtins['array_length'] = function(ar) {
   const array = ar.locals[0];
   answer(ar, wrapNumber(array.length));
+};
+
+builtins['halt'] = function(ar) {
+  debugger;
+  answer(ar, stNil);
 };
 

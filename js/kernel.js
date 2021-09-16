@@ -106,7 +106,7 @@ const CLASS_VAR_METHODS = 3;
 const CTX_METHOD = 0;
 const CTX_LOCALS = 1;
 const CTX_PC = 2;
-const CTX_PARENT = 3;
+const CTX_SENDER = 3;
 
 
 // Rule 10: The metaclass of Metaclass is an instance of Metaclass.
@@ -114,14 +114,18 @@ classes['Metaclass class'].$class = classes['Metaclass'];
 
 classes['Object class'].$vars[CLASS_VAR_SUPERCLASS] = classes['Class'];
 
-mkClass('BlockClosure', 'Object', 4); // Bytecode, argv, argc, methodRecord
+mkClass('BlockClosure', 'Object', 6);
+// Argc, locals, bytecode, methodRecord, argv index, handleActive
 mkClass('CompiledMethod', 'Object', 4); // Bytecode, locals, argc, selector
 
+// NB: Keep the shared prefixes of CLOSURE_ and METHOD_ in sync! A few parts of
+// the VM treat them interchangeably.
 const CLOSURE_ARGC = 0;
 const CLOSURE_LOCALS = 1;
 const CLOSURE_BYTECODE = 2;
 const CLOSURE_METHOD_RECORD = 3; // The MethodContext for my method. Used to implement block returns.
 const CLOSURE_ARGV_START = 4; // Index into the parent method's locals list where the first arg is located.
+const CLOSURE_HANDLER_ACTIVE = 5;
 
 const METHOD_ARGC = 0;
 const METHOD_LOCALS = 1;
@@ -169,6 +173,7 @@ function mkMethod(argc, locals, bytecode) {
   method.$vars[METHOD_BYTECODE] = bytecode;
   method.$vars[METHOD_ARGC] = wrapNumber(argc);
   method.$vars[METHOD_LOCALS] = wrapNumber(locals);
+  return method;
 }
 
 function attachMethod(cls, selector, method) {
@@ -189,7 +194,7 @@ attachMethod('CompiledMethod class', 'argc:locals:length:',
     ]));
 
 attachMethod('ClassDescription', 'method:selector:',
-    mkMethod(2, 1 + 2 + 0,
+    mkMethod(2, 1 + 2 + 0, [
       {bytecode: 'primitive', keyword: 'builtin:', name: 'addMethod'},
     ]));
 
@@ -209,22 +214,27 @@ attachMethod('SystemDictionary class', 'at:',
 // NB: It's circular to call Smalltalk methods to implement MethodContext; that
 // would require creating more MethodContexts!
 class ActivationRecord {
+  // There are two ways to create an ActivationRecord:
+  // - directly from a MethodContext with new ActivationRecord(someContext), or
+  // - constructing a new one for a message send, with
+  //   new ActivationRecord().init(parent, locals, method)
   constructor(opt_ctx) {
     if (opt_ctx) {
       this.ctx = opt_ctx;
     }
+    // JS VM stack.
+    this.stack = [];
   }
 
   init(parent, locals, method) {
     this.ctx = mkInstance(classes['MethodContext']);
     this.ctx.$vars[CTX_METHOD] = method;
     this.ctx.$vars[CTX_LOCALS] = locals || [];
-    this.ctx.$vars[CTX_PARENT] = parent;
-    this.ctx.$vars[CTX_PC] = 0;
+    this.ctx.$vars[CTX_SENDER] = parent || stNil;
+    this.ctx.$vars[CTX_PC] = wrapNumber(0);
 
-    // JS VM stack.
-    this.stack = [];
-    this._thread = parent.thread();
+    this._thread = parent ? parent.thread() : null;
+    return this;
   }
 
   context() {
@@ -265,9 +275,8 @@ class ActivationRecord {
   // - 1 to argc = args
   // - argc+1 to argc+locals = locals
   //
-  // For blocks, though, 
-  // - argc+locals+1 and up = closure locals
-  // START HERE Figure out the above - I need a whiteboard.
+  // Blocks know how to adjust for this, since their args and locals are inlined
+  // into the parent's fields.
   getLocal(ix) {
     return this.ctx.$vars[CTX_LOCALS][ix];
   }
@@ -284,7 +293,7 @@ class ActivationRecord {
   }
 
   parent() {
-    return this.ctx.$vars[CTX_PARENT];
+    return this.ctx.$vars[CTX_SENDER];
   }
 
   thread() {
