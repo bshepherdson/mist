@@ -114,11 +114,11 @@ builtins['runBlock'] = function(ar) {
 
   const outerAR = block.$vars[CLOSURE_METHOD_RECORD];
   for (let i = 0; i < argc; i++) {
-    outerAR.locals[argv + i] = ar.locals[i + 1];
+    outerAR.setLocal(argv + i, ar.getLocal(i + 1));
   }
 
   // Now it's populated, so we set up the block's AR and call it.
-  const newAR = new ActivationRecord().init(ar, outerAR.locals,
+  const newAR = new ActivationRecord().init(ar, outerAR.locals(),
       block.$vars[CLOSURE_BYTECODE]);
   newAR.inBlockContext(outerAR);
 
@@ -136,8 +136,8 @@ builtins['runBlockNCS'] = builtins['runBlock'];
 
 function numericBinOp(fn) {
   return function(ar) {
-    const a = ar.locals[0].$vars[NUMBER_RAW];
-    const b = ar.locals[1].$vars[NUMBER_RAW];
+    const a = ar.self().$vars[NUMBER_RAW];
+    const b = ar.getLocal(1).$vars[NUMBER_RAW];
     const c = fn(a, b);
     answer(ar, wrapNumber(c));
   };
@@ -156,64 +156,80 @@ builtins['num='] = numericBinOp((a, b) => a === b);
 
 // Identity
 builtins['=='] = function(ar) {
-  const res = ar.locals[0] === ar.locals[1];
+  const res = ar.self() === ar.getLocal(1);
   answer(ar, res ? stTrue : stFalse);
 };
 
 builtins['^-1'] = function(ar) {
-  const value = ar.locals[0].$vars[NUMBER_RAW];
+  const value = ar.self().$vars[NUMBER_RAW];
   answer(ar, wrapNumber(value & -1));
 };
 
 // Logs the *first argument* (not self).
 // Answers that argument.
 builtins['console.log'] = function(ar) {
-  console.log(ar.locals[1]);
-  answer(ar, ar.locals[1]);
+  const value = ar.getLocal(1);
+  console.log(value);
+  answer(ar, value);
+};
+
+
+builtins['instVarAt:'] = function(ar) {
+  const index = ar.getLocal(1).$vars[NUMBER_RAW]; // 1-based index.
+  answer(ar, ar.self().$vars[index-1]);
+};
+
+builtins['instVarAt:put:'] = function(ar) {
+  const index = ar.getLocal(1).$vars[NUMBER_RAW]; // 1-based index.
+  ar.self().$vars[index-1] = ar.getLocal(2);
+  answer(ar, ar.self());
 };
 
 
 // Working with a raw Javascript map. Puts that map in the first instance
 // variable. Answers self.
 builtins['new object'] = function(ar) {
-  ar.locals[0].$vars[DICTIONARY_RAW] = {};
-  answer(ar, ar.locals[0]);
+  ar.self().$vars[DICTIONARY_RAW] = {};
+  answer(ar, ar.self());
 };
 
 // Answers the value looked up.
 builtins['dict_at:'] = function(ar) {
-  const key = ar.locals[1].$vars[STRING_RAW];
-  const map = ar.locals[0].$vars[DICTIONARY_RAW];
+  const key = ar.getLocal(1).$vars[STRING_RAW];
+  const map = ar.self().$vars[DICTIONARY_RAW];
   answer(ar, map[key] || stNil);
 };
 // Answers self.
 builtins['dict_at:put:'] = function(ar) {
-  const key = ar.locals[1].$vars[STRING_RAW];
-  const map = ar.locals[0].$vars[DICTIONARY_RAW];
-  const value = ar.locals[2];
+  const key = ar.getLocal(1).$vars[STRING_RAW];
+  const map = ar.self().$vars[DICTIONARY_RAW];
+  const value = ar.getLocal(2);
   map[key] = value;
-  answer(ar, ar.locals[0]);
+  answer(ar, ar.self());
 };
 
 function stArray(array) {
+  return array; // JS Arrays are already turned into ST objects.
+  /*
   return {
     $class: classes['Array'],
     $vars: [array || []],
   };
+  */
 }
 
 builtins['dict_values'] = function(ar) {
-  const map = ar.locals[0].$vars[DICTIONARY_RAW];
+  const map = ar.self().$vars[DICTIONARY_RAW];
   answer(ar, stArray(Object.values(map)));
 };
 builtins['dict_keys'] = function(ar) {
-  const map = ar.locals[0].$vars[DICTIONARY_RAW];
+  const map = ar.self().$vars[DICTIONARY_RAW];
   answer(ar, stArray(Object.keys(map)));
 };
 
 
 builtins['systemDictAt'] = function(ar) {
-  const target = ar.locals[1].$vars[STRING_RAW];
+  const target = ar.getLocal(1).$vars[STRING_RAW];
   answer(ar, classes[target] || stNil);
 }
 
@@ -224,18 +240,17 @@ builtins['new array'] = function(ar) {
 };
 
 builtins['array_at:'] = function(ar) {
-  const key = ar.locals[1].$vars[NUMBER_RAW];
-  answer(ar, ar.locals[0][key]);
+  const key = ar.getLocal(1).$vars[NUMBER_RAW];
+  answer(ar, ar.self()[key]);
 };
 builtins['array_at:put:'] = function(ar) {
-  const key = ar.locals[1].$vars[NUMBER_RAW];
-  ar.locals[0][key] = ar.locals[2];
-  answer(ar, ar.locals[0]);
+  const key = ar.getLocal(1).$vars[NUMBER_RAW];
+  ar.self()[key] = ar.getLocal(2);
+  answer(ar, ar.self());
 };
 
 builtins['array_length'] = function(ar) {
-  const array = ar.locals[0];
-  answer(ar, wrapNumber(array.length));
+  answer(ar, wrapNumber(ar.self().length));
 };
 
 builtins['halt'] = function(ar) {

@@ -288,6 +288,10 @@ class ActivationRecord {
     this.ctx.$vars[CTX_LOCALS][ix] = value;
   }
 
+  locals() {
+    return this.ctx.$vars[CTX_LOCALS];
+  }
+
   self() {
     return this.getLocal(0);
   }
