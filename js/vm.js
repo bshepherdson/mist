@@ -1,27 +1,5 @@
 // Virtual machine types and code.
 
-// Activation record
-// This gives the stack, PC, locals and arguments for method execution.
-// {
-//   bytecode: Array of bytecode we're accessing.
-//   pc: Index into the bytecode array.
-//   locals: Array containing [self, args..., temps...]
-//   parent: Activation record for the parent to return to.
-//   thread: Thread I'm running under.
-//   stack: The stack of Smalltalk objects in the VM's working space.
-// }
-
-function activationRecord(from, locals, bytecode, pc) {
-  return {
-    bytecode: bytecode,
-    locals: locals,
-    pc: pc || 0,
-    parent: from,
-    thread: from.thread,
-    stack: [],
-  };
-}
-
 
 // Thread
 // A thread is one line of execution, and it runs concurrently with other

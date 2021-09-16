@@ -4,27 +4,31 @@ default: all
 NODEJS=node
 GO=go
 
-JS_FILES=kernel.js errors.js builtins.js vm.js bytecodes.js
-JS_FILES_EXPANDED=$(foreach js,$(JS_FILES),js/$(js))
-
-ST_FILES=Kernel.st Exceptions.st \
-				 Collection.st Collections-Array.st Collections-Unordered.st \
-				 SUnit.st Test.st
-ST_FILES_EXPANDED=$(foreach st,$(ST_FILES),st/$(st))
+ST_FILES=st/Kernel.st st/Exceptions.st \
+				 st/Collection.st st/Collections-Array.st st/Collections-Unordered.st \
+				 st/SUnit.st
+ST_TESTS=st/tests/Basics.st
 
 all.js: js/*.js
-	cat $(JS_FILES_EXPANDED) > $@
+	cat $(JS_FILES) > $@
 
 mist: *.go parser/*.go
 	$(GO) build
 
-st.json: st/*.st mist
-	./mist $(ST_FILES_EXPANDED)
+plain.json: st/*.st mist
+	./mist $(ST_FILES)
+	mv st.json plain.json
 
-all: st.json
+testing.json: st/*.st st/tests/*.st mist
+	./mist $(ST_FILES) $(ST_TESTS)
+	mv st.json testing.json
+
+all: plain.json
 
 run: all FORCE
 	$(NODEJS) run.js
+
+test: testing.json
 
 watch:
 	while true; do \

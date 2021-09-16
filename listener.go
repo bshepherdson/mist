@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/shepheb/mist/parser"
 )
@@ -425,9 +426,20 @@ func (l *STL) LeaveUnit() {
 }
 
 func (l *STL) EnterBlock(params, locals []string) {
-	l.cp.startBlock(l.methodLocals, len(params), 0)
-	l.methodLocals += len(params) + len(locals)
+	argStart := l.methodLocals
+	l.cp.startBlock(len(params), len(locals), argStart, 0)
 	l.blockStart(l.cp.pc) // Points to the first bytecode.
+
+	// Nest a scope - the
+	l.pushScope()
+	for i, v := range params {
+		l.scope.vars[v] = &cell{KindArg, l.methodLocals + i}
+	}
+	for i, v := range locals {
+		l.scope.vars[v] = &cell{KindLocal, l.methodLocals + len(params) + i}
+	}
+
+	l.methodLocals += len(params) + len(locals)
 	l.answered = false
 }
 
@@ -437,6 +449,7 @@ func (l *STL) LeaveBlock() {
 	if !l.answered {
 		l.cp.answer()
 	}
+	l.popScope()
 	l.answered = false
 	l.blockStop(l.cp.pc)
 }
@@ -469,7 +482,7 @@ func (l *STL) LeaveDynArray() {
 }
 
 func (l *STL) VisitIdentifier(id *parser.Ident) {
-	// Special cases: self and super.
+	// Special cases: self, super, thisContext, nil, true and false.
 	if id.Text == "self" {
 		l.cp.pushSelf()
 		return
@@ -479,16 +492,37 @@ func (l *STL) VisitIdentifier(id *parser.Ident) {
 		l.superSend = true
 		return
 	}
+	if id.Text == "nil" {
+		l.cp.pushNil()
+		return
+	}
+	if id.Text == "thisContext" {
+		l.cp.pushContext()
+		return
+	}
+	if id.Text == "true" {
+		l.cp.pushBool(true)
+		return
+	}
+	if id.Text == "false" {
+		l.cp.pushBool(false)
+		return
+	}
 
 	// Try to look it up in the scope.
 	spec := l.scope.lookup(id.Text)
 	if spec == nil {
-		// Assume this is a class value, and compile a SystemDictionary at: sym.
-		l.cp.pushGlobal("SystemDictionary")
-		l.cp.pushString(id.Text)
-		l.cp.send(false, 0, "asSymbol")
-		l.cp.send(false, 1, "at:")
-		return
+		if unicode.IsUpper([]rune(id.Text)[0]) {
+			// Assume this is a class value, and compile a SystemDictionary at: sym.
+			l.cp.pushGlobal("SystemDictionary")
+			l.cp.pushString(id.Text)
+			l.cp.send(false, 0, "asSymbol")
+			l.cp.send(false, 1, "at:")
+			return
+		}
+
+		// If we're still here, this is an unknown local identifier.
+		l.Error(fmt.Errorf("%s: unknown identifier: %s", id.SourceLoc(), id.Text))
 	}
 
 	switch spec.kind {

@@ -76,7 +76,8 @@ mkClass('CompiledMethod', 'Object', 3); // argc, locals, first BC
 mkClass('String', 'Object', 1);
 mkClass('Symbol', 'String', 0, 1);
 mkClass('Number', 'Object', 1);
-
+mkClass('SystemDictionary', 'Object', 0);
+mkClass('MethodContext', 'Object', 5);
 
 mkClass('NullObject', 'Object');
 const stNil = mkInstance(classes['NullObject']);
@@ -101,6 +102,12 @@ const CLASS_VAR_SUPERCLASS = 1;
 const CLASS_VAR_INSTVAR_COUNT = 2;
 const CLASS_VAR_METHODS = 3;
 
+// Indexes into MethodContext/ActivationRecord.
+const CTX_METHOD = 0;
+const CTX_LOCALS = 1;
+const CTX_PC = 2;
+const CTX_PARENT = 3;
+
 
 // Rule 10: The metaclass of Metaclass is an instance of Metaclass.
 classes['Metaclass class'].$class = classes['Metaclass'];
@@ -110,10 +117,11 @@ classes['Object class'].$vars[CLASS_VAR_SUPERCLASS] = classes['Class'];
 mkClass('BlockClosure', 'Object', 4); // Bytecode, argv, argc, methodRecord
 mkClass('CompiledMethod', 'Object', 4); // Bytecode, locals, argc, selector
 
-const CLOSURE_BYTECODE = 0;
-const CLOSURE_ARGV = 1;
-const CLOSURE_ARGC = 2;
-const CLOSURE_METHOD_RECORD = 3; // The activationRecord for my method. Used to implement block returns.
+const CLOSURE_ARGC = 0;
+const CLOSURE_LOCALS = 1;
+const CLOSURE_BYTECODE = 2;
+const CLOSURE_METHOD_RECORD = 3; // The MethodContext for my method. Used to implement block returns.
+const CLOSURE_ARGV_START = 4; // Index into the parent method's locals list where the first arg is located.
 
 const METHOD_ARGC = 0;
 const METHOD_LOCALS = 1;
@@ -155,42 +163,155 @@ function methodLookup(selector, cls) {
 const ERR_DOES_NOT_UNDERSTAND = 'doesNotUnderstand';
 const ERR_ARGC_MISMATCH = 'argcMismatch';
 
+// Creates hand-rolled Smalltalk methods for bootstrapping.
+function mkMethod(argc, locals, bytecode) {
+  const method = mkInstance(classes['CompiledMethod']);
+  method.$vars[METHOD_BYTECODE] = bytecode;
+  method.$vars[METHOD_ARGC] = wrapNumber(argc);
+  method.$vars[METHOD_LOCALS] = wrapNumber(locals);
+}
+
+function attachMethod(cls, selector, method) {
+  let dict = classes[cls].$vars[CLASS_VAR_METHODS];
+  if (!dict) {
+    dict = classes[cls].$vars[CLASS_VAR_METHODS] = {};
+  }
+
+  dict[selector] = method;
+}
+
 // Two key built-in methods that are used to compile more:
 // - CompiledMethod class >> argc:locals:length: to create new methods.
 // - Class >> method:selector: for attaching them to a class's dictionary.
-const createMethod = mkInstance(classes['CompiledMethod']);
-createMethod.$vars[METHOD_BYTECODE] = [
-  {bytecode: 'primitive', keyword: 'builtin:', name: 'defineMethod'},
-];
-createMethod.$vars[METHOD_ARGC] = wrapNumber(3);
-// receiver, 3 args, no temps.
-createMethod.$vars[METHOD_LOCALS] = wrapNumber(1 + 3 + 0);
-classes['CompiledMethod class'].$vars[CLASS_VAR_METHODS] = {
-  'argc:locals:length:': createMethod,
-};
+attachMethod('CompiledMethod class', 'argc:locals:length:',
+    mkMethod(3, 1 + 3 + 0, [
+      {bytecode: 'primitive', keyword: 'builtin:', name: 'defineMethod'},
+    ]));
 
-const attachMethod = mkInstance(classes['CompiledMethod']);
-attachMethod.$vars[METHOD_BYTECODE] = [
-  {bytecode: 'primitive', keyword: 'builtin:', name: 'addMethod'},
-];
-attachMethod.$vars[METHOD_ARGC] = wrapNumber(2);
-// receiver, 2 args, no temps.
-attachMethod.$vars[METHOD_LOCALS] = wrapNumber(1 + 2 + 0);
-classes['ClassDescription'].$vars[CLASS_VAR_METHODS] = {
-  'method:selector:': attachMethod,
-};
+attachMethod('ClassDescription', 'method:selector:',
+    mkMethod(2, 1 + 2 + 0,
+      {bytecode: 'primitive', keyword: 'builtin:', name: 'addMethod'},
+    ]));
 
-const asSymbolMethod = mkInstance(classes['CompiledMethod']);
-asSymbolMethod.$vars[METHOD_BYTECODE] = [
-  {bytecode: 'primitive', keyword: 'builtin:', name: 'toSymbol'},
-];
-asSymbolMethod.$vars[METHOD_ARGC] = wrapNumber(0);
-asSymbolMethod.$vars[METHOD_LOCALS] = wrapNumber(1); // Just receiver.
-classes['String'].$vars[CLASS_VAR_METHODS] = {
-  'asSymbol': asSymbolMethod,
-};
+attachMethod('String', 'asSymbol',
+    mkMethod(0, 1, [
+      {bytecode: 'primitive', keyword: 'builtin:', name: 'toSymbol'},
+    ]));
+
+attachMethod('SystemDictionary class', 'at:',
+    mkMethod(1, 1 + 1 + 0, [
+      {bytecode: 'primitive', keyword: 'builtin:', name: 'systemDictAt'},
+    ]));
+
+
+// MethodContext is the activation record!
+// This class just wraps the ST object with a JS interface.
+// NB: It's circular to call Smalltalk methods to implement MethodContext; that
+// would require creating more MethodContexts!
+class ActivationRecord {
+  constructor(opt_ctx) {
+    if (opt_ctx) {
+      this.ctx = opt_ctx;
+    }
+  }
+
+  init(parent, locals, method) {
+    this.ctx = mkInstance(classes['MethodContext']);
+    this.ctx.$vars[CTX_METHOD] = method;
+    this.ctx.$vars[CTX_LOCALS] = locals || [];
+    this.ctx.$vars[CTX_PARENT] = parent;
+    this.ctx.$vars[CTX_PC] = 0;
+
+    // JS VM stack.
+    this.stack = [];
+    this._thread = parent.thread();
+  }
+
+  context() {
+    return this.ctx;
+  }
+
+  peek() {
+    return this.bytecode()[this.pc()];
+  }
+
+  next() {
+    const bc = this.peek();
+    this.pcBump(1);
+    return bc;
+  }
+
+  // Returns the raw JS array.
+  bytecode() {
+    return this.method().$vars[METHOD_BYTECODE];
+  }
+
+  method() {
+    return this.ctx.$vars[CTX_METHOD];
+  }
+
+  pc() {
+    return this.ctx.$vars[CTX_PC].$vars[NUMBER_RAW];
+  }
+
+  pcBump(amount) {
+    // TODO Immutable numbers?
+    this.ctx.$vars[CTX_PC].$vars[NUMBER_RAW] += amount;
+  }
+
+  // JS indexing.
+  // For regular methods:
+  // - 0 = receiver
+  // - 1 to argc = args
+  // - argc+1 to argc+locals = locals
+  //
+  // For blocks, though, 
+  // - argc+locals+1 and up = closure locals
+  // START HERE Figure out the above - I need a whiteboard.
+  getLocal(ix) {
+    return this.ctx.$vars[CTX_LOCALS][ix];
+  }
+
+  setLocal(ix, value) {
+    if (ix <= this.argc()) {
+      throw new Exception('Cannot set args/receiver');
+    }
+    this.ctx.$vars[CTX_LOCALS][ix] = value;
+  }
+
+  self() {
+    return this.getLocal(0);
+  }
+
+  parent() {
+    return this.ctx.$vars[CTX_PARENT];
+  }
+
+  thread() {
+    return this._thread;
+  }
+
+  // When representing a block execution, the call stack captures how we really
+  // got here: some method called `aBlock value` or similar.
+  // - this is the block's own context
+  // - this.parent() is eg. BlockClosure>>value
+  // - this.parent().parent() is the calling method.
+  //
+  // Meanwhile this.blockContext() is the MethodContext that defined the block.
+  // That might not even be on the stack anymore! But we preserve it with its
+  // locals so we can close over them.
+  inBlockContext(ar) {
+    this._blockContext = ar;
+  }
+  blockContext() {
+    return this._blockContext;
+  }
+}
+
 
 // Upgrade standard Javascript arrays to become Smalltalk objects.
+// TODO These should probably be divided into a separate NativeArray or JsArray
+// or something.
 Object.defineProperty(Array.prototype, '$class', {
   configurable: false,
   enumerable: false,

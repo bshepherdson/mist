@@ -235,3 +235,4 @@ HashedCollection subclass: #Dictionary
 ! isDictionary
   ^ false
 !!
+

@@ -1,33 +1,33 @@
 const builtins = {};
 
 function answer(ar, value) {
-  ar.thread.pop();
-  ar.parent.stack.push(value);
+  ar.thread().pop();
+  ar.parent().stack.push(value);
 }
 
 // Called from Class>>basicNew, expects the receiver to be the class.
 // Answers the new instance.
 builtins.basicNew = function(ar) {
-  answer(ar, mkInstance(ar.locals[0]));
+  answer(ar, mkInstance(ar.self()));
 };
 
 // Called from Object>>class, answers the class of the receiver.
 builtins.class = function(ar) {
-  answer(ar, ar.locals[0].$class);
+  answer(ar, ar.self().$class);
 };
 
 function mkSubclass(ar, instanceVariables, classVariables) {
-  const parent = ar.locals[0];
-  const name = ar.locals[1].$vars[STRING_RAW];
+  const parent = ar.self();
+  const name = ar.getLocal(1).$vars[STRING_RAW];
   let instVars = '';
   let classVars = '';
 
   let ix = 2;
   if (instanceVariables) {
-    instVars = ar.locals[ix++].$vars[STRING_RAW];
+    instVars = ar.getLocal(ix++).$vars[STRING_RAW];
   }
   if (classVariables) {
-    classVars = ar.locals[ix++].$vars[STRING_RAW];
+    classVars = ar.getLocal(ix++).$vars[STRING_RAW];
   }
 
   instVars = instVars ? instVars.split(/ +/).length : 0;
@@ -54,16 +54,16 @@ builtins['subclass:instanceVariableNames:classVariableNames:'] = function(ar) {
 // Answers the new CompiledMethod instance.
 builtins['defineMethod'] = function(ar) {
   // Parent's PC is the start of the method, and needs to be advanced.
-  const start = ar.parent.pc;
-  const argc = ar.locals[1].$vars[NUMBER_RAW];
-  const temps = ar.locals[2].$vars[NUMBER_RAW];
-  const len = ar.locals[3].$vars[NUMBER_RAW];
+  const start = ar.parent().pc();
+  const argc = ar.getLocal(1).$vars[NUMBER_RAW];
+  const temps = ar.getLocal(2).$vars[NUMBER_RAW];
+  const len = ar.getLocal(3).$vars[NUMBER_RAW];
 
   const method = mkInstance(classes['CompiledMethod']);
-  method.$vars[METHOD_BYTECODE] = ar.parent.bytecode.slice(start, start + len);
+  method.$vars[METHOD_BYTECODE] = ar.parent().bytecode().slice(start, start + len);
   method.$vars[METHOD_LOCALS] = wrapNumber(1 + argc + temps);
-  method.$vars[METHOD_ARGC] = ar.locals[1];
-  ar.parent.pc += len; // Advance the PC past the method we just compiled.
+  method.$vars[METHOD_ARGC] = ar.getLocal(1);
+  ar.parent().pcBump(len); // Advance the PC past the method we just compiled.
   answer(ar, method);
 }
 
@@ -72,9 +72,9 @@ builtins['defineMethod'] = function(ar) {
 // The class has a method dictionary.
 // Answers 'self', the class.
 builtins['addMethod'] = function(ar) {
-  const self = ar.locals[0];
-  const method = ar.locals[1];
-  const selector = ar.locals[2].$vars[STRING_RAW];
+  const self = ar.self();
+  const method = ar.getLocal(1);
+  const selector = ar.getLocal(2).$vars[STRING_RAW];
   let dict = self.$vars[CLASS_VAR_METHODS];
   if (!dict) {
     self.$vars[CLASS_VAR_METHODS] = dict = {};
@@ -87,7 +87,7 @@ builtins['addMethod'] = function(ar) {
 // Called by String>>#asSymbol. The (wrapped) String is the receiver.
 // Answers the Symbol version of this string.
 builtins['toSymbol'] = function(ar) {
-  const raw = ar.locals[0].$vars[STRING_RAW];
+  const raw = ar.self().$vars[STRING_RAW];
   let dict = classes['Symbol class'].$vars[SYMBOL_CLASS_DICT];
   if (!dict) {
     dict = classes['Symbol class'].$vars[SYMBOL_CLASS_DICT] = {};
@@ -103,13 +103,15 @@ builtins['toSymbol'] = function(ar) {
 builtins['runBlock'] = function(ar) {
   // self is the block, which remembers its containing context.
   // We need to populate the block's arguments into the right spots, if any.
-  const block = ar.locals[0];
-  const argc = block.$vars[CLOSURE_ARGC];
-  if (argc + 1 !== ar.locals.length) {
-    throw new BlockArgumentCountMismatchError(argc, ar.locals.length - 1);
+  // This primitive is called from eg. BlockClosure >> value:value: so the args
+  // are exactly those that need to be passed to the block.
+  const block = ar.self();
+  const argcWanted = block.$vars[CLOSURE_ARGC].$vars[NUMBER_RAW];
+  const argcGiven = ar.method().$vars[METHOD_ARGC].$vars[NUMBER_RAW];
+  if (argcWanted !== argcGiven) {
+    throw new BlockArgumentCountMismatchError(argcWanted, argcGiven);
   }
 
-  const argv = block.$vars[CLOSURE_ARGV];
   const outerAR = block.$vars[CLOSURE_METHOD_RECORD];
   for (let i = 0; i < argc; i++) {
     outerAR.locals[argv + i] = ar.locals[i + 1];
@@ -205,6 +207,10 @@ builtins['dict_keys'] = function(ar) {
 };
 
 
+builtins['systemDictAt'] = function(ar) {
+  const target = ar.locals[1].$vars[STRING_RAW];
+  answer(ar, classes[target] || stNil);
+}
 
 // Working with a raw Javascript array.
 // Expects the array to be instance variable 0.

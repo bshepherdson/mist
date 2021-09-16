@@ -26,6 +26,8 @@ Javascript functions."
   "Provides the best class to use to clone the receiver. Defaults to self class
   but might be something different. Eg. Interval's species is Array."
   ^ self class
+! isKindOf: aClass
+  ^ self class == aClass or: [ self class inheritsFrom: aClass ]
 !!
 
 
@@ -47,14 +49,20 @@ Javascript functions."
 !!
 
 
+! Behavior
+! inheritsFrom: aClass
+  | aSuperclass |
+  aSuperclass := self superclass.
+  [aSuperclass == nil]
+      whileFalse:
+          [aSuperclass == aClass ifTrue: [^true].
+          aSuperclass := aSuperclass superclass].
+  ^false
+!!
+
+
 Object subclass: #BlockClosure
   instanceVariableNames: 'bytecode argv argc methodRecord'.
-
-" This is already defined by the runtime.
-Object subclass: #CompiledMethod
-  instanceVariableNames: 'bytecode locals argc selector'."
-
-"START HERE: See if we can get this far."
 
 "Blocks and evaluating blocks."
 ! BlockClosure

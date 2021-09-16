@@ -51,8 +51,8 @@ func (p *Parser) Parse() {
 }
 
 func (p *Parser) unexpected(got Token, expected ...string) {
-	p.out.Error(fmt.Errorf("Unexpected %s: expected %s", got.Desc(),
-		strings.Join(expected, " or ")))
+	p.out.Error(fmt.Errorf("%s: unexpected %s: expected %s", got.SourceLoc(),
+		got.Desc(), strings.Join(expected, " or ")))
 }
 
 // Consumes and returns a token, erroring if it's not the one we expected.

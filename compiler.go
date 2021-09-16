@@ -46,7 +46,7 @@ func (c *Compiler) compile(bc *Bytecode) {
 // Bytecode summary:
 // pushLocal(index), pushGlobal(name), pushSelf, pushInstVar(index)
 // pushLiteral(value), storeLocal(index), storeInstVar(index)
-// startBlock(length, argc, argStart)
+// startBlock(length, argc, temps)
 // send(argc, super bool, selector)
 // dup, drop, answer, answerBlock, answerSelf, primitive(name)
 func (c *Compiler) pushLocal(index int) {
@@ -73,6 +73,14 @@ func (c *Compiler) pushBool(value bool) {
 	c.compile(&Bytecode{Bytecode: "pushBool", Super: value})
 }
 
+func (c *Compiler) pushNil() {
+	c.compile(&Bytecode{Bytecode: "pushNil"})
+}
+
+func (c *Compiler) pushContext() {
+	c.compile(&Bytecode{Bytecode: "pushContext"})
+}
+
 func (c *Compiler) pushString(value string) {
 	c.compile(&Bytecode{Bytecode: "pushString", Name: value})
 }
@@ -85,10 +93,11 @@ func (c *Compiler) storeInstVar(index int) {
 	c.compile(&Bytecode{Bytecode: "storeInstVar", Index: index})
 }
 
-func (c *Compiler) startBlock(argStart, argc, length int) {
+func (c *Compiler) startBlock(argc, locals, argStart, length int) {
 	c.compile(&Bytecode{
 		Bytecode: "startBlock",
 		Argc:     argc,
+		Temps:    locals,
 		ArgStart: argStart,
 		Length:   length,
 	})

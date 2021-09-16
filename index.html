@@ -6,7 +6,9 @@
     <script src="js/vm.js"></script>
     <script src="js/bytecodes.js"></script>
  <script>
-   fetch('st.json').then((json) => json.json()).then((bytecode) => {
+   const bytecodeFile = window.location.search.indexOf('test=1') >= 0 ?
+        'testing.json' : 'plain.json';
+   fetch(bytecodeFile).then((json) => json.json()).then((bytecode) => {
      const loadingThread = new Thread();
      loadingThread.push({
        bytecode: bytecode,

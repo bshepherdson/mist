@@ -70,7 +70,7 @@ Object subclass: #TestResult
   [ [aTestCase runCase]
     on: self class failure
     do: [ :signal |
-      failures add: aTestCase.
+      failed add: aTestCase.
       tcPassed := false.
       signal return: false]]
         on: self class error
