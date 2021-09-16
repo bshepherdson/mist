@@ -233,6 +233,11 @@ class ActivationRecord {
     this.ctx.$vars[CTX_SENDER] = parent || stNil;
     this.ctx.$vars[CTX_PC] = wrapNumber(0);
 
+    // Set all the actual locals (not the arguments) to stNil.
+    for (let i = 0; i < method.$vars[METHOD_LOCALS].$vars[NUMBER_RAW]; i++) {
+      this.ctx.$vars[CTX_LOCALS].push(stNil);
+    }
+
     this._thread = parent ? parent.thread() : null;
     return this;
   }
