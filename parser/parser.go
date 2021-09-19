@@ -22,7 +22,7 @@ func NewParser(filename string, reader io.RuneReader, listener Listener) *Parser
 	return &Parser{
 		lexer: &Lexer{
 			loc:     &Loc{file: filename, line: 1, col: 0},
-			scanner: &scanner{reader: reader},
+			scanner: &scanner{reader: reader, buffered: make([]rune, 2, 2)},
 		},
 		out: listener,
 	}
@@ -428,6 +428,18 @@ func (p *Parser) parseLiteral(t Token) {
 		default:
 			p.unexpected(t2, "#[byte array]", "#(constant array)")
 		}
+	case TBinary:
+		// If this is - it's allowed.
+		if t.(*BinOp).Op == "-" {
+			t2 := p.lexer.Advance()
+			if t2.Id() == TNumber {
+				n := t2.(*Number)
+				n.Negative = !n.Negative
+				p.out.VisitNumber(n)
+				return
+			}
+		}
+		p.unexpected(t, "literal value")
 	}
 }
 
@@ -465,6 +477,7 @@ func (p *Parser) parseBlock() {
 	var locals []string
 	if t.Id() == TPipe {
 		locals = p.parseLocals() // Consumes the final | too.
+		t = p.lexer.Advance()
 	}
 
 	p.out.EnterBlock(params, locals)

@@ -43,6 +43,12 @@ func (c *Compiler) compile(bc *Bytecode) {
 	c.pc++
 }
 
+// Rewinds the compiler so the next bytecode goes at to.
+func (c *Compiler) rewind(to int) {
+	c.bytecodes = c.bytecodes[0:to]
+	c.pc = to
+}
+
 // Bytecode summary:
 // pushLocal(index), pushGlobal(name), pushSelf, pushInstVar(index)
 // pushLiteral(value), storeLocal(index), storeInstVar(index)
@@ -62,7 +68,7 @@ func (c *Compiler) pushSelf() {
 }
 
 func (c *Compiler) pushInstVar(index int) {
-	c.compile(&Bytecode{Bytecode: "pushSelf", Index: index})
+	c.compile(&Bytecode{Bytecode: "pushInstVar", Index: index})
 }
 
 func (c *Compiler) pushNumber(value float64) {

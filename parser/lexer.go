@@ -506,6 +506,14 @@ func (l *Lexer) scanNumber(loc *Loc) (Token, error) {
 	r, eof := l.scanner.lookahead()
 	if !eof && r == '.' {
 		l.scanner.read() // Consume the .
+		// However, if the *next* value is not another identContinue, the dot was
+		// separate from the number.
+		r, eof := l.scanner.lookahead()
+		if eof || !identContinue(r) {
+			fmt.Printf("Retreating from number .\n")
+			l.scanner.rewind('.') // Put back the dot; this isn't a number.
+			return n, nil
+		}
 		n.Floating = string(l.scanner.readWhile(digit))
 
 		// Replace the "next character".

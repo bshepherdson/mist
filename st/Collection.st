@@ -5,7 +5,7 @@ Collection
   Array                 Native array of Smalltalk values.
 "
 
-Object subclass: #Collection.
+"Object subclass: #Collection. - This is defined in the VM"
 
 "Early declaration of the Array class, to be filled in later.
 Raw Javascript arrays have their prototype modified to hold $class, turning them
@@ -155,6 +155,9 @@ Error subclass: #NotFound
 
 ! isSequenceable
   ^ false
+
+! first
+  ^ self at: 1
 !!
 
 ! NullObject

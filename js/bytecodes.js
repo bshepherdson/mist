@@ -1,5 +1,5 @@
 BYTECODE_HANDLERS.pushLocal = function(ar, bc) {
-  ar.stack.push(ar.getLocal(bc.index || 0));
+  ar.stack().push(ar.getLocal(bc.index || 0));
 };
 
 BYTECODE_HANDLERS.pushGlobal = function(ar, bc) {
@@ -7,43 +7,43 @@ BYTECODE_HANDLERS.pushGlobal = function(ar, bc) {
   if (!g) {
     throw new Error('Unknown global ' + bc.name);
   }
-  ar.stack.push(g);
+  ar.stack().push(g);
 };
 
 BYTECODE_HANDLERS.pushSelf = function(ar, bc) {
-  ar.stack.push(ar.getLocal(0));
+  ar.stack().push(ar.getLocal(0));
 };
 
 BYTECODE_HANDLERS.pushInstVar = function(ar, bc) {
-  ar.stack.push(ar.self().$vars[bc.index || 0]);
+  ar.stack().push(ar.self().$vars[bc.index || 0]);
 };
 
 BYTECODE_HANDLERS.pushNumber = function(ar, bc) {
-  ar.stack.push(wrapNumber(bc.value || 0));
+  ar.stack().push(wrapNumber(bc.value || 0));
 };
 
 BYTECODE_HANDLERS.pushString = function(ar, bc) {
-  ar.stack.push(wrapString(bc.name));
+  ar.stack().push(wrapString(bc.name));
 };
 
 BYTECODE_HANDLERS.pushBool = function(ar, bc) {
-  ar.stack.push(bc.super ? classes['true'] : classes['false']);
+  ar.stack().push(bc.super ? classes['true'] : classes['false']);
 };
 
 BYTECODE_HANDLERS.pushNil = function(ar, bc) {
-  ar.stack.push(stNil);
+  ar.stack().push(stNil);
 };
 
 BYTECODE_HANDLERS.pushContext = function(ar, bc) {
-  ar.stack.push(ar.context());
+  ar.stack().push(ar.context());
 };
 
 BYTECODE_HANDLERS.storeLocal = function(ar, bc) {
-  as.setLocal(bc.index || 0, ar.stack.pop());
+  ar.setLocal(bc.index || 0, ar.stack().pop());
 };
 
 BYTECODE_HANDLERS.storeInstVar = function(ar, bc) {
-  ar.self().$vars[bc.index || 0] = ar.stack.pop();
+  ar.self().$vars[bc.index || 0] = ar.stack().pop();
 };
 
 BYTECODE_HANDLERS.startBlock = function(ar, bc) {
@@ -54,12 +54,17 @@ BYTECODE_HANDLERS.startBlock = function(ar, bc) {
   const pc = ar.pc();
   closure.$vars[CLOSURE_BYTECODE] =
       ar.bytecode().slice(pc, pc + (bc.length || 0));
-  closure.$vars[CLOSURE_ARGC] = wrapNumber(bc.argc);
-  closure.$vars[CLOSURE_LOCALS] = wrapNumber(bc.temps);
-  closure.$vars[CLOSURE_METHOD_RECORD] = ar.context();
+  closure.$vars[CLOSURE_ARGC] = wrapNumber(bc.argc || 0);
+  closure.$vars[CLOSURE_LOCALS] = wrapNumber(bc.temps || 0);
   closure.$vars[CLOSURE_ARGV_START] = wrapNumber(bc.argStart);
 
-  ar.stack.push(closure);
+  // If the running method is a block, grab its method context.
+  // Otherwise, use the method's context from the ActivationRecord.
+  closure.$vars[CLOSURE_METHOD_RECORD] =
+      ar.method().$class === classes['BlockClosure'] ?
+          ar.method().$vars[CLOSURE_METHOD_RECORD] : ar.context();
+
+  ar.stack().push(closure);
   ar.pcBump(bc.length || 0);
 };
 
@@ -68,8 +73,8 @@ BYTECODE_HANDLERS.send = function(ar, bc) {
   // First, look up the target method. We need to check its arg count and such.
   // The receiver is on the stack followed by its arguments: rcvr arg1 arg2...
   const argc = bc.argc || 0;
-  const ixReceiver = ar.stack.length - argc - 1;
-  const receiver = ar.stack[ixReceiver];
+  const ixReceiver = ar.stack().length - argc - 1;
+  const receiver = ar.stack()[ixReceiver];
   let startingClass = receiver.$class;
   if (bc.super) {
     startingClass = startingClass.$vars[CLASS_VAR_SUPERCLASS];
@@ -89,24 +94,24 @@ BYTECODE_HANDLERS.send = function(ar, bc) {
 
   // All is good: found the method and it has the right arg count for this send.
   // So we build a new activation record and set it up.
-  const locals = ar.stack.splice(ixReceiver); // Removes them from the original, returns the removed items.
-  const newAR = new ActivationRecord().init(ar, locals, method);
+  const locals = ar.stack().splice(ixReceiver); // Removes them from the original, returns the removed items.
+  const newAR = new ActivationRecord(ar.thread()).init(ar, locals, method);
   newAR.thread().push(newAR);
   // Execution will continue at this new location, then continue after the send.
 };
 
 BYTECODE_HANDLERS.dup = function(ar, bc) {
-  ar.stack.push(ar.stack[ar.stack.length - 1]);
+  ar.stack().push(ar.stack()[ar.stack().length - 1]);
 };
 
 BYTECODE_HANDLERS.drop = function(ar, bc) {
-  ar.stack.pop();
+  ar.stack().pop();
 };
 
 BYTECODE_HANDLERS.answer = function(ar, bc) {
   // Pop the top of this ar's stack, and push it onto the parent's.
-  ar.thread.pop();
-  ar.parent().stack.push(ar.stack.pop());
+  ar.thread().pop();
+  ar.parent().stack().push(ar.stack().pop());
 };
 
 BYTECODE_HANDLERS.answerBlock = function(ar, bc) {
@@ -117,23 +122,24 @@ BYTECODE_HANDLERS.answerBlock = function(ar, bc) {
   let chain = ar.parent();
   while (true) {
     // Good case: this ancestor is the containing method.
-    if (chain === container) break;
+    if (chain.equals(container)) break;
     chain = chain.parent();
     // Bad case: we've run out of parents and failed to find the method.
     if (!chain || chain === stNil) {
-      throw new Exception('Non-local return');
+      throw new Error(
+          'Non-local block return - containing method no longer on the stack');
     }
   }
 
   // If we got to here, we know this is a legal block return.
   // Push the value to the blockContext's *parent's* stack, then pop to it.
-  container.parent().stack.push(ar.stack.pop());
+  container.parent().stack().push(ar.stack().pop());
   ar.thread().popTo(container.parent());
 };
 
 BYTECODE_HANDLERS.answerSelf = function(ar, bc) {
   ar.thread().pop();
-  ar.parent().stack.push(ar.self());
+  ar.parent().stack().push(ar.self());
 };
 
 BYTECODE_HANDLERS.primitive = function(ar, bc) {

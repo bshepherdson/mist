@@ -2,7 +2,7 @@ const builtins = {};
 
 function answer(ar, value) {
   ar.thread().pop();
-  ar.parent().stack.push(value);
+  ar.parent().stack().push(value);
 }
 
 // Called from Class>>basicNew, expects the receiver to be the class.
@@ -75,29 +75,34 @@ builtins['addMethod'] = function(ar) {
   const self = ar.self();
   const method = ar.getLocal(1);
   const selector = ar.getLocal(2).$vars[STRING_RAW];
-  let dict = self.$vars[CLASS_VAR_METHODS];
+  let dict = self.$vars[CLASS_VAR_METHODS].$vars[DICTIONARY_RAW];
   if (!dict) {
-    self.$vars[CLASS_VAR_METHODS] = dict = {};
+    self.$vars[CLASS_VAR_METHODS].$vars[DICTIONARY_RAW] = dict = {};
   }
 
+  method.$vars[METHOD_CLASS] = self;
+  method.$vars[METHOD_NAME] = ar.getLocal(2);
   dict[selector] = method;
   answer(ar, self);
 };
 
-// Called by String>>#asSymbol. The (wrapped) String is the receiver.
-// Answers the Symbol version of this string.
-builtins['toSymbol'] = function(ar) {
-  const raw = ar.self().$vars[STRING_RAW];
+function toSymbol(s) {
   let dict = classes['Symbol class'].$vars[SYMBOL_CLASS_DICT];
   if (!dict) {
     dict = classes['Symbol class'].$vars[SYMBOL_CLASS_DICT] = {};
   }
 
-  if (!dict[raw]) {
-    dict[raw] = mkInstance(classes['Symbol']);
-    dict[raw].$vars[STRING_RAW] = raw;
+  if (!dict[s]) {
+    dict[s] = mkInstance(classes['Symbol']);
+    dict[s].$vars[STRING_RAW] = s;
   }
-  answer(ar, dict[raw]);
+  return dict[s];
+}
+
+// Called by String>>#asSymbol. The (wrapped) String is the receiver.
+// Answers the Symbol version of this string.
+builtins['toSymbol'] = function(ar) {
+  answer(ar, toSymbol(ar.self().$vars[STRING_RAW]));
 };
 
 builtins['runBlock'] = function(ar) {
@@ -112,21 +117,21 @@ builtins['runBlock'] = function(ar) {
     throw new BlockArgumentCountMismatchError(argcWanted, argcGiven);
   }
 
-  const outerAR = block.$vars[CLOSURE_METHOD_RECORD];
-  for (let i = 0; i < argc; i++) {
+  const outerAR = new ActivationRecord(ar.thread(), block.$vars[CLOSURE_METHOD_RECORD]);
+  const argv = block.$vars[CLOSURE_ARGV_START].$vars[NUMBER_RAW];
+  for (let i = 0; i < argcGiven; i++) {
     outerAR.setLocal(argv + i, ar.getLocal(i + 1));
   }
 
   // Now it's populated, so we set up the block's AR and call it.
-  const newAR = new ActivationRecord().init(ar, outerAR.locals(),
-      block.$vars[CLOSURE_BYTECODE]);
+  const newAR = new ActivationRecord(ar.thread()).init(ar.parent(), outerAR.locals(), block);
   newAR.inBlockContext(outerAR);
 
   // This primitive is called from inside eg. BlockClosure value: x but there's
   // no need to add an extra layer to the return.
   // This returns directly from the block to the caller.
-  ar.thread.pop();
-  ar.thread.push(newAR);
+  ar.thread().pop();
+  ar.thread().push(newAR);
 };
 
 // Exactly like runBlock except it prevents a context switch in between.
@@ -134,25 +139,35 @@ builtins['runBlock'] = function(ar) {
 // TODO Figure out this and other context switching things!
 builtins['runBlockNCS'] = builtins['runBlock'];
 
+function binOp(fn, ar) {
+  const a = ar.self().$vars[NUMBER_RAW];
+  const b = ar.getLocal(1).$vars[NUMBER_RAW];
+  return fn(a, b);
+}
+
 function numericBinOp(fn) {
   return function(ar) {
-    const a = ar.self().$vars[NUMBER_RAW];
-    const b = ar.getLocal(1).$vars[NUMBER_RAW];
-    const c = fn(a, b);
-    answer(ar, wrapNumber(c));
+    answer(ar, wrapNumber(binOp(fn, ar)));
   };
 }
 
-builtins['+']  = numericBinOp((a, b) => a + b);
-builtins['-']  = numericBinOp((a, b) => a - b);
-builtins['*']  = numericBinOp((a, b) => a * b);
-builtins['/']  = numericBinOp((a, b) => a / b);
-builtins['%']  = numericBinOp((a, b) => a % b);
-builtins['<']  = numericBinOp((a, b) => a < b);
-builtins['|']  = numericBinOp((a, b) => a | b);
-builtins['&']  = numericBinOp((a, b) => a & b);
-builtins['^']  = numericBinOp((a, b) => a ^ b);
-builtins['num='] = numericBinOp((a, b) => a === b);
+function comparisonBinOp(fn) {
+  return function(ar) {
+    answer(ar, binOp(fn, ar) ? stTrue : stFalse);
+  };
+}
+
+builtins['+'] = numericBinOp((a, b) => a + b);
+builtins['-'] = numericBinOp((a, b) => a - b);
+builtins['*'] = numericBinOp((a, b) => a * b);
+builtins['/'] = numericBinOp((a, b) => a / b);
+builtins['%'] = numericBinOp((a, b) => a % b);
+builtins['|'] = numericBinOp((a, b) => a | b);
+builtins['&'] = numericBinOp((a, b) => a & b);
+builtins['^'] = numericBinOp((a, b) => a ^ b);
+
+builtins['<']    = comparisonBinOp((a, b) => a < b);
+builtins['num='] = comparisonBinOp((a, b) => a === b);
 
 // Identity
 builtins['=='] = function(ar) {
@@ -224,7 +239,7 @@ builtins['dict_values'] = function(ar) {
 };
 builtins['dict_keys'] = function(ar) {
   const map = ar.self().$vars[DICTIONARY_RAW];
-  answer(ar, stArray(Object.keys(map)));
+  answer(ar, stArray(Object.keys(map).map(wrapString)));
 };
 
 
@@ -236,7 +251,14 @@ builtins['systemDictAt'] = function(ar) {
 // Working with a raw Javascript array.
 // Expects the array to be instance variable 0.
 builtins['new array'] = function(ar) {
-  answer(ar, []);
+  // Sets the size if there's an argument, it's new: aSize
+  const argc = ar.method().$vars[METHOD_ARGC].$vars[NUMBER_RAW] || 0;
+  const len = argc > 0 ? ar.getLocal(1).$vars[NUMBER_RAW] : 0;
+  const ret = [];
+  for (let i = 0; i < len; i++) {
+    ret.push(stNil);
+  }
+  answer(ar, ret);
 };
 
 builtins['array_at:'] = function(ar) {
@@ -253,8 +275,19 @@ builtins['array_length'] = function(ar) {
   answer(ar, wrapNumber(ar.self().length));
 };
 
+builtins['starts_with_str'] = function(ar) {
+  const self = ar.self().$vars[STRING_RAW];
+  const arg = ar.getLocal(1).$vars[STRING_RAW];
+  answer(ar, self.startsWith(arg) ? stTrue : stFalse);
+};
+
 builtins['halt'] = function(ar) {
   debugger;
+  answer(ar, stNil);
+};
+
+builtins['throw'] = function(ar) {
+  throw ar.self();
   answer(ar, stNil);
 };
 

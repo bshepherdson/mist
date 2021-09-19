@@ -52,11 +52,14 @@ Signaling:
     complete := true.
     aBlock value ].
   ^ returnValue
+
+! isExceptionHandler
+  ^ false
 !!
 
 ! CompiledMethod
 ! isExceptionHandler
-  ^ self == (BlockClosure methodDictionary at: #on:do:)
+  ^ self selector = #on:do:
 !!
 
 Object subclass: #Exception
@@ -70,6 +73,8 @@ Exception subclass: #Error.
   "By default, an Exception subclass can handle an instance of any transitive
   subclass."
   ^ anException isKindOf: self
+! signal: aMessage
+  ^ self new signal: aMessage
 ! , anotherException
   "Create an exception set to hold all of these."
   | set |
@@ -78,11 +83,6 @@ Exception subclass: #Error.
   set add: anotherException.
   ^ set
   "^ ExceptionSet new add: self; add: anotherException; yourself"
-!!
-
-! Exception
-! messageText: aDescription
-  messageText := aDescription
 !!
 
 ! Error
@@ -97,6 +97,8 @@ Exception subclass: #Error.
 ! nextHandlerContext
   "Finds the innermost exception handling context. That is, one with on:do:."
   ^ self sender findNextHandlerContextStarting
+! compiledCode
+  ^ method
 ! sender
   "Returns the parent context, that sent the message that created this one."
   ^ sender
@@ -116,8 +118,8 @@ Exception subclass: #Error.
   Search starts with self and proceeds up to nil."
   | ctx |
   ctx := self.
-  [ ctx isHandlerContext ifTrue: [^ctx].
-    (ctx := ctx sender) == nil ] whileFalse.
+  [ ctx isHandlerContext ifTrue: [4 halt. ^ctx].
+    (ctx := ctx sender) isNil ] whileFalse.
   ^ nil
 
 ! exceptionClass
@@ -134,6 +136,7 @@ Exception subclass: #Error.
   ^ self tempAt: 3 put: aBoolean
 
 ! isHandlerContext
+  self halt.
   ^ method isExceptionHandler
 
 ! handleSignal: exception
@@ -141,10 +144,11 @@ Exception subclass: #Error.
   handles exception then execute my handle block (second arg), otherwise forward
   this message to the next handler context. If none are left, execute the
   exception's defaultAction (see nil>>handleSignal:)."
-  | value |
-  ((self exceptionClass handles: exception)
-    and: [self exceptionHandlerIsActive])
-    ifFalse: [ ^ self nextHandlerContext handleSignal: exception ].
+  | value tmp |
+  tmp := (self exceptionClass handles: exception)
+      and: [self exceptionHandlerIsActive].
+  Transcript show: tmp.
+  tmp ifFalse: [ ^ self nextHandlerContext handleSignal: exception ].
 
   exception privHandlerContext: self.
   "disable self while executing the handle block"
@@ -206,18 +210,21 @@ Exception subclass: #Error.
 !!
 
 ! Exception
+! messageText: aDescription
+  messageText := aDescription
 ! signal
   signalContext := thisContext.
+  9 halt.
   ^ thisContext nextHandlerContext handleSignal: self
 ! signal: aMessage
   self messageText: aMessage.
-  "TODO"
-  nil handleSignal: self
+  self signal
 ! defaultAction
   Transcript error: self description
 ! resume
   "TODO"
 !!
+
 
 Object subclass: #ExceptionSet instanceVariableNames: 'exceptions'.
 ! ExceptionSet
@@ -293,4 +300,20 @@ CannotReturn subclass: #ContextCannotReturn
   ^ ((self new result: aValue) target: aContext) signal
 !!
 
+! NullObject
+! handleSignal: anError
+  <builtin: 'throw'>
+!!
+
+
+"Exception subclass: #AbstractMethod.
+! AbstractMethod
+! message
+  ^ 'Send reached an abstract method - missing implementation'
+!!
+
+! Object
+! subclassResponsibility
+  self error: AbstractMethod new
+!!"
 

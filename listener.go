@@ -12,9 +12,12 @@ import (
 
 // Smalltalk listener, consuming the parser's stream of changes.
 type STL struct {
-	cp                        *Compiler
-	methodName                string
-	methodStart, methodLocals int
+	cp               *Compiler
+	methodName       string
+	methodStart      int  // PC for the start of the method.
+	methodLocals     int  // Number of actual local slots needed.
+	methodLocalIndex int  // Index compile-time locals list, includes self, params.
+	first            bool // True for the first expression of a block or method.
 
 	blockDepth  int
 	blockStarts []int
@@ -39,7 +42,7 @@ func (l *STL) initClasses() {
 	l.classes["ClassDescription"] = &class{
 		name:       "ClassDescription",
 		superclass: l.classes["Behavior"],
-		members:    instVars("name", "superclass", "instanceVariables", "methodDict"),
+		members:    instVars(0, "name", "superclass", "instanceVariables", "methodDict"),
 	}
 	l.classes["Class"] = &class{
 		name:       "Class",
@@ -72,7 +75,21 @@ func (l *STL) initClasses() {
 	l.classes["MethodContext"] = &class{
 		name:       "MethodContext",
 		superclass: l.classes["Object"],
-		members:    instVars("method", "locals", "pc", "sender"),
+		members:    instVars(0, "method", "locals", "pc", "sender", "stack"),
+	}
+	l.classes["Collection"] = &class{
+		name:       "Collection",
+		superclass: l.classes["Object"],
+	}
+	l.classes["HashedCollection"] = &class{
+		name:       "HashedCollection",
+		superclass: l.classes["Collecton"],
+		members:    instVars(0, "map"),
+	}
+	l.classes["CompiledMethod"] = &class{
+		name:       "CompiledMethod",
+		superclass: l.classes["Object"],
+		members:    instVars(0, "argc", "locals", "bytecode", "class", "selector"),
 	}
 
 	l.scope.vars["Object"] = &cell{KindGlobal, 0}
@@ -85,6 +102,8 @@ func (l *STL) initClasses() {
 	l.scope.vars["Boolean"] = &cell{KindGlobal, 0}
 	l.scope.vars["True"] = &cell{KindGlobal, 0}
 	l.scope.vars["False"] = &cell{KindGlobal, 0}
+	l.scope.vars["Collection"] = &cell{KindGlobal, 0}
+	l.scope.vars["HashedCollection"] = &cell{KindGlobal, 0}
 }
 
 func NewSTListener() *STL {
@@ -124,10 +143,10 @@ func (s *Scope) lookup(name string) *cell {
 	return nil
 }
 
-func instVars(vars ...string) map[string]int {
+func instVars(start int, vars ...string) map[string]int {
 	m := map[string]int{}
 	for i := 0; i < len(vars); i++ {
-		m[vars[i]] = i
+		m[vars[i]] = i + start
 	}
 	return m
 }
@@ -151,8 +170,18 @@ func (l *STL) blockStart(pc int) {
 func (l *STL) blockStop(pc int) {
 	l.blockDepth--
 	start := l.blockStarts[l.blockDepth]
-	// At the end of the method's code, rewrite the length literal at pc - 2.
-	l.cp.bytecodes[start].Length = pc - start
+
+	// At the end of the block's code, rewrite the length at the block start.
+	length := pc - start
+	// Empty blocks would generate as simply [answer], but that's broken - there's
+	// nothing on the stack to return. So [pushNil, answer].
+	if length == 1 {
+		l.cp.rewind(start)
+		l.cp.pushNil()
+		l.cp.answer()
+		length = 2
+	}
+	l.cp.bytecodes[start-1].Length = length
 }
 
 func (l *STL) Error(err error) {
@@ -239,6 +268,7 @@ func (l *STL) EnterMethod(sig *parser.MessageSignature, locals []string) {
 	// ( cls method )
 
 	l.methodLocals = len(locals)
+	l.methodLocalIndex = 1 + len(sig.Params) + l.methodLocals
 	l.methodName = sig.Symbol
 
 	// Set up the inner scope.
@@ -253,6 +283,7 @@ func (l *STL) EnterMethod(sig *parser.MessageSignature, locals []string) {
 
 	l.methodStart = l.cp.pc
 	l.answered = false
+	l.first = true
 }
 
 func (l *STL) LeaveMethod() {
@@ -304,16 +335,18 @@ func (l *STL) LeaveAssignment(lhs string) {
 }
 
 func (l *STL) EnterExprLine() {
+	// Expressions leave the result on the stack, but if they occupy a whole line,
+	// then they should be dropped.
+	// If this is the first line of a block or method, however, this should not
+	// be dropped.
+	if l.first {
+		l.first = false
+	} else {
+		l.cp.drop()
+	}
 }
 
 func (l *STL) LeaveExprLine() {
-	// Expressions leave the result on the stack, but if they occupy a whole line,
-	// then they should be dropped.
-	// However, if it's already been answered, this won't run and should be
-	// dropped.
-	if !l.answered {
-		l.cp.drop()
-	}
 }
 
 func (l *STL) EnterCascade() {
@@ -431,21 +464,23 @@ func (l *STL) LeaveUnit() {
 }
 
 func (l *STL) EnterBlock(params, locals []string) {
-	argStart := l.methodLocals
+	argStart := l.methodLocalIndex
 	l.cp.startBlock(len(params), len(locals), argStart, 0)
 	l.blockStart(l.cp.pc) // Points to the first bytecode.
 
 	// Nest a scope - the
 	l.pushScope()
 	for i, v := range params {
-		l.scope.vars[v] = &cell{KindArg, l.methodLocals + i}
+		l.scope.vars[v] = &cell{KindArg, l.methodLocalIndex + i}
 	}
 	for i, v := range locals {
-		l.scope.vars[v] = &cell{KindLocal, l.methodLocals + len(params) + i}
+		l.scope.vars[v] = &cell{KindLocal, l.methodLocalIndex + len(params) + i}
 	}
 
 	l.methodLocals += len(params) + len(locals)
+	l.methodLocalIndex += len(params) + len(locals)
 	l.answered = false
+	l.first = true
 }
 
 func (l *STL) LeaveBlock() {
@@ -454,9 +489,9 @@ func (l *STL) LeaveBlock() {
 	if !l.answered {
 		l.cp.answer()
 	}
-	l.popScope()
 	l.answered = false
 	l.blockStop(l.cp.pc)
+	l.popScope()
 }
 
 func (l *STL) EnterConstArray() {
@@ -472,18 +507,14 @@ func (l *STL) EnterDynArray() {
 	// After being created, they get DUPed repeatedly for expressions.
 	l.cp.pushGlobal("Array")
 	l.cp.send(false, 0, "new")
-	l.cp.dup()
 }
 
 func (l *STL) VisitArrayElement() {
 	// add: to the array, then DUP the array for future elements.
 	l.cp.send(false, 1, "add:")
-	l.cp.dup()
 }
 
 func (l *STL) LeaveDynArray() {
-	// There's two copies of the array on the stack, so drop one and we're done.
-	l.cp.drop()
 }
 
 func (l *STL) VisitIdentifier(id *parser.Ident) {

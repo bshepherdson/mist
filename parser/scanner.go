@@ -6,11 +6,10 @@ import (
 )
 
 type scanner struct {
-	bufferRune rune
-	//bufferLoc  *Loc
-	//loc        *Loc
-	eof    bool
-	reader io.RuneReader
+	buffered    []rune
+	bufferCount int
+	eof         bool
+	reader      io.RuneReader
 }
 
 var eofError = fmt.Errorf("EOF")
@@ -22,7 +21,7 @@ func (s *scanner) lookahead() (rune, bool) {
 		return 0, true
 	}
 
-	return s.bufferRune, false
+	return s.buffered[s.bufferCount-1], false
 }
 
 func (s *scanner) read() (rune, bool) {
@@ -31,17 +30,18 @@ func (s *scanner) read() (rune, bool) {
 		return 0, true
 	}
 
-	r := s.bufferRune
-	s.bufferRune = 0
+	s.bufferCount--
+	r := s.buffered[s.bufferCount]
 	return r, false
 }
 
 func (s *scanner) rewind(r rune) {
-	if s.bufferRune != 0 {
-		panic("can't buffer more than one character")
+	if s.bufferCount > 1 {
+		panic("can't buffer more than two characters")
 	}
 
-	s.bufferRune = r
+	s.buffered[s.bufferCount] = r
+	s.bufferCount++
 }
 
 // Reads 0 or more runes that pass the predicate and returns them.
@@ -65,7 +65,7 @@ func (s *scanner) readWhile(pred func(rune) bool) []rune {
 // Ensures there's a rune in the buffer, reading one if there's nothing
 // buffered now.
 func (s *scanner) buffer() {
-	if s.eof || s.bufferRune != 0 {
+	if s.eof || s.bufferCount > 0 {
 		return
 	}
 
@@ -75,5 +75,6 @@ func (s *scanner) buffer() {
 		return
 	}
 
-	s.bufferRune = r
+	s.buffered[s.bufferCount] = r
+	s.bufferCount++
 }

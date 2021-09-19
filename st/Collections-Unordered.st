@@ -1,5 +1,6 @@
-Collection subclass: #HashedCollection
+"Collection subclass: #HashedCollection
   instanceVariableNames: 'map'.
+  - This is defined in the VM."
 
 Error subclass: #KeyNotFound
   instanceVariableNames: 'key'.

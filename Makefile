@@ -6,7 +6,7 @@ GO=go
 
 ST_FILES=st/Kernel.st st/Exceptions.st \
 				 st/Collection.st st/Collections-Array.st st/Collections-Unordered.st \
-				 st/SUnit.st
+				 st/Strings.st st/SUnit.st
 ST_TESTS=st/tests/Basics.st
 
 all.js: js/*.js

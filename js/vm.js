@@ -27,7 +27,9 @@ class Thread {
 
   tick() {
     const ar = this.activation;
+    const pc = ar.pc();
     const bc = ar.next();
+    //console.log('pc', pc, bc, ar.stack().filter(x=>x===undefined).length > 0);
     if (!bc) {
       throw new InternalError('Compiler failed to insert an answer bytecode.');
     }
@@ -136,7 +138,8 @@ class VM {
   start(bytecode) {
     const loadingThread = new Thread();
     const method = mkMethod(0, 0, bytecode);
-    const ar = new ActivationRecord().init(null, null, method);
+    method.$vars[METHOD_NAME] = toSymbol('initialLoad');
+    const ar = new ActivationRecord(loadingThread).init(null, null, method);
     loadingThread.push(ar);
     ar._thread = loadingThread;
     global.vm.pushReady(loadingThread);

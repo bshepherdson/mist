@@ -25,6 +25,8 @@ Javascript functions."
   <builtin: 'class'>
 ! yourself
   ^ self
+! value
+  ^ self "Allows anything to be sent #value, used by eg. test assertions."
 ! species
   "Provides the best class to use to clone the receiver. Defaults to self class
   but might be something different. Eg. Interval's species is Array."
@@ -73,9 +75,12 @@ Javascript functions."
 ! superclass
   ^ superclass
 
+! methods
+  ^ self methodDictionary values
+
 ! selectors
   "Answers an Array of Symbols for the methods on this class."
-  <builtin: 'selectors'>
+  ^ self methodDictionary keys
 !!
 
 
@@ -122,12 +127,29 @@ Object subclass: #BlockClosure
   ^ argc = 0
     ifTrue: [self value]
     ifFalse: [self value: aValue]
+! whileTrue: bodyBlock
+  "NEVER CALLED: This version is ruthlessly recursive, but it should work.
+  Instead, sends of whileTrue and friends should be expanded by
+  the parser's macro system into jump bytecodes."
+  self value ifTrue: [bodyBlock value. self whileTrue: bodyBlock]
+! whileFalse: bodyBlock
+  "NEVER CALLED: See BlockClosure>>whileTrue:"
+  self value ifFalse: [bodyBlock value. self whileFalse: bodyBlock]
+
+! whileTrue
+  "NEVER CALLED: See BlockClosure>>whileTrue:"
+  self value ifTrue: [self whileTrue]
+! whileFalse
+  "NEVER CALLED: See BlockClosure>>whileTrue:"
+  self value ifFalse: [self whileFalse]
 !!
 
 
 "Nil and basic checking."
 ! NullObject
 ! ifNil: aBlock
+  ^ aBlock value
+! ifNil: aBlock ifNotNil: otherBlock
   ^ aBlock value
 ! isNil
   ^ true
@@ -136,6 +158,8 @@ Object subclass: #BlockClosure
 ! Object
 ! ifNil: aBlock
   ^ self
+! ifNil: aBlock ifNotNil: otherBlock
+  ^ otherBlock value
 ! isNil
   ^ false
 ! isNotNil
@@ -158,6 +182,14 @@ Object subclass: #BlockClosure
   ^ trueBlock value
 ! not
   ^ false
+
+! and: aBlock
+  "NEVER CALLED: and: and or: should be rewritten by the compiler."
+  ^ aBlock value
+! or: aBlock
+  "NEVER CALLED: and: and or: should be rewritten by the compiler."
+  ^ self
+
 !!
 
 ! False class
@@ -174,6 +206,13 @@ Object subclass: #BlockClosure
   ^ nil
 ! not
   ^ true
+
+! and: aBlock
+  "NEVER CALLED: and: and or: should be rewritten by the compiler."
+  ^ self
+! or: aBlock
+  "NEVER CALLED: and: and or: should be rewritten by the compiler."
+  ^ aBlock value
 !!
 
 
@@ -228,6 +267,14 @@ Object subclass: #Number
   <builtin: '^'>
 ! bitInvert
   <builtin: '^-1'>
+! negated
+  ^0 - self
+! floor
+  ^ self < 0 ifTrue: [self negated floor negated] ifFalse: [self bitOr: 0]
+! min: aNumber
+  ^ self < aNumber ifTrue: [self] ifFalse: [aNumber]
+! max: aNumber
+  ^ aNumber min: self
 ! to: end do: aBlock
   | index |
   index := self.
@@ -240,36 +287,14 @@ Object subclass: #Number
   [index > 0] whileTrue:
       [aBlock cull: index.
       index := index - 1]
+! between: lo and: hi
+  ^ self >= lo and: [self <= hi]
 !!
 
 
-Object subclass: #Exception
-  instanceVariableNames: 'context message'.
-
-! Exception
-! message
-  ^ message
-! message: aString
-  message := aString
+! CompiledMethod
+! numArgs
+  ^ argc
+! selector
+  ^ selector
 !!
-
-! Exception class
-! cause: aString
-  | e |
-  e := self new.
-  e message: aString.
-  ^ e
-!!
-
-
-Exception subclass: #AbstractMethod.
-! AbstractMethod
-! message
-  ^ 'Send reached an abstract method - missing implementation'
-!!
-
-! Object
-! subclassResponsibility
-  self error: AbstractMethod new
-!!
-

@@ -39,59 +39,6 @@
 
 const classes = {};
 
-classes['Metaclass'] = {};
-
-function mkClass(name, superName, instVars, classVars) {
-  const meta = {
-    $class: classes['Metaclass'],
-    $vars: [
-      name + ' class',
-      classes[superName + ' class'],
-      classVars || 0,
-    ],
-  };
-
-  const cls = {
-    $class: meta,
-    $vars: [
-      name,
-      classes[superName],
-      instVars || 0,
-    ],
-  };
-
-  classes[name + ' class'] = meta;
-  classes[name] = cls;
-}
-
-mkClass('Object', 'nil', 0);
-mkClass('Behavior', 'Object', 0);
-mkClass('ClassDescription', 'Behavior', 4); // name, superclass, instance variables, methodDict.
-mkClass('Class', 'ClassDescription', 0);
-mkClass('Metaclass', 'ClassDescription', 0);
-mkClass('CompiledMethod', 'Object', 3); // argc, locals, first BC
-
-// HACK: These are hobo implementations of the String and Symbol classes, which
-// will get upgraded later.
-mkClass('String', 'Object', 1);
-mkClass('Symbol', 'String', 0, 1);
-mkClass('Number', 'Object', 1);
-mkClass('SystemDictionary', 'Object', 0);
-mkClass('MethodContext', 'Object', 5);
-
-mkClass('NullObject', 'Object');
-const stNil = mkInstance(classes['NullObject']);
-classes['nil'] = stNil;
-
-mkClass('Boolean', 'Object');
-mkClass('True', 'Boolean');
-mkClass('False', 'Boolean');
-const stTrue = mkInstance(classes['True']);
-const stFalse = mkInstance(classes['False']);
-classes['true'] = stTrue;
-classes['false'] = stFalse;
-
-
 const STRING_RAW = 0;
 const NUMBER_RAW = 0;
 const SYMBOL_CLASS_DICT = 5;
@@ -107,6 +54,83 @@ const CTX_METHOD = 0;
 const CTX_LOCALS = 1;
 const CTX_PC = 2;
 const CTX_SENDER = 3;
+const CTX_STACK = 4;
+
+
+classes['Metaclass'] = {};
+
+const methodDictPrototype = {};
+
+function mkClass(name, superName, instVars, classVars) {
+  const metaDict = Object.create(methodDictPrototype);
+  metaDict.$vars = [{}];
+
+  const superMeta = classes[superName + ' class'];
+  const superMetaVars = superMeta ?
+      superMeta.$vars[CLASS_VAR_INSTVAR_COUNT].$vars[NUMBER_RAW] : 0;
+
+  const meta = {
+    $class: classes['Metaclass'],
+    $vars: [
+      name + ' class',
+      classes[superName + ' class'],
+      wrapNumber(superMetaVars + (classVars || 0)),
+      metaDict,
+    ],
+  };
+
+  const superClass = classes[superName];
+  const superVars = superClass ?
+      superClass.$vars[CLASS_VAR_INSTVAR_COUNT].$vars[NUMBER_RAW] : 0;
+
+  const dict = Object.create(methodDictPrototype);
+  dict.$vars = [{}];
+  const cls = {
+    $class: meta,
+    $vars: [
+      name,
+      classes[superName],
+      wrapNumber(superVars + (instVars || 0)),
+      dict,
+    ],
+  };
+
+  classes[name + ' class'] = meta;
+  classes[name] = cls;
+}
+
+mkClass('Object', null, 0);
+mkClass('Behavior', 'Object', 0);
+mkClass('ClassDescription', 'Behavior', 4); // name, superclass, instance variables, methodDict.
+mkClass('Class', 'ClassDescription', 0);
+mkClass('Metaclass', 'ClassDescription', 0);
+mkClass('CompiledMethod', 'Object', 5); // argc, locals, BC, class, selector
+
+// HACK: These are hobo implementations of the String and Symbol classes, which
+// will get upgraded later.
+mkClass('String', 'Object', 1);
+mkClass('Symbol', 'String', 0, 1);
+mkClass('Number', 'Object', 1);
+mkClass('SystemDictionary', 'Object', 0);
+mkClass('MethodContext', 'Object', 5);
+
+mkClass('Collection', 'Object', 0);
+mkClass('HashedCollection', 'Collection', 1);
+
+mkClass('NullObject', 'Object');
+const stNil = mkInstance(classes['NullObject']);
+classes['nil'] = stNil;
+
+mkClass('Boolean', 'Object');
+mkClass('True', 'Boolean');
+mkClass('False', 'Boolean');
+const stTrue = mkInstance(classes['True']);
+const stFalse = mkInstance(classes['False']);
+classes['true'] = stTrue;
+classes['false'] = stFalse;
+
+// This is a bit of tricky bootstrapping, since it's hard to define instances.
+methodDictPrototype.$class = classes['HashedCollection'];
 
 
 // Rule 10: The metaclass of Metaclass is an instance of Metaclass.
@@ -116,7 +140,6 @@ classes['Object class'].$vars[CLASS_VAR_SUPERCLASS] = classes['Class'];
 
 mkClass('BlockClosure', 'Object', 6);
 // Argc, locals, bytecode, methodRecord, argv index, handleActive
-mkClass('CompiledMethod', 'Object', 4); // Bytecode, locals, argc, selector
 
 // NB: Keep the shared prefixes of CLOSURE_ and METHOD_ in sync! A few parts of
 // the VM treat them interchangeably.
@@ -130,6 +153,8 @@ const CLOSURE_HANDLER_ACTIVE = 5;
 const METHOD_ARGC = 0;
 const METHOD_LOCALS = 1;
 const METHOD_BYTECODE = 2;
+const METHOD_CLASS = 3;
+const METHOD_NAME = 4;
 
 const DICTIONARY_RAW = 0;
 
@@ -155,7 +180,7 @@ function wrapString(s) {
 function methodLookup(selector, cls) {
   let c = cls;
   while (c) {
-    const dict = c.$vars[CLASS_VAR_METHODS];
+    const dict = c.$vars[CLASS_VAR_METHODS].$vars[DICTIONARY_RAW];
     if (dict && dict[selector]) {
       return dict[selector];
     }
@@ -177,11 +202,13 @@ function mkMethod(argc, locals, bytecode) {
 }
 
 function attachMethod(cls, selector, method) {
-  let dict = classes[cls].$vars[CLASS_VAR_METHODS];
+  let dict = classes[cls].$vars[CLASS_VAR_METHODS].$vars[DICTIONARY_RAW];
   if (!dict) {
-    dict = classes[cls].$vars[CLASS_VAR_METHODS] = {};
+    dict = classes[cls].$vars[CLASS_VAR_METHODS].$vars[DICTIONARY_RAW] = {};
   }
 
+  method.$vars[METHOD_CLASS] = classes[cls];
+  method.$vars[METHOD_NAME] = wrapString(selector);
   dict[selector] = method;
 }
 
@@ -218,20 +245,22 @@ class ActivationRecord {
   // - directly from a MethodContext with new ActivationRecord(someContext), or
   // - constructing a new one for a message send, with
   //   new ActivationRecord().init(parent, locals, method)
-  constructor(opt_ctx) {
+  constructor(thread, opt_ctx) {
+    // JS VM stack.
+    this._thread = thread;
+
     if (opt_ctx) {
       this.ctx = opt_ctx;
     }
-    // JS VM stack.
-    this.stack = [];
   }
 
   init(parent, locals, method) {
     this.ctx = mkInstance(classes['MethodContext']);
     this.ctx.$vars[CTX_METHOD] = method;
     this.ctx.$vars[CTX_LOCALS] = locals || [];
-    this.ctx.$vars[CTX_SENDER] = parent || stNil;
+    this.ctx.$vars[CTX_SENDER] = parent && parent.context() || stNil;
     this.ctx.$vars[CTX_PC] = wrapNumber(0);
+    this.ctx.$vars[CTX_STACK] = [];
 
     // Set all the actual locals (not the arguments) to stNil.
     for (let i = 0; i < method.$vars[METHOD_LOCALS].$vars[NUMBER_RAW]; i++) {
@@ -269,9 +298,17 @@ class ActivationRecord {
     return this.ctx.$vars[CTX_PC].$vars[NUMBER_RAW];
   }
 
+  stack() {
+    return this.ctx.$vars[CTX_STACK];
+  }
+
   pcBump(amount) {
     // TODO Immutable numbers?
     this.ctx.$vars[CTX_PC].$vars[NUMBER_RAW] += amount;
+  }
+
+  argc() {
+    return this.ctx.$vars[CTX_METHOD].$vars[METHOD_ARGC].$vars[NUMBER_RAW];
   }
 
   // JS indexing.
@@ -288,7 +325,7 @@ class ActivationRecord {
 
   setLocal(ix, value) {
     if (ix <= this.argc()) {
-      throw new Exception('Cannot set args/receiver');
+      throw new Error('Cannot set args/receiver');
     }
     this.ctx.$vars[CTX_LOCALS][ix] = value;
   }
@@ -302,7 +339,8 @@ class ActivationRecord {
   }
 
   parent() {
-    return this.ctx.$vars[CTX_SENDER];
+    const sender = this.ctx && this.ctx.$vars[CTX_SENDER];
+    return sender ?  new ActivationRecord(this.thread(), sender) : null;
   }
 
   thread() {
@@ -323,6 +361,12 @@ class ActivationRecord {
   }
   blockContext() {
     return this._blockContext;
+  }
+
+  // Comparison of ActivationRecords actually does === on the inner
+  // MethodContexts because we recreate the ActivationRecord in runBlock.
+  equals(other) {
+    return this.ctx === other.ctx;
   }
 }
 
