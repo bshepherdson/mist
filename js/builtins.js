@@ -282,6 +282,7 @@ builtins['starts_with_str'] = function(ar) {
 };
 
 builtins['halt'] = function(ar) {
+  console.log('halted', ar.self().$vars[NUMBER_RAW]);
   debugger;
   answer(ar, stNil);
 };

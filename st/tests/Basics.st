@@ -11,26 +11,35 @@ TestCase subclass: #Basics1.
 
 "Transcript show: Basics1 run."
 
-Object subclass: #Playground.
-! Playground
+Object subclass: #Bexp.
 
-! foo
-  Error signal: 'some message'
+! Bexp
+! mainBlock
+  ^ [Transcript show: 'mainBlock start'.
+    self failingBlock ensure: self ensureBlock.
+    Transcript show: 'mainBlock end']
 
-! bar
-  ^ self foo
+! failingBlock
+  ^ [Transcript show: 'failingBlock start'.
+    Error signal.
+    Transcript show: 'failingBlock end']
 
-! baz
-  ^ [self bar] on: Error do: [Transcript show: 'caught!']
+! ensureBlock
+  ^ [Transcript show: 'ensureBlock value'. #EnsureBlockValue]
+! exceptionHandlerBlock
+  ^ [Transcript show: 'exceptionHandlerBlock value'. #ExceptionHandlerBlock]
 
-! holla: value
-  ^ [^9]
+! start
+  | res |
+  Transcript show: 'start start'.
+  res := self mainBlock on: Error do: self exceptionHandlerBlock.
+  Transcript show: 'start end'.
+  Transcript show: res.
+  ^ res
 !!
 
-"Playground new baz."
-Transcript show: (Playground new holla: 6) value.
-99 halt.
+Bexp new start.
 
-"START HERE: This is better, but the answerBlock is slightly busted. Needs
-more investigation."
+"Transcript show: (Playground new holla: 6) value."
+99 halt.
 

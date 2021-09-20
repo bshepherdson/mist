@@ -47,11 +47,24 @@ Signaling:
   "Evaluate a termination block after evaluating the receiver, regardless of
   whether the receiver's evaluation completes."
   | complete returnValue |
-  returnValue := self valueNoContextSwitch.
+  returnValue := self valueNoContextSwitch. "TODO: Add atomic flag to threads"
   complete ifNil: [
     complete := true.
     aBlock value ].
   ^ returnValue
+
+! ifCurtailed: aBlock
+  "Evaluate the receiver with a guard in case of abnormal termination.
+  aBlock is evaluated only if execution is unwound during execution of the
+  receiver. If execution of the receiver finishes normally aBlock is not
+  evaluated."
+  | complete result |
+  result := self valueNoContextSwitch. "TODO: Atomic flag"
+  complete := true.
+  ^ result
+
+! isUnwinder
+  ^ false
 
 ! isExceptionHandler
   ^ false
@@ -60,6 +73,8 @@ Signaling:
 ! CompiledMethod
 ! isExceptionHandler
   ^ self selector = #on:do:
+! isUnwinder
+  ^ self selector = #ensure: or: [self selector = #ifCurtailed:]
 !!
 
 Object subclass: #Exception
@@ -73,6 +88,8 @@ Exception subclass: #Error.
   "By default, an Exception subclass can handle an instance of any transitive
   subclass."
   ^ anException isKindOf: self
+! signal
+  ^ self new signal
 ! signal: aMessage
   ^ self new signal: aMessage
 ! , anotherException
@@ -118,7 +135,7 @@ Exception subclass: #Error.
   Search starts with self and proceeds up to nil."
   | ctx |
   ctx := self.
-  [ ctx isHandlerContext ifTrue: [4 halt. ^ctx].
+  [ ctx isHandlerContext ifTrue: [17 halt. ^ctx].
     (ctx := ctx sender) isNil ] whileFalse.
   ^ nil
 
@@ -135,22 +152,43 @@ Exception subclass: #Error.
 ! exceptionHandlerIsActive: aBoolean
   ^ self tempAt: 3 put: aBoolean
 
+! unwindComplete
+  "This is actually the first local of BlockClosure>>#ensure: and
+  BlockClosure>>#ifCurtailed:, index 2 in the list:
+  [self, ensureBlock, complete]."
+  ^ self tempAt: 2
+
+! unwindComplete: aBoolean
+  ^ self tempAt: 2 put: aBoolean
+
+! unwindComplete
+  "This is actually the first/only argument of BlockClosure>>#ensure: and
+  BlockClosure>>#ifCurtailed:, index 1 in the list:
+  [self, ensureBlock, complete]."
+  ^ self tempAt: 1
+
 ! isHandlerContext
-  self halt.
   ^ method isExceptionHandler
+
+! isUnwindContext
+  ^ method isUnwinder
+
+! isDead
+  "Returns true if this context is 'dead', that is if it cannot be resumed or
+  block-returned. This can happen if a block escapes its creator."
+  ^ pc isNil
 
 ! handleSignal: exception
   "Sent to handler (on:do:) contexts only. If my exception class (first arg)
   handles exception then execute my handle block (second arg), otherwise forward
   this message to the next handler context. If none are left, execute the
   exception's defaultAction (see nil>>handleSignal:)."
-  | value tmp |
-  tmp := (self exceptionClass handles: exception)
-      and: [self exceptionHandlerIsActive].
-  Transcript show: tmp.
-  tmp ifFalse: [ ^ self nextHandlerContext handleSignal: exception ].
+  | value |
+  ((self exceptionClass handles: exception)
+      and: [self exceptionHandlerIsActive])
+    ifFalse: [ ^ self nextHandlerContext handleSignal: exception ].
 
-  exception privHandlerContext: self.
+  exception prevHandlerContext: self.
   "disable self while executing the handle block"
   self exceptionHandlerIsActive: false.
   value := [ self exceptionHandlerBlock cull: exception ]
@@ -191,6 +229,13 @@ Exception subclass: #Error.
   thisContext terminateTo: self.
   ^ value
 
+! findNextUnwindContextUpTo: aContext
+  | ctx |
+  ctx := self.
+  [ (ctx := ctx sender) isNil or: [ctx == aContext] ]
+    whileFalse: [ ctx isUnwindContext ifTrue: [87 halt. ^ctx] ].
+  ^nil
+
 ! terminateTo: previousContext
   "Terminate all the Contexts between me and previousContext, if previousContext
   is on my Context stack. Make previousContext my sender."
@@ -214,15 +259,19 @@ Exception subclass: #Error.
   messageText := aDescription
 ! signal
   signalContext := thisContext.
-  9 halt.
   ^ thisContext nextHandlerContext handleSignal: self
 ! signal: aMessage
   self messageText: aMessage.
   self signal
 ! defaultAction
   Transcript error: self description
+! prevHandlerContext
+  ^ handlerContext
+! prevHandlerContext: aContext
+  handlerContext := aContext
 ! resume
   "TODO"
+  self halt
 !!
 
 

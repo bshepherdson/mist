@@ -101,6 +101,11 @@ function mkClass(name, superName, instVars, classVars) {
 
 mkClass('Object', null, 0);
 mkClass('Behavior', 'Object', 0);
+
+mkClass('NullObject', 'Object');
+const stNil = mkInstance(classes['NullObject']);
+classes['nil'] = stNil;
+
 mkClass('ClassDescription', 'Behavior', 4); // name, superclass, instance variables, methodDict.
 mkClass('Class', 'ClassDescription', 0);
 mkClass('Metaclass', 'ClassDescription', 0);
@@ -116,10 +121,6 @@ mkClass('MethodContext', 'Object', 5);
 
 mkClass('Collection', 'Object', 0);
 mkClass('HashedCollection', 'Collection', 1);
-
-mkClass('NullObject', 'Object');
-const stNil = mkInstance(classes['NullObject']);
-classes['nil'] = stNil;
 
 mkClass('Boolean', 'Object');
 mkClass('True', 'Boolean');
@@ -159,9 +160,17 @@ const METHOD_NAME = 4;
 const DICTIONARY_RAW = 0;
 
 function mkInstance(cls) {
+  const vars = [];
+  if (cls) {
+    const instVars = cls.$vars[CLASS_VAR_INSTVAR_COUNT].$vars[NUMBER_RAW];
+    for (let i = 0; i < instVars; i++) {
+      vars.push(stNil);
+    }
+  }
+
   return {
     $class: cls,
-    $vars: [],
+    $vars: vars,
   };
 }
 

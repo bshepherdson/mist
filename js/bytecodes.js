@@ -58,8 +58,9 @@ BYTECODE_HANDLERS.startBlock = function(ar, bc) {
   closure.$vars[CLOSURE_LOCALS] = wrapNumber(bc.temps || 0);
   closure.$vars[CLOSURE_ARGV_START] = wrapNumber(bc.argStart);
 
-  // If the running method is a block, grab its method context.
-  // Otherwise, use the method's context from the ActivationRecord.
+  // We're either creating a top-level block or a nested block.
+  // If top-level, ar represents the containing method.
+  // If nested, ar is the containing block, grab the method from it.
   closure.$vars[CLOSURE_METHOD_RECORD] =
       ar.method().$class === classes['BlockClosure'] ?
           ar.method().$vars[CLOSURE_METHOD_RECORD] : ar.context();
@@ -95,6 +96,7 @@ BYTECODE_HANDLERS.send = function(ar, bc) {
   // All is good: found the method and it has the right arg count for this send.
   // So we build a new activation record and set it up.
   const locals = ar.stack().splice(ixReceiver); // Removes them from the original, returns the removed items.
+
   const newAR = new ActivationRecord(ar.thread()).init(ar, locals, method);
   newAR.thread().push(newAR);
   // Execution will continue at this new location, then continue after the send.
@@ -118,7 +120,8 @@ BYTECODE_HANDLERS.answerBlock = function(ar, bc) {
   // Block returns are only legal if the block's containing method is on the AR
   // stack. If the parent() chain doesn't contain ar.blockContext() then we need
   // to throw an error for non-local block returns.
-  const container = ar.blockContext();
+  const container = new ActivationRecord(
+      ar.thread(), ar.method().$vars[CLOSURE_METHOD_RECORD]);
   let chain = ar.parent();
   while (true) {
     // Good case: this ancestor is the containing method.

@@ -158,6 +158,14 @@ Error subclass: #NotFound
 
 ! first
   ^ self at: 1
+
+! = aCollection
+  self == aCollection ifTrue: [^true].
+  self class == aCollection class ifFalse: [^false].
+  self size = aCollection size ifFalse: [^false].
+  1 to: self size do: [ :i |
+      (self at: i) = (aCollection at: i) ifFalse: [^false]].
+  ^true
 !!
 
 ! NullObject

@@ -167,3 +167,20 @@ subexpressions.
 
 
 
+# Needed Work
+
+Ideally this could be a full Smalltalk-80, or alternatively a principled
+deparature from it a la Pharo.
+
+
+## Known Gaps
+
+- Block returns do not `ensure:` or `ifCurtailed:` correctly!
+    - Requires sending messages from the bytecode implementation as it gets
+      unwound. Perhaps a quick-and-dirty check for any handlers in scope, and
+      using `thisContext resume: returnValue through: targetContext`.
+
+    - In the common case where there's no handlers, this can be implemented in
+      the VM for speed.
+
+
