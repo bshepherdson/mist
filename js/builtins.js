@@ -33,7 +33,7 @@ function mkSubclass(ar, instanceVariables, classVariables) {
   instVars = instVars ? instVars.split(/ +/).length : 0;
   classVars = classVars ? classVars.split(/ +/).length : 0;
 
-  mkClass(name, parent.$vars[CLASS_VAR_NAME], instVars, classVars);
+  mkClass(name, parent.$vars[CLASS_VAR_NAME].$vars[STRING_RAW], instVars, classVars);
   return classes[name];
 }
 

@@ -84,13 +84,14 @@ BYTECODE_HANDLERS.send = function(ar, bc) {
 
   if (!method) {
     throw new DoesNotUnderstandError(
-        startingClass.$vars[CLASS_VAR_NAME], bc.selector);
+        startingClass.$vars[CLASS_VAR_NAME].$vars[STRING_RAW], bc.selector);
   }
 
   const methodArgc = method.$vars[METHOD_ARGC].$vars[NUMBER_RAW];
   if (methodArgc !== argc) {
     throw new ArgumentCountMismatchError(
-        startingClass.$vars[CLASS_VAR_NAME], bc.selector, methodArgc, argc);
+        startingClass.$vars[CLASS_VAR_NAME].$vars[STRING_RAW],
+        bc.selector, methodArgc, argc);
   }
 
   // All is good: found the method and it has the right arg count for this send.

@@ -1,6 +1,8 @@
 ! String
-! startsWith: aString
+! beginsWith: aString
   <builtin: 'starts_with_str'>
+! asString
+  ^self
 !!
 
 ! Symbol

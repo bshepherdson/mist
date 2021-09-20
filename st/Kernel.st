@@ -72,6 +72,9 @@ Javascript functions."
 ! subclass: aSymbol instanceVariableNames: aString classVariableNames: anotherString
   <builtin: 'subclass:instanceVariableNames:classVariableNames:'>
 
+! name
+  ^name
+
 ! superclass
   ^ superclass
 

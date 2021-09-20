@@ -60,6 +60,8 @@ const CTX_STACK = 4;
 classes['Metaclass'] = {};
 
 const methodDictPrototype = {};
+const stringPrototype = {};
+const numberPrototype = {};
 
 function mkClass(name, superName, instVars, classVars) {
   const metaDict = Object.create(methodDictPrototype);
@@ -72,7 +74,7 @@ function mkClass(name, superName, instVars, classVars) {
   const meta = {
     $class: classes['Metaclass'],
     $vars: [
-      name + ' class',
+      wrapString(name + ' class'),
       classes[superName + ' class'],
       wrapNumber(superMetaVars + (classVars || 0)),
       metaDict,
@@ -88,7 +90,7 @@ function mkClass(name, superName, instVars, classVars) {
   const cls = {
     $class: meta,
     $vars: [
-      name,
+      wrapString(name),
       classes[superName],
       wrapNumber(superVars + (instVars || 0)),
       dict,
@@ -132,6 +134,8 @@ classes['false'] = stFalse;
 
 // This is a bit of tricky bootstrapping, since it's hard to define instances.
 methodDictPrototype.$class = classes['HashedCollection'];
+stringPrototype.$class = classes['String'];
+numberPrototype.$class = classes['Number'];
 
 
 // Rule 10: The metaclass of Metaclass is an instance of Metaclass.
@@ -175,13 +179,21 @@ function mkInstance(cls) {
 }
 
 function wrapNumber(n) {
-  const inst = mkInstance(classes['Number']);
+  const cls = classes['Number'];
+  const inst = cls ? mkInstance(cls) : Object.create(numberPrototype);
+  if (!cls) {
+    inst.$vars = [];
+  }
   inst.$vars[NUMBER_RAW] = n;
   return inst;
 }
 
 function wrapString(s) {
-  const inst = mkInstance(classes['String']);
+  const cls = classes['String'];
+  const inst = cls ? mkInstance(cls) : Object.create(stringPrototype);
+  if (!cls) {
+    inst.$vars = [];
+  }
   inst.$vars[STRING_RAW] = s;
   return inst;
 }

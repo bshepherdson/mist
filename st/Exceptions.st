@@ -81,6 +81,9 @@ Object subclass: #Exception
     instanceVariableNames: 'messageText signaler signalContext handlerContext'.
 
 Exception subclass: #Error.
+Exception subclass: #Warning.
+
+Warning subclass: #Deprecated.
 
 
 ! Exception class
