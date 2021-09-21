@@ -3,6 +3,8 @@
   <builtin: 'starts_with_str'>
 ! asString
   ^self
+! , aString
+  <builtin: 'str_concat'>
 !!
 
 ! Symbol

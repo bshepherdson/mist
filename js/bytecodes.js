@@ -71,36 +71,16 @@ BYTECODE_HANDLERS.startBlock = function(ar, bc) {
 
 
 BYTECODE_HANDLERS.send = function(ar, bc) {
-  // First, look up the target method. We need to check its arg count and such.
   // The receiver is on the stack followed by its arguments: rcvr arg1 arg2...
   const argc = bc.argc || 0;
   const ixReceiver = ar.stack().length - argc - 1;
   const receiver = ar.stack()[ixReceiver];
-  let startingClass = receiver.$class;
-  if (bc.super) {
-    startingClass = startingClass.$vars[CLASS_VAR_SUPERCLASS];
-  }
-  const method = methodLookup(bc.selector, startingClass);
+  const args = ar.stack().splice(ixReceiver); // Removes them from the original, returns the removed items.
 
-  if (!method) {
-    throw new DoesNotUnderstandError(
-        startingClass.$vars[CLASS_VAR_NAME].$vars[STRING_RAW], bc.selector);
-  }
-
-  const methodArgc = method.$vars[METHOD_ARGC].$vars[NUMBER_RAW];
-  if (methodArgc !== argc) {
-    throw new ArgumentCountMismatchError(
-        startingClass.$vars[CLASS_VAR_NAME].$vars[STRING_RAW],
-        bc.selector, methodArgc, argc);
-  }
-
-  // All is good: found the method and it has the right arg count for this send.
-  // So we build a new activation record and set it up.
-  const locals = ar.stack().splice(ixReceiver); // Removes them from the original, returns the removed items.
-
-  const newAR = new ActivationRecord(ar.thread()).init(ar, locals, method);
-  newAR.thread().push(newAR);
-  // Execution will continue at this new location, then continue after the send.
+  // Args includes the receiver, so we slice it off for this call.
+  send(ar, receiver, bc.selector, args.slice(1), bc.super);
+  // That pushes the new AR onto the thread, so execution will continue in the
+  // called method.
 };
 
 BYTECODE_HANDLERS.dup = function(ar, bc) {

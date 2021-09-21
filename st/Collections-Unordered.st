@@ -62,7 +62,7 @@ Object subclass: #Association
   "Returns a Smalltalk Array of the values."
   <builtin: 'dict_keys'>
 ! size
-  self keys size
+  ^ self keys size
 
 ! removeKey: aStringKey
   ^ self removeKey: aStringKey ifAbsent: [ self errorKeyNotFound: aStringKey ]

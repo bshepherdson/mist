@@ -180,6 +180,11 @@ builtins['^-1'] = function(ar) {
   answer(ar, wrapNumber(value & -1));
 };
 
+builtins['numStr'] = function(ar) {
+  const value = ar.self().$vars[NUMBER_RAW];
+  answer(ar, wrapString('' + value));
+};
+
 // Logs the *first argument* (not self).
 // Answers that argument.
 builtins['console.log'] = function(ar) {
@@ -281,8 +286,15 @@ builtins['starts_with_str'] = function(ar) {
   answer(ar, self.startsWith(arg) ? stTrue : stFalse);
 };
 
+builtins['str_concat'] = function(ar) {
+  const self = ar.self().$vars[STRING_RAW];
+  const arg = ar.getLocal(1).$vars[STRING_RAW];
+  answer(ar, wrapString(self + arg));
+};
+
 builtins['halt'] = function(ar) {
-  console.log('halted', ar.self().$vars[NUMBER_RAW]);
+  const raw = ar.self().$vars[NUMBER_RAW];
+  console.log('halted', typeof raw === 'number' ? raw : ar.self());
   debugger;
   answer(ar, stNil);
 };
@@ -290,5 +302,35 @@ builtins['halt'] = function(ar) {
 builtins['throw'] = function(ar) {
   throw ar.self();
   answer(ar, stNil);
+};
+
+
+// The performers send a message to self via reflection.
+// self is the receiver; the first argument is the selector, other args follow.
+// They should return whatever the call returns, so the perform: context frame
+// is elided. That is, the return should be directly to the sender of perform:.
+// To achieve that, they pass ar.parent() as the optional return target for
+// send().
+// That also means we don't need to worry about popping the stack cleanly.
+builtins['perform:'] = function(ar) {
+  send(ar, ar.self(), ar.getLocal(1).$vars[STRING_RAW], [], false, ar.parent());
+};
+builtins['perform:with:'] = function(ar) {
+  send(ar, ar.self(), ar.getLocal(1).$vars[STRING_RAW], [ar.getLocal(2)], false, ar.parent());
+};
+builtins['perform:with:with:'] = function(ar) {
+  send(ar, ar.self(), ar.getLocal(1).$vars[STRING_RAW], ar.locals().slice(2, 4), false, ar.parent());
+};
+builtins['perform:with:with:with:'] = function(ar) {
+  send(ar, ar.self(), ar.getLocal(1).$vars[STRING_RAW], ar.locals().slice(2, 5), false, ar.parent());
+};
+
+builtins['perform:withArguments:'] = function(ar) {
+  ar.thread().pop();
+  const args = ar.getLocal(2);
+  if (!Array.isArray(args)) {
+    throw new Error('perform:withArguments: only works on Arrays');
+  }
+  send(ar, ar.self(), ar.getLocal(1).$vars[STRING_RAW], args, false, ar.parent());
 };
 

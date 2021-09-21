@@ -42,6 +42,17 @@ Javascript functions."
 ! instVarAt: anIndex put: aValue
   <builtin: 'instVarAt:put:'>
 
+! perform: aSelector
+  <builtin: 'perform:'>
+! perform: aSelector with: anArg
+  <builtin: 'perform:with:'>
+! perform: aSelector with: anArg with: anotherArg
+  <builtin: 'perform:with:with:'>
+! perform: aSelector with: anArg with: anotherArg with: aThirdArg
+  <builtin: 'perform:with:with:with:'>
+! perform: aSelector withArguments: anArray
+  <builtin: 'perform:withArguments:'>
+
 ! copy
   "Copies this object. Implemented as a primitive for speed."
   ^self shallowCopy postCopy
@@ -293,6 +304,9 @@ Object subclass: #Number
       index := index - 1]
 ! between: lo and: hi
   ^ self >= lo and: [self <= hi]
+
+! printString
+  <builtin: 'numStr'>
 !!
 
 

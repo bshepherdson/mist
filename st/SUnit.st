@@ -93,8 +93,9 @@ TestAsserter subclass: #TestCase
 
 ! TestCase class
 ! testSelectors
-  ^self methods
-    select: [:each | (each selector beginsWith: 'test') and: [each numArgs = 0]]
+  ^(self methods
+    select: [:each | (each selector beginsWith: 'test') and: [each numArgs = 0]])
+    collect: [:each | each selector]
 
 ! buildSuite
   "Returns a suite of test cases. This suite can be composed of local and
@@ -202,6 +203,14 @@ Object subclass: #TestResult
     on: self class failure , self class skip, self class warning, self class error
     do: [:ex | ex sunitAnnounce: aTestCase toResult: self]
 
+! printString
+  | total |
+  total := failures size + errors size + passed size + skipped size.
+  ^'Executed ', total printString, ' tests: ',
+      passed size printString, ' passed, ',
+      failures size printString, ' failed, ',
+      errors size printString, ' errors, ',
+      skipped size printString, ' skipped'
 !!
 
 ! TestResult class
@@ -259,11 +268,8 @@ Object subclass: #TestSuite
 
 ! run: aTestResult
   self setUp.
-  [ self tests
-    do: [:each |
-      each run: aResult.
-      self changed: each ] ]
-  ensure: [self tearDown]
+  [ self tests do: [:each | each run: aResult] ]
+    ensure: [self tearDown]
 
 ! setUp
   "Does nothing, but can be overridden."
