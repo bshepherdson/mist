@@ -23,7 +23,7 @@ BYTECODE_HANDLERS.pushNumber = function(ar, bc) {
 };
 
 BYTECODE_HANDLERS.pushString = function(ar, bc) {
-  ar.stack().push(wrapString(bc.name));
+  ar.stack().push(wrapString(bc.name || ''));
 };
 
 BYTECODE_HANDLERS.pushBool = function(ar, bc) {

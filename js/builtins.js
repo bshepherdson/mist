@@ -177,7 +177,7 @@ builtins['=='] = function(ar) {
 
 builtins['^-1'] = function(ar) {
   const value = ar.self().$vars[NUMBER_RAW];
-  answer(ar, wrapNumber(value & -1));
+  answer(ar, wrapNumber(value ^ -1));
 };
 
 builtins['numStr'] = function(ar) {
@@ -190,6 +190,14 @@ builtins['numStr'] = function(ar) {
 builtins['console.log'] = function(ar) {
   const value = ar.getLocal(1);
   console.log(value);
+  answer(ar, value);
+};
+
+// Logs the *first argument* (not self), which is a string.
+// Answers that argument.
+builtins['console.log.string'] = function(ar) {
+  const value = ar.getLocal(1);
+  console.log(value.$vars[STRING_RAW]);
   answer(ar, value);
 };
 

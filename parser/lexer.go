@@ -510,7 +510,6 @@ func (l *Lexer) scanNumber(loc *Loc) (Token, error) {
 		// separate from the number.
 		r, eof := l.scanner.lookahead()
 		if eof || !identContinue(r) {
-			fmt.Printf("Retreating from number .\n")
 			l.scanner.rewind('.') // Put back the dot; this isn't a number.
 			return n, nil
 		}

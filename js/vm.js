@@ -131,11 +131,9 @@ class VM {
   run() {
     if (!this.lastIdleCallback) {
       this.lastIdleCallback = global.requestIdleCallback((deadline) => {
-        console.log('idle');
         this.tick(deadline);
         this.lastIdleCallback = null;
         if (!this.stopped) {
-          console.log('running again');
           this.run();
         }
       }, {timeout: 300});
@@ -186,7 +184,7 @@ class VM {
       if (deadline.didTimeout) break;
     }
     const elapsed = performance.now() - start;
-    console.log('ran', total, 'opcodes in', elapsed, 'ms', (total/elapsed*1000), 'per second');
+    //console.log('ran', total, 'opcodes in', elapsed, 'ms', (total/elapsed*1000), 'per second');
   }
 }
 

@@ -25,13 +25,23 @@ TestAsserter subclass: #TestCase
 ! classForTestResult
   ^ self class classForTestResult
 
+! contextualizeMessage: aMessage
+  "Given a basic test error report, annotate it with the test class."
+  ^self class name, ': ', aMessage
+
+! logFailure: aMessage
+  Transcript show: (self contextualizeMessage: aMessage)
+
 ! assert: aBooleanOrBlock
   ^ self assert: aBooleanOrBlock description: 'Assertion failed'
 
 ! assert: aBooleanOrBlock description: aStringOrBlock
+  | message |
   aBooleanOrBlock value ifTrue: [^self].
   "We failed, so signal it."
-  self classForTestResult failure signal: aStringOrBlock value
+  message := aStringOrBlock value.
+  self logFailure: message.
+  self classForTestResult failure signal: message
 
 ! assert: actual equals: expected
   "Raises an AssertionFailure if actual is different (using #=) from expected."
@@ -150,6 +160,10 @@ TestAsserter subclass: #TestCase
   self performTest]
     ensure: [self tearDown.
         self cleanUpInstanceVariables]
+
+! contextualizeMessage: aMessage
+  "Given a basic test error report, annotate it with the test class and selector."
+  ^self class name, ' >> ', self selector, ': ', aMessage
 
 ! setUp
   "Does nothing. Override for per-test setup."

@@ -346,9 +346,11 @@ class ActivationRecord {
   }
 
   setLocal(ix, value) {
-    if (ix <= this.argc()) {
-      throw new Error('Cannot set args/receiver');
-    }
+    // Originally I tried to throw when ix <= this.argc() but that doesn't work
+    // for blocks, since there are actually blocks and locals interleaved. eg.
+    // a method with 0 args, 1 local, block with 1 arg and no local. The block
+    // can write to the local (1) but that fails the above test.
+    // Ultimately checking the target of writes is the compiler's business.
     this.ctx.$vars[CTX_LOCALS][ix] = value;
   }
 

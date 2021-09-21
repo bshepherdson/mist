@@ -5,6 +5,8 @@
   ^self
 ! , aString
   <builtin: 'str_concat'>
+! printString
+  ^ '''' , self , ''''
 !!
 
 ! Symbol

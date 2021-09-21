@@ -82,7 +82,6 @@
   | loSide hiSide i j dst |
   loSide := self copyFrom: lo to: mid.
   hiSide := self copyFrom: mid + 1 to: hi.
-  Transcript show: {loSide. hiSide}.
   i := 1.
   j := 1.
   dst := lo.
@@ -103,5 +102,16 @@
     self at: dst put: (hiSide at: j).
     dst := dst + 1.
     j := j + 1]
+
+! printString
+  "Prints the array as a {1. 2. 3} up to 20 elements, then elides the rest."
+  | s |
+  s := '{'.
+  1 to: (self size min: 20)
+    do: [:i | s := s
+                 , (i > 1 ifTrue: ['. '] ifFalse: [''])
+                 , (self at: i) printString ].
+  self size > 20 ifTrue: [s := s , '. (' , (self size - 20) , ' more)'].
+  ^ s , '}'
 !!
 

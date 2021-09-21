@@ -53,6 +53,17 @@ Javascript functions."
 ! perform: aSelector withArguments: anArray
   <builtin: 'perform:withArguments:'>
 
+! fullPrintString
+  ^self printString
+
+! printString
+  "Default printString implementation is 'a ClassName'."
+  ^ 'a ', self class name
+
+! asString
+  "Default to the printString representation."
+  ^self printString
+
 ! copy
   "Copies this object. Implemented as a primitive for speed."
   ^self shallowCopy postCopy
@@ -167,6 +178,10 @@ Object subclass: #BlockClosure
   ^ aBlock value
 ! isNil
   ^ true
+! printString
+  ^ 'nil'
+! = anObject
+  ^ anObject isNil
 !!
 
 ! Object
@@ -174,6 +189,8 @@ Object subclass: #BlockClosure
   ^ self
 ! ifNil: aBlock ifNotNil: otherBlock
   ^ otherBlock value
+! ifNotNil: aBlock ifNil: otherBlock
+  ^ self ifNil: otherBlock ifNotNil: aBlock
 ! isNil
   ^ false
 ! isNotNil
@@ -182,6 +199,11 @@ Object subclass: #BlockClosure
 
 
 "Booleans and basic control flow."
+! Boolean
+! ifFalse: falseBlock ifTrue: trueBlock
+  ^ self ifTrue: trueBlock ifFalse: falseBlock
+!!
+
 ! True class
 ! new
   ^ true
@@ -204,6 +226,8 @@ Object subclass: #BlockClosure
   "NEVER CALLED: and: and or: should be rewritten by the compiler."
   ^ self
 
+! printString
+  ^ 'true'
 !!
 
 ! False class
@@ -227,6 +251,9 @@ Object subclass: #BlockClosure
 ! or: aBlock
   "NEVER CALLED: and: and or: should be rewritten by the compiler."
   ^ aBlock value
+
+! printString
+  ^ 'false'
 !!
 
 
@@ -235,7 +262,10 @@ Object subclass: #Transcript.
 
 ! Transcript class
 ! show: aValue
-  <builtin: 'console.log'>
+  self showString: aValue asString
+
+! showString: aString
+  <builtin: 'console.log.string'>
 !!
 
 
@@ -288,7 +318,7 @@ Object subclass: #Number
 ! min: aNumber
   ^ self < aNumber ifTrue: [self] ifFalse: [aNumber]
 ! max: aNumber
-  ^ aNumber min: self
+  ^ self < aNumber ifTrue: [aNumber] ifFalse: [self]
 ! to: end do: aBlock
   | index |
   index := self.
