@@ -27,6 +27,7 @@ class Thread {
 
   tick() {
     const ar = this.activation;
+    if (!ar || !ar.context()) throw new Error('Bad AR');
     const pc = ar.pc();
     const bc = ar.next();
     //console.log('pc', pc, bc, ar.stack().filter(x=>x===undefined).length > 0);
@@ -34,6 +35,13 @@ class Thread {
       throw new InternalError('Compiler failed to insert an answer bytecode.');
     }
     execute(vm, ar, bc);
+    // Debugging check: if the stack contains undefined, something has gone
+    // wrong.
+    for (const x of ar.stack()) {
+      if (typeof x === 'undefined') {
+        throw new Error('Detected undefined on the stack');
+      }
+    }
   }
 
   push(ar) {

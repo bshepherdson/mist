@@ -1,11 +1,14 @@
 TestCase subclass: #Basics1.
 
 ! Basics1
-! testPrint
+! testAssert
   self assert: true
+! testAssertFail
+  self assert: false
+! testError
+  Error new signal
 !!
 
-98 halt.
 Transcript show: Basics1 run printString.
 99 halt.
 

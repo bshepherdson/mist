@@ -107,6 +107,7 @@ mkClass('Behavior', 'Object', 0);
 mkClass('NullObject', 'Object');
 const stNil = mkInstance(classes['NullObject']);
 classes['nil'] = stNil;
+classes['Object'].$vars[CLASS_VAR_SUPERCLASS] = stNil;
 
 mkClass('ClassDescription', 'Behavior', 4); // name, superclass, instance variables, methodDict.
 mkClass('Class', 'ClassDescription', 0);
@@ -200,7 +201,7 @@ function wrapString(s) {
 
 function methodLookup(selector, cls) {
   let c = cls;
-  while (c) {
+  while (c && c != stNil) {
     const dict = c.$vars[CLASS_VAR_METHODS].$vars[DICTIONARY_RAW];
     if (dict && dict[selector]) {
       return dict[selector];

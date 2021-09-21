@@ -138,7 +138,6 @@ Object subclass: #BlockClosure
 ! cull: aValue
   "Runs the receiver with 0 or 1 arguments, depending on what it expects.
   Allows flexible code that doesn't need to care if a block takes an argument."
-  6 halt.
   ^ argc = 0
     ifTrue: [self value]
     ifFalse: [self value: aValue]

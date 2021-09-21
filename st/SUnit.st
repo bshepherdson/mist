@@ -169,12 +169,22 @@ TestAsserter subclass: #TestCase
 
 
 Exception subclass: #TestFailure.
+Exception subclass: #TestSkipped.
 
 ! TestFailure
 ! sunitAnnounce: aTestCase toResult: aTestResult
   aTestResult addFailure: aTestCase
 !!
 
+! TestSkipped
+! sunitAnnounce: aTestCase toResult: aTestResult
+  aTestResult addSkip: aTestCase
+!!
+
+! Exception
+! sunitAnnounce: aTestCase toResult: aTestResult
+  aTestResult addError: aTestCase
+!!
 
 
 Object subclass: #TestResult
@@ -184,7 +194,7 @@ Object subclass: #TestResult
 ! initialize
   super initialize.
   passed := Array new.
-  failures := Set new.
+  failures := Array new. "A Set in canon? Just this one, dunno why."
   errors := Array new.
   skipped := Array new
 
@@ -200,7 +210,7 @@ Object subclass: #TestResult
 ! runCase: aTestCase
   [aTestCase runCase.
   self addPass: aTestCase]
-    on: self class failure , self class skip, self class warning, self class error
+    on: self class failure, self class skip, self class warning, self class error
     do: [:ex | ex sunitAnnounce: aTestCase toResult: self]
 
 ! printString

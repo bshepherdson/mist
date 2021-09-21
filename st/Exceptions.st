@@ -138,7 +138,7 @@ Warning subclass: #Deprecated.
   Search starts with self and proceeds up to nil."
   | ctx |
   ctx := self.
-  [ ctx isHandlerContext ifTrue: [17 halt. ^ctx].
+  [ ctx isHandlerContext ifTrue: [^ctx].
     (ctx := ctx sender) isNil ] whileFalse.
   ^ nil
 
@@ -236,7 +236,7 @@ Warning subclass: #Deprecated.
   | ctx |
   ctx := self.
   [ (ctx := ctx sender) isNil or: [ctx == aContext] ]
-    whileFalse: [ ctx isUnwindContext ifTrue: [87 halt. ^ctx] ].
+    whileFalse: [ ctx isUnwindContext ifTrue: [^ctx] ].
   ^nil
 
 ! terminateTo: previousContext
