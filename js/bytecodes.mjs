@@ -178,9 +178,9 @@ function sendOp(process, ctx, count, operand, isSuper, opt_returnCtx) {
   writeAt(newCtx, OBJ_CLASS, CLS_CONTEXT);
   writeAt(newCtx, CTX_METHOD, method);
   writeAt(newCtx, CTX_LOCALS, locals);
-  writeSmallInteger(newCtx + CTX_PC, 0);
+  writeAt(newCtx, CTX_PC, wrapSmallInteger(0));
   writeAt(newCtx, CTX_SENDER, opt_returnCtx || ctx);
-  writeSmallInteger(newCtx + CTX_STACK_INDEX, 0); // Empty ascending, 0-based.
+  writeAt(newCtx, CTX_STACK_INDEX, wrapSmallInteger(0)); // Empty ascending, 0-based.
 
   // Our new context is ready. Push it onto the current process as the new top.
   writeAt(process, PROCESS_CONTEXT, newCtx);
@@ -199,9 +199,9 @@ function startBlock(process, ctx, argc, argStart) {
   const len = readPC(ctx); // PC now points at the first opcode of the block.
 
   const block = allocObject(CLS_BLOCK_CLOSURE, MA_OBJECT_INSTANCE, 4);
-  writeSmallInteger(block + BLOCK_ARGC, argc);
+  writeAt(block, BLOCK_ARGC, wrapSmallInteger(argc));
   // Index into the parent locals where my args and locals are.
-  writeSmallInteger(block + BLOCK_ARGV, argStart);
+  writeAt(block, BLOCK_ARGV, wrapSmallInteger(argStart));
   // No need to read and reallocate numbers, this can be a pointer copy if
   // they're pointers.
   writeAt(block, BLOCK_PC_START, readAt(ctx, CTX_PC));
@@ -224,8 +224,7 @@ function startBlock(process, ctx, argc, argStart) {
 
   // Final steps:
   // Advance PC past the block's code.
-  const pc = readSmallInteger(ctx + CTX_PC);
-  writeSmallInteger(ctx + CTX_PC, pc + len);
+  adjustSmallInteger(ctx, CTX_PC, len);
 
   // And push the new block onto the stack.
   push(ctx, block);
@@ -273,8 +272,7 @@ function blockAnswer(process, ctx) {
 }
 
 function skip(process, ctx, delta) {
-  const pc = readSmallInteger(ctx + CTX_PC);
-  writeSmallInteger(ctx + CTX_PC, delta);
+  adjustSmallInteger(ctx, CTX_PC, delta);
 }
 
 function maybeSkip(process, ctx, on, toPush, delta) {

@@ -9,9 +9,11 @@
 // Note the conspicious lack of a PC! The PC is accessed as
 // runningThread->context->pc.
 
-let processTable;
-let runningProcess;
-let allocationPointer;
+export const vm = {
+  processTable: 0,
+  runningProcess: 0,
+  allocationPointer: 0,
+};
 
 // Processes and priorities
 //
@@ -55,7 +57,7 @@ let allocationPointer;
 // Examines the process table to find and return the next Process that should be
 // run. Returns JS null if none is ready to run.
 function nextThread() {
-  let pt = processTable;
+  let pt = vm.processTable;
   while (pt != MA_NIL) {
     const ready = readAt(pt, PROCESS_TABLE_READY);
     if (ready != MA_NIL) return ready;
@@ -73,7 +75,7 @@ function readPC(ctx) {
   const bc = readRawArray(bcArray, pc);
 
   // Increment the PC.
-  writeSmallInteger(ctx + CTX_PC, pc + 1);
+  adjustSmallInteger(ctx + CTX_PC, 1);
   return bc;
 }
 

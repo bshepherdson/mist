@@ -381,7 +381,7 @@ user commands as well as for defining subclasses.
 #( 3 #( bytecode ) #( literals ) )
 ```
 
-I don't think any more commands are necessary.
+I don't think any more commands are necessary for now.
 
 
 ### List of standard classes
