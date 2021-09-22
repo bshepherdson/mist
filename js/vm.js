@@ -1,205 +1,121 @@
 // Virtual machine types and code.
 
-// Thread
-// A thread is one line of execution, and it runs concurrently with other
-// VM threads.
-// A thread is either fresh, running, ready, blocked, or dead.
-const T_FRESH = 1;
-const T_RUNNING = 2;
-const T_READY = 3;
-const T_BLOCKED = 4;
-const T_DEAD = 5;
-
-// The VM maintains a single running thread, and then a queue of ready and
-// blocked threads. Blocked threads are generally waiting for asynchronous
-// Javascript events (such as an XHR returning, or user input). The Javascript
-// callbacks for those events will unblock the thread and move it onto the ready
-// queue.
-// To facilitate having a linked list of threads, the threads have a "next"
-// pointer.
-
-class Thread {
-  constructor() {
-    this.activation = null;
-    this.state = T_FRESH;
-    this.next = null;
-  }
-
-  tick() {
-    const ar = this.activation;
-    if (!ar || !ar.context()) throw new Error('Bad AR');
-    const pc = ar.pc();
-    const bc = ar.next();
-    //console.log('pc', pc, bc, ar.stack().filter(x=>x===undefined).length > 0);
-    if (!bc) {
-      throw new InternalError('Compiler failed to insert an answer bytecode.');
-    }
-    execute(vm, ar, bc);
-    // Debugging check: if the stack contains undefined, something has gone
-    // wrong.
-    for (const x of ar.stack()) {
-      if (typeof x === 'undefined') {
-        throw new Error('Detected undefined on the stack');
-      }
-    }
-  }
-
-  push(ar) {
-    this.activation = ar;
-  }
-
-  // Pops a single activation record.
-  pop() {
-    this.activation = this.activation.parent();
-  }
-
-  // Pops records until the given record is on top.
-  popTo(target) {
-    this.activation = target;
-  }
-}
-
-
-// VM
-// The VM itself maintains a set of threads (one running, a list of ready
-// threads). Its main job is to do the thread-related bookkeeping, and interact
-// with the Javascript environment to run the active thread.
+// The virtual machine is comprised of the memory space and a handful of
+// registers:
+// - processTable
+// - runningProcess
+// - allocationPointer
 //
-// The VM tries to use requestIdleCallback to avoid blocking the UI thread.
-// Each threads is allowed a fixed time slice as a number of bytecodes executed
-// before the next thread is swapped in to run.
+// Note the conspicious lack of a PC! The PC is accessed as
+// runningThread->context->pc.
 
-const OPCODES_PER_TIME_SLICE = 100;
-const IDLE_DEADLINE_MARGIN = 1.0; // 1 millisecond.
+let processTable;
+let runningProcess;
+let allocationPointer;
 
-class VM {
-  constructor() {
-    this.currentThread = null;
-    this.nextReady = null;
-    this.lastReady = null;
+// Processes and priorities
+//
+// 4 process priority levels are defined:
+// - Interrupt
+// - UI
+// - User
+// - Background
+//
+// The names are fairly self-explanatory. UI threads are used to update the
+// interactive system; most things run at User level. Background is for system
+// or user jobs that are intended to run in the background using up any idle
+// cycles.
+//
+// Note that there's no fairness between levels! Each level can starve those
+// below it; only Interrupt priority is guaranteed to run at all.
+//
+// The process scheduler reschedules (in principle) on every message send, so
+// there's unlikely to be starvation among processes at the same level.
+//
+// Processes are organized into two doubly-linked lists at each priority level:
+// a list of ready-to-run Processes and a list of blocked Processes. These are
+// circular lists, used to round-robin the processes. Freshly unblocked
+// processes make themselves next to run after the current one.
+//
+// ProcessPriority captures these two lists as its 'ready' and 'blocked'
+// variables. It also has a `nextPriority` link to another ProcessPriority.
+//
+// The VM goes to `processTable` (the ProcessPriority for Interrupt), and checks
+// if it has any `ready` processes. If so, it runs the frontmost one for a
+// while, updating the process links.
+//
+// If there are no `ready` processes at that priority level, it recurses to
+// `nextPriority` until that too is nil. If there's nothing ready to run, the VM
+// idles until the next machine interrupt fires to wake it up. If the machine
+// has a halt instruction, this is the time.
+
+// These JS wrappers of Smalltalk values are always ephemeral - they have no
+// state of their own and keep everything in the ST objects.
+
+// Examines the process table to find and return the next Process that should be
+// run. Returns JS null if none is ready to run.
+function nextThread() {
+  let pt = processTable;
+  while (pt != MA_NIL) {
+    const ready = readAt(pt, PROCESS_TABLE_READY);
+    if (ready != MA_NIL) return ready;
+    pt = readAt(pt, PROCESS_TABLE_NEXT_PRIORITY);
   }
-
-  // Moves the currently running thread to the ready queue, and readies the next
-  // ready thread (if any).
-  yield() {
-    const t = this.currentThread;
-    this.currentThread = null;
-    this.pushReady(t);
-    this.popReady();
-  }
-
-  pushReady(thread) {
-    thread.state = T_READY;
-    if (this.lastReady === null) {
-      thread.next = null;
-      this.nextReady = this.lastReady = thread;
-    } else {
-      this.lastReady.next = thread;
-      thread.next = null;
-      this.lastReady = thread;
-    }
-  }
-
-  popReady() {
-    const t = this.nextReady;
-    if (!t) {
-      console.log('No threads to run; VM going idle');
-      return;
-    }
-
-    this.nextReady = t.next;
-    if (!this.nextReady) {
-      this.lastReady = null;
-    }
-    this.currentThread = t;
-    t.state = T_RUNNING;
-  }
-
-  runningThread() {
-    if (this.currentThread && this.currentThread.state === T_RUNNING) {
-      return this.currentThread;
-    }
-    if (this.currentThread) {
-      this.yield();
-      return this.runningThread();
-    }
-    this.popReady();
-    return this.currentThread;
-  }
-
-  // Call this to begin the cycling of the VM.
-  run() {
-    if (!this.lastIdleCallback) {
-      this.lastIdleCallback = global.requestIdleCallback((deadline) => {
-        this.tick(deadline);
-        this.lastIdleCallback = null;
-        if (!this.stopped) {
-          this.run();
-        }
-      }, {timeout: 300});
-    }
-  }
-
-  // Called to kick off the VM process.
-  start(bytecode) {
-    const loadingThread = new Thread();
-    const method = mkMethod(0, 0, bytecode);
-    method.$vars[METHOD_NAME] = toSymbol('initialLoad');
-    const ar = new ActivationRecord(loadingThread).init(null, null, method);
-    loadingThread.push(ar);
-    ar._thread = loadingThread;
-    global.vm.pushReady(loadingThread);
-    global.vm.run();
-  }
-
-  // Cancels any future idle callbacks, and stops me running for now.
-  stop() {
-    this.stopped = true;
-    if (this.lastIdleCallback) {
-      global.cancelIdleCallback(this.lastIdleCallback);
-      this.lastIdleCallback = null;
-    }
-  }
-
-  // Called when we are inside an idle callback, with the deadline.
-  // The VM will try to run as many cycles as possible within that limit.
-  tick(deadline) {
-    const start = performance.now();
-    let total = 0;
-
-    // Idle timeouts run either when the browser is legit idle, or when their
-    // max wait timeout has expired. In the latter case, deadline is 0.
-    // So we run at least one time slice, even if there's no idleness.
-    while (total === 0 || deadline.timeRemaining() > IDLE_DEADLINE_MARGIN) {
-      this.runningThread();
-      for (let i = 0; this.currentThread && i < OPCODES_PER_TIME_SLICE; i++) {
-        this.currentThread.tick();
-        total++;
-      }
-      this.yield();
-      if (!this.currentThread) {
-        this.stop();
-        break;
-      }
-      if (deadline.didTimeout) break;
-    }
-    const elapsed = performance.now() - start;
-    //console.log('ran', total, 'opcodes in', elapsed, 'ms', (total/elapsed*1000), 'per second');
-  }
+  // If we reach here, then there's nothing ready to run - so idle.
+  return null;
 }
 
+// Helper that reads a bytecode and increments PC.
+function readPC(ctx) {
+  const pc = readSmallInteger(ctx + CTX_PC);
+  const method = readAt(ctx, CTX_METHOD);
+  const bcArray = readAt(method, METHOD_BYTECODE);
+  const bc = readRawArray(bcArray, pc);
 
-global.vm = new VM();
-
-const BYTECODE_HANDLERS = {};
-
-// The fundamental function that executes a single bytecode!
-function execute(vm, ar, bc) {
-  const h = BYTECODE_HANDLERS[bc.bytecode];
-  if (!h) {
-    throw new UnknownBytecodeError(bc.bytecode);
-  }
-
-  h(ar, bc);
+  // Increment the PC.
+  writeSmallInteger(ctx + CTX_PC, pc + 1);
+  return bc;
 }
+
+// Given a pointer to the current process, execute a single step of its
+// bytecode. This is the fundamental VM operation.
+function tick(process) {
+  const ctx = readAt(process, PROCESS_CONTEXT);
+  const bc = readPC(ctx);
+  // Executes a single bytecode!
+  execute(process, ctx, bc);
+}
+
+// Given the ST pointer to a new context, makes it the top of this process.
+// ASSUMES the new context's sender is already set properly!
+function pushContext(process, newContext) {
+  writeAt(process, PROCESS_CONTEXT, newContext);
+}
+
+// Pops a context off this process, making the sender of the old one the new
+// one for the process. If the sender is nil, this thread is expired and we can
+// remove this process from the process table.
+function popContext(process, opt_ctx) {
+  const oldCtx = readAt(process, PROCESS_CONTEXT);
+  const sender = opt_ctx || readAt(oldCtx, CTX_SENDER);
+  if (sender != MA_NIL) return;
+
+  // If we're still here, this process needs removing from the table.
+  // This is why processes form a doubly-linked list!
+  const prev = readAt(process, PROCESS_PREV);
+  const next = readAt(process, PROCESS_NEXT);
+  if (prev != MA_NIL) {
+    writeAt(prev, PROCESS_NEXT) = next;
+  }
+  if (next != MA_NIL) {
+    writeAt(next, PROCESS_PREV) = prev;
+  }
+  // If either of those is nil, both should be, since the list is circular.
+  // Either way, it's correct to make next the head of the process table's ready
+  // list.
+  const pt = readAt(process, PROCESS_PROCESS_TABLE);
+  writeAt(pt, PROCESS_TABLE_READY, next);
+}
+
+// TODO popTo, probably?
 

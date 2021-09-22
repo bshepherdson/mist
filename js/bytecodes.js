@@ -1,140 +1,350 @@
-BYTECODE_HANDLERS.pushLocal = function(ar, bc) {
-  ar.stack().push(ar.getLocal(bc.index || 0));
-};
+// Locals on contexts are an Array, in this order:
+// self, methodOwner, args..., locals + block args...
+// self is the original receiver the message was actually sent to.
+// methodOwner is self, or the superobject corresponding to where the method was
+// found.
 
-BYTECODE_HANDLERS.pushGlobal = function(ar, bc) {
-  const g = classes[bc.name];
-  if (!g) {
-    throw new Error('Unknown global ' + bc.name);
+function readLocal(ctx, number) {
+  const locals = readAt(ctx, CTX_LOCALS); // Pointer to a pointer array.
+  return readAt(locals, PA_BASE + 2*number);
+}
+
+// Returns the pointer for reference; used to check for writing from old to new.
+function writeLocal(ctx, number, value) {
+  const locals = readAt(ctx, CTX_LOCALS); // Pointer to a pointer array.
+  writeAt(locals, PA_BASE + 2*number, value);
+  return locals + PA_BASE + 2*number;
+}
+
+// Returns the pointer to self, the 0th local.
+// This is the actual receiver, even if the method is defined on a superclass.
+function self(ctx) {
+  return readLocal(ctx, 0);
+}
+
+function superObject(ctx) {
+  return readLocal(ctx, 1);
+}
+
+
+//- `$0: push` A whole family of opcodes that push values onto the interpreter
+//  stack.
+//    - `$00: push special` Push special values
+//        - `$0000: push self`
+//        - `$0001: push thisContext`
+//        - `$0002: push nil`
+//        - `$0003: push true`
+//        - `$0004: push false`
+//        - Lots of room for expansion here.
+//    - `$01: push local` Pushes local whose number is in the operand.
+//    - `$02: push instance variable` Pushes instance variable whose number is in
+//      the operand.
+//        - Note that only this specific class's instance variables are
+//          accessible! Superclasses cannot be accessed directly.
+//    - `$03: push global` Push a global value looked up in the `SystemDictionary`
+//      by the symbol in the literal table at *operand*.
+//      table in the VM - see below for that list.
+//    - `$04: push standard class` Shorthand for `$03`, pushes a class from a list
+//      of common classes in the VM (see below).
+//    - `$05: push literal` Push the literal from this method's literals list
+//      whose index is in *operand*.
+//    - `$06: push inline number` Interpret *operand* as a signed 8-bit value and
+//      push it. That gives a range of -128 to 127, which is lots.
+//    - `$07: push inline character` Interpret *operand* as an unsigned 8-bit
+//      ASCII value and push it as a character. Larger characters can be
+//      constructed dynamically with runtime code, or as literals in the array.
+function pushOp(process, ctx, count, operand) {
+  switch (count) {
+    case 0:
+      switch (operand) {
+        case 0: // Push self
+          return push(ctx, self(ctx));
+        case 1: // Push thisContext.
+          return push(ctx, ctx);
+        case 2: // Push nil
+          return push(ctx, MA_NIL);
+        case 3: // Push true
+          return push(ctx, MA_TRUE);
+        case 4: // Push false
+          return push(ctx, MA_FALSE);
+        default:
+          throw new Error('unknown special push operand: ' + operand);
+      }
+      throw new Error('cant happen');
+
+    case 1: // Push local whose number is the operand.
+      return push(ctx, readLocal(ctx, operand));
+    case 2: // Push instance variable whose number is the operand.
+      return push(ctx, readAt(ctx, OBJ_MEMBERS_BASE + 2*operand));
+    case 3: // Push global by looking up the literal symbol in SystemDictionary.
+      const g = systemDictionaryLookup(readLiteral(ctx, operand));
+      return push(ctx, g);
+    case 4: // Push global from the defined list.
+      const g = globalsDictionary[operand];
+      return push(ctx, g);
+    case 5: // Push literal generally.
+      return push(ctx, readLiteral(ctx, operand));
+    case 6: // Push inline number - signed 8-bit operand.
+      let n = operand < 128 ? operand : operand - 256;
+      return push(ctx, wrapNumber(n));
+    default:
+      throw new Error('Unknown push type: ' + count);
   }
-  ar.stack().push(g);
-};
+  throw new Error('cant happen');
+}
 
-BYTECODE_HANDLERS.pushSelf = function(ar, bc) {
-  ar.stack().push(ar.getLocal(0));
-};
+function storeOp(process, ctx, count, operand) {
+  // TODO These are the ops that require checking for old -> new pointer writes!
+  const value = pop(ctx);
+  if (count === 0) { // Store local - operand gives the local number to use.
+    const pLocal = writeLocal(ctx, operand, value);
+    checkOldToNew(pLocal, value);
+  } else if (count === 1) {
+    const me = self(ctx);
+    writeAt(me, OBJ_MEMBERS_BASE + 2*operand, value);
+    checkOldToNew(me + OBJ_MEMBERS_BASE + 2*operand, value);
+  } else {
+    throw new Error('Invalid store destination ' + count);
+  }
+}
 
-BYTECODE_HANDLERS.pushInstVar = function(ar, bc) {
-  ar.stack().push(ar.self().$vars[bc.index || 0]);
-};
+function sendOp(process, ctx, count, operand, isSuper, opt_returnCtx) {
+  // The receiver is on the stack, followed by the arguments: rcvr arg1 arg2...
+  // We need to create a new array containing 2 + argc + locals cells.
 
-BYTECODE_HANDLERS.pushNumber = function(ar, bc) {
-  ar.stack().push(wrapNumber(bc.value || 0));
-};
+  // SP points AFTER the last argument.
+  // rcvr arg1 arg2 ___
+  // 2    3    4    5
+  // So SP = 5; we want 2. That's SP - argc - 1.
+  const ixReceiver = readSmallInteger(ctx + CTX_STACK_INDEX) - count - 1;
+  const argv = ctx + CTX_STACK_BASE + 2*ixReceiver + 2;
+  const receiver = readAt(ctx, argv - 2);
+  // We need to pop those off the stack. Conveniently, the empty-ascending new
+  // index is ixReceiver.
+  wrapSmallInteger(ctx + CTX_STACK_INDEX, ixReceiver);
 
-BYTECODE_HANDLERS.pushString = function(ar, bc) {
-  ar.stack().push(wrapString(bc.name || ''));
-};
+  // We need to look up the method we're wanting to call.
+  const selector = readLiteral(ctx, operand); // A symbol.
+  let method = null;
 
-BYTECODE_HANDLERS.pushBool = function(ar, bc) {
-  ar.stack().push(bc.super ? classes['true'] : classes['false']);
-};
+  let sup = receiver;
+  let cls = readAt(receiver, OBJ_CLASS);
+  if (isSuper) {
+    // Super sends begin the search at the super of the owner of current method.
+    sup = readAt(superObj(ctx), OBJ_SUPER);
+    cls = readAt(readAt(ctx, METHOD_CLASS), CLASS_SUPERCLASS);
+  }
 
-BYTECODE_HANDLERS.pushNil = function(ar, bc) {
-  ar.stack().push(stNil);
-};
+  while (cls && cls != MA_NIL) {
+    const dict = readAt(cls, CLASS_METHODS);
+    const found = identDictLookup(dict, selector);
+    if (found && found != MA_NIL) {
+      method = found;
+      break;
+    }
 
-BYTECODE_HANDLERS.pushContext = function(ar, bc) {
-  ar.stack().push(ar.context());
-};
+    // Didn't find it, so escalate to the superclass.
+    cls = readAt(cls, CLASS_SUPERCLASS);
+    sup = readAt(sup, OBJ_SUPER);
+  }
 
-BYTECODE_HANDLERS.storeLocal = function(ar, bc) {
-  ar.setLocal(bc.index || 0, ar.stack().pop());
-};
+  if (!method) {
+    throw new Error('failed to look up method');
+  }
 
-BYTECODE_HANDLERS.storeInstVar = function(ar, bc) {
-  ar.self().$vars[bc.index || 0] = ar.stack().pop();
-};
+  // Now we have all the pieces: receiver, target method, the superobject and
+  // class where we found it, arguments, and local count.
+  // Check that the argument count matches the method.
+  const expectedArgs = readSmallInteger(method + METHOD_ARGC);
+  if (expectedArgs !== count) {
+    throw new ArgumentCountMismatchError('FIXME', selector, expectedArgs, count);
+  }
 
-BYTECODE_HANDLERS.startBlock = function(ar, bc) {
-  // Bytecode gives argc, temps, argStart, and length (in bytecodes).
-  // The current PC is the start.
-  // We construct a BlockClosure, push it, and move the outer PC.
-  const closure = mkInstance(classes['BlockClosure']);
-  const pc = ar.pc();
-  closure.$vars[CLOSURE_BYTECODE] =
-      ar.bytecode().slice(pc, pc + (bc.length || 0));
-  closure.$vars[CLOSURE_ARGC] = wrapNumber(bc.argc || 0);
-  closure.$vars[CLOSURE_LOCALS] = wrapNumber(bc.temps || 0);
-  closure.$vars[CLOSURE_ARGV_START] = wrapNumber(bc.argStart);
+  // Get the number of locals needed.
+  const nLocals = readSmallInteger(method + METHOD_LOCALS);
+  // Create an array of 2 + argc + nLocals.
+  const locals = allocPointerArray(2 + count + nLocals);
+  writeAt(locals, PA_BASE, receiver);
+  writeAt(locals, PA_BASE + 2, sup);
+  for (let i = 0; i < count; i++) {
+    const arg = readAt(argv, 2 * i);
+    writeAt(locals, PA_BASE + 4 + 2 * i, arg);
+  }
+  // Locals are already initialized to nil.
 
-  // We're either creating a top-level block or a nested block.
-  // If top-level, ar represents the containing method.
-  // If nested, ar is the containing block, grab the method from it.
-  closure.$vars[CLOSURE_METHOD_RECORD] =
-      ar.method().$class === classes['BlockClosure'] ?
-          ar.method().$vars[CLOSURE_METHOD_RECORD] : ar.context();
+  // Create a context.
+  const newCtx = allocPointerArray(24, true); // Skip initializing.
+  writeAt(newCtx, OBJ_SUPER, MA_OBJECT_INSTANCE);
+  writeAt(newCtx, OBJ_CLASS, CLS_CONTEXT);
+  writeAt(newCtx, CTX_METHOD, method);
+  writeAt(newCtx, CTX_LOCALS, locals);
+  writeSmallInteger(newCtx + CTX_PC, 0);
+  writeAt(newCtx, CTX_SENDER, opt_returnCtx || ctx);
+  writeSmallInteger(newCtx + CTX_STACK_INDEX, 0); // Empty ascending, 0-based.
 
-  ar.stack().push(closure);
-  ar.pcBump(bc.length || 0);
-};
+  // Our new context is ready. Push it onto the current process as the new top.
+  writeAt(process, PROCESS_CONTEXT, newCtx);
+  return newCtx;
+}
+
+// Begins a block, whose bytecodes are inlined after this one.
+// The *count* gives the argument count of the block; *operand* its argument
+// start index. The **next** word gives the count of bytecodes following.
+//
+// Note that we can't give a pointer directly to the bytecodes in the block,
+// and since we don't want to copy them either, we will have to leverage the
+// containing method when running a block. To facilitate that, the BlockClosure
+// stores a pcStart (a new value not in the original JS implementation).
+function startBlock(process, ctx, argc, argStart) {
+  const len = readPC(ctx); // PC now points at the first opcode of the block.
+
+  const block = allocObject(CLS_BLOCK_CLOSURE, MA_OBJECT_INSTANCE, 4);
+  writeSmallInteger(block + BLOCK_ARGC, argc);
+  // Index into the parent locals where my args and locals are.
+  writeSmallInteger(block + BLOCK_ARGV, argStart);
+  // No need to read and reallocate numbers, this can be a pointer copy if
+  // they're pointers.
+  writeAt(block, BLOCK_PC_START, readAt(ctx, CTX_PC));
+
+  // Need to find the containing context. If the current context is running a
+  // block, chase that back until we find a context whose method is a
+  // CompiledMethod rather than a block.
+  let parentCtx = ctx;
+  while (readAt(parentCtx, OBJ_CLASS) === CLS_BLOCK_CLOSURE) {
+    parentCtx = readAt(parentCtx, BLOCK_CONTEXT);
+  }
+
+  // Now parentCtx is really the containing method's context, which holds the
+  // locals.
+  // Is this an old -> new store? No.
+  // Proof: the parent method must have been called before the block, so the
+  // parentCtx is older than this new BlockClosure, this always a new -> new or
+  // new -> old pointer, even if a BlockClosure long outlives the original call.
+  writeAt(block, BLOCK_CONTEXT, parentCtx);
+
+  // Final steps:
+  // Advance PC past the block's code.
+  const pc = readSmallInteger(ctx + CTX_PC);
+  writeSmallInteger(ctx + CTX_PC, pc + len);
+
+  // And push the new block onto the stack.
+  push(ctx, block);
+}
 
 
-BYTECODE_HANDLERS.send = function(ar, bc) {
-  // The receiver is on the stack followed by its arguments: rcvr arg1 arg2...
-  const argc = bc.argc || 0;
-  const ixReceiver = ar.stack().length - argc - 1;
-  const receiver = ar.stack()[ixReceiver];
-  const args = ar.stack().splice(ixReceiver); // Removes them from the original, returns the removed items.
 
-  // Args includes the receiver, so we slice it off for this call.
-  send(ar, receiver, bc.selector, args.slice(1), bc.super);
-  // That pushes the new AR onto the thread, so execution will continue in the
-  // called method.
-};
+function answer(process, ctx, value) {
+  // We need to pop the sender context to the top of the process chain, and push
+  // the value onto its stack.
+  // Special case: top-level return to an empty chain. If the sender context is
+  // nil, don't try to push!
+  const parentCtx = readAt(ctx, CTX_SENDER);
+  popContext(process);
+  if (parentCtx !== MA_NIL) {
+    push(parentCtx, value); // Can be an old -> new store, but push() checks.
+  }
+}
 
-BYTECODE_HANDLERS.dup = function(ar, bc) {
-  ar.stack().push(ar.stack()[ar.stack().length - 1]);
-};
-
-BYTECODE_HANDLERS.drop = function(ar, bc) {
-  ar.stack().pop();
-};
-
-BYTECODE_HANDLERS.answer = function(ar, bc) {
-  // Pop the top of this ar's stack, and push it onto the parent's.
-  ar.thread().pop();
-  ar.parent().stack().push(ar.stack().pop());
-};
-
-BYTECODE_HANDLERS.answerBlock = function(ar, bc) {
-  // Block returns are only legal if the block's containing method is on the AR
-  // stack. If the parent() chain doesn't contain ar.blockContext() then we need
-  // to throw an error for non-local block returns.
-  const container = new ActivationRecord(
-      ar.thread(), ar.method().$vars[CLOSURE_METHOD_RECORD]);
-  let chain = ar.parent();
+function blockAnswer(process, ctx) {
+  // Block returns are only legal if the block's containing method is on the
+  // context chain. If the sender chain doesn't contain our parent method's
+  // context, then this is an error. (It's legal to be in that situation, but
+  // not to try to do a block return from it.)
+  const block = readAt(ctx, CTX_METHOD);
+  const container = readAt(block, BLOCK_CONTEXT);
+  let chain = readAt(ctx, CTX_SENDER);
   while (true) {
     // Good case: this ancestor is the containing method.
-    if (chain.equals(container)) break;
-    chain = chain.parent();
-    // Bad case: we've run out of parents and failed to find the method.
-    if (!chain || chain === stNil) {
+    if (chain === container) break;
+    chain = readAt(chain, CTX_SENDER);
+    // Bad case: we've run out of senders and failed to find the method.
+    if (!chain || chain === MA_NIL) {
       throw new Error(
           'Non-local block return - containing method no longer on the stack');
     }
   }
 
   // If we got to here, we know this is a legal block return.
-  // Push the value to the blockContext's *parent's* stack, then pop to it.
-  container.parent().stack().push(ar.stack().pop());
-  ar.thread().popTo(container.parent());
-};
+  // Push the value to the containing method's *parent's* stack, then pop to
+  // be running that context.
+  const targetCtx = readAt(container, CTX_SENDER);
+  push(targetCtx, pop(ctx));
+  popContext(process, targetCtx);
+}
 
-BYTECODE_HANDLERS.answerSelf = function(ar, bc) {
-  ar.thread().pop();
-  ar.parent().stack().push(ar.self());
-};
+function skip(process, ctx, delta) {
+  const pc = readSmallInteger(ctx + CTX_PC);
+  writeSmallInteger(ctx + CTX_PC, delta);
+}
 
-BYTECODE_HANDLERS.primitive = function(ar, bc) {
-  if (bc.keyword === 'builtin:') {
-    const builtin = builtins[bc.name];
-    if (!builtin) {
-      throw new UnknownBuiltinError(bc.name);
-    }
-    builtin(ar);
-  } else {
-    throw new UnknownBuiltinError(bc.keyword + ': ' + bc.name);
+function maybeSkip(process, ctx, on, toPush, delta) {
+  const tos = pop(ctx);
+  if (tos === on) {
+    push(ctx, toPush);
+    skip(process, ctx, delta);
   }
-};
+  // If it wasn't on, then continue normally and don't push.
+}
+
+function miscOp(process, ctx, count, operand) {
+  switch (count) {
+    case 0: // DUP
+      return push(ctx, peek(ctx));
+    case 1: // DROP
+      return pop(ctx);
+    case 2: // answer TOS
+      return answer(process, ctx, pop(ctx));
+    case 3: // answer self
+      return answer(process, ctx, self(ctx));
+    case 4: // block answer TOS
+      return blockAnswer(process, ctx);
+
+    case 8: // Skip true push nil
+      return maybeSkip(process, ctx, MA_TRUE, MA_NIL, operand);
+    case 9: // Skip false push nil
+      return maybeSkip(process, ctx, MA_TRUE, MA_NIL, operand);
+    case 10: // Skip forward unconditionally.
+      return skip(process, ctx, operand);
+    case 11: // Skip backward unconditionally.
+      return skip(process, ctx, -operand);
+    case 12: // Skip true push true
+      return maybeSkip(process, ctx, MA_TRUE, MA_TRUE, operand);
+    case 13: // Skip false push false
+      return maybeSkip(process, ctx, MA_TRUE, MA_TRUE, operand);
+  }
+  throw new Error('unknown misc op ' + count);
+}
+
+const primitives = {};
+
+function primitiveOp(process, ctx, count, operand) {
+  const prim = primitives[operand];
+  if (!prim) throw new Error('unknown primitive');
+
+  prim(process, ctx);
+  // Primitives that fail just return to the Smalltalk code, often a fallback
+  // implementation. Primitives that succeed have returned already.
+  // Either way there's nothing more to be done here; the failed flag is
+  // ignored(?)
+}
+
+function execute(process, ctx, bc) {
+  // First, we split the bytecode into the three fields.
+  const op = (bc >> 12) & 0xf;
+  const count = (bc >> 8) & 0xf;
+  const operand = bc & 0xff;
+
+  switch (op) {
+    case 0: return pushOp(process, ctx, count, operand);
+    case 1: return storeOp(process, ctx, count, operand);
+    case 2: return sendOp(process, ctx, count, operand, false);
+    case 3: return sendOp(process, ctx, count, operand, true);
+    case 4: throw new Error('canned send is not implemented yet');
+    case 5: return startBlock(process, ctx, count, operand);
+    case 6: return miscOp(process, ctx, count, operand);
+    case 7: return primitiveOp(process, ctx, count, operand);
+    default:
+      throw new Error('Cannot understand bytecode: ' + bc);
+  }
+}
 
