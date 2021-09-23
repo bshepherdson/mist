@@ -28,6 +28,8 @@ const MA_TENURE_ALLOC = 0x1008;
 
 // Points to the first escaped pointer linked list entry; see GC design.
 const MA_ESCAPED_HEAD = 0x100a;
+// Class dictionary.
+const MA_CLASS_DICT = 0x100c;
 
 // Some canned ST objects that exist at known places in memory.
 export const MA_OBJECT_INSTANCE = 0x2000; // Size: 8, no instance variables.
@@ -47,15 +49,16 @@ export const OBJ_MEMBERS_BASE = 8;
 const GC_FIELD_0 = 0; // Initial value for the GC word.
 
 
-const CLASSTABLE_BASE = 0x3000;
-
 // Each Class has a bunch of component parts:
 // Object -> Behavior -> ClassDescription -> Class, Metaclass.
-// So in order to define a class and its metaclass, we need to create the
-// superobjects: a Behavior and a ClassDescription, as well.
-// These are organized as:
-// The Class, its ClassDescription, its Behavior.
-// The Metaclass, its ClassDescription, its Behavior.
+// So any given class also has its superobjects, plus its metaclass and *its*
+// superobjects. Since the number and size of superobjects varies, only the
+// actual named class gets stored here. All the others are reachable from it.
+//
+// The classes are *not* tenured, since they can be replaced, and the cost of
+// copying them is less bad than burning up tenured space for them.
+//
+// START HERE: Figure out the classes - it's still a bit of a mess.
 //
 // Behavior has 2 instance vars, ClassDescription 0, Class 2 and Metaclass 1.
 // So the total size per class row is (0 + 2 + 1) + 3 headers, and the metaclass
@@ -66,38 +69,24 @@ export const IV_CLASS = 2;
 export const IV_METACLASS = 1;
 
 
-// Offset constants that are not exported.
-const offClass = 0;
-const offClassDescription = offClass + OBJ_MEMBERS_BASE + 2 * IV_CLASS;
-const offClassBehavior = offClassDescription + OBJ_MEMBERS_BASE +
-    2 * IV_CLASS_DESCRIPTION;
+export const MA_METAMETA_BEHAVIOR = 0x2030; // 8 + 6
+export const MA_METAMETA_DESCRIPTION =
+    MA_METAMETA_BEHAVIOR + OBJ_MEMBERS_BASE + 2 * IV_BEHAVIOR;
+export const MA_METAMETA =
+  MA_METAMETA_DESCRIPTION + OBJ_MEMBERS_BASE + 2 * IV_CLASS_DESCRIPTION;
 
-const offMetaclass = offClassBehavior + OBJ_MEMBERS_BASE + 2 * IV_BEHAVIOR;
-const offMetaclassDescription = offMetaclass + OBJ_MEMBERS_BASE +
-    2 * IV_METACLASS;
-const offMetaclassBehavior = offMetaclassDescription + OBJ_MEMBERS_BASE +
-    2 * IV_CLASS_DESCRIPTION;
-const totalSize = offMetaclassBehavior + OBJ_MEMBERS_BASE + 2 * IV_BEHAVIOR;
+// Bunch of space here.
+
+const CLASSTABLE_BASE = 0x3000;
 
 let nextClass_ = CLASSTABLE_BASE;
 
 
 function nextClass() {
   const p = nextClass_;
-  nextClass_ += totalSize;
+  nextClass_ += OBJ_MEMBERS_BASE + 2 * IV_CLASS;
   return p;
 };
-
-export function classFriends(cls) {
-  return {
-    cls: cls,
-    classDescription: cls + offClassDescription,
-    behavior: cls + offClassBehavior,
-    metaclass: cls + offMetaclass,
-    metaClassDescription: cls + offMetaclassDescription,
-    metaBehavior: cls + offMetaclassBehavior,
-  };
-}
 
 export const CLS_PROTO_OBJECT = nextClass();
 export const CLS_OBJECT = nextClass();
@@ -120,6 +109,13 @@ export const CLS_AA_NODE = nextClass();
 export const CLS_BOOLEAN = nextClass();
 export const CLS_TRUE = nextClass();
 export const CLS_FALSE = nextClass();
+
+export const CLS_CHARACTER = nextClass();
+export const CLS_MAGNITUDE = nextClass();
+export const CLS_NUMBER = nextClass();
+export const CLS_INTEGER = nextClass();
+export const CLS_SMALL_INTEGER = nextClass();
+
 
 
 
@@ -176,7 +172,12 @@ export const [
 export const [BLOCK_CONTEXT, BLOCK_PC_START, BLOCK_ARGC, BLOCK_ARGV] = objInstVars(4);
 export const [AA_KEY, AA_VALUE, AA_LEVEL, AA_LEFT, AA_RIGHT] = objInstVars(5);
 
+export const CHAR_VALUE = OBJ_MEMBERS_BASE;
+
+export const ASCII_TABLE = [];
+
 const TYPE_MASK = 0xf0000000;
+const TYPE_LEN_MASK = ~TYPE_MASK;
 const TYPE_OBJ = 0;
 const TYPE_RA = 1 << 28;
 const TYPE_PA = 2 << 28;
@@ -327,11 +328,9 @@ export function initObject(p, cls, superObj, instVars) {
   }
 }
 
-export function allocObject(cls, superObj, instVars) {
-  const size = OBJ_MEMBERS_BASE + 2 * instVars;
-  const p = alloc(size);
-  initObject(p, cls, superObj, instVars);
-  return p;
+// Don't call this outside of bootstrap, use mkInstance/At instead.
+export function allocObject(instVars) {
+  return alloc(OBJ_MEMBERS_BASE + 2 * instVars);
 }
 
 // Given the pointer to a Class, constructs a new instance of it.
@@ -339,16 +338,28 @@ export function allocObject(cls, superObj, instVars) {
 // Only works for regular objects! Special types should be calling other
 // primitives.
 export function mkInstance(cls) {
+  return mkInstanceAt(cls, allocObject);
+}
+
+// Special case of mkInstance that defines its initial pointer.
+// Probably should only be called from bootstrap.mjs.
+export function mkInstanceAt(cls, allocator) {
   // Special case: if cls is Object, return the canned object instance.
+  if (cls === CLS_PROTO_OBJECT) return MA_PROTO_OBJECT_INSTANCE;
   if (cls === CLS_OBJECT) return MA_OBJECT_INSTANCE;
 
   // Recursively build the superObj instances.
   const classDescription = readAt(cls, OBJ_SUPER);
   const behavior = readAt(classDescription, OBJ_SUPER);
   const superclass = readAt(behavior, BEHAVIOR_SUPERCLASS);
-  const sup = mkInstance(superclass);
+
+  // Using the default allocator for the superclass, even if the parent class
+  // is at a specific spot.
+  const sup = superclass !== MA_NIL ? mkInstance(superclass) : MA_NIL;
   const instVars = readSmallInteger(behavior + BEHAVIOR_INST_VARS);
-  return allocObject(cls, sup, instVars);
+  const p = allocator(instVars);
+  initObject(p, cls, sup, instVars);
+  return p;
 }
 
 // Size in *pointers*!
@@ -410,20 +421,24 @@ export function adjustSmallInteger(p, delta) {
 // These are stored as raw arrays with custom types.
 //
 // Copies a JS string s into a (sufficiently large!) blank space at p.
-// p points to the header, not the first data word. Sets TYPE_STRING in the
-// header.
+// p points to the header, not the first data word.
 function copyString(p, s) {
-  writeAt(p, RA_HEADER, TYPE_STRING | (s.length + RA_BASE));
-  writeAt(p, RA_GC, GC_FIELD_0);
   for (let i = 0; i < s.length; i++) {
     writeWord(p + RA_BASE + i, s.charCodeAt(i));
   }
 }
 
+export function allocString(length) {
+  const p = allocRawArray(length);
+  writeAt(p, RA_HEADER, TYPE_STRING | (s.length + RA_BASE));
+  writeAt(p, RA_GC, GC_FIELD_0);
+  return p;
+}
+
 // Allocate and return the pointer to a new String containing the same
 // characters as the JS string provided.
 export function wrapString(s) {
-  const arr = allocRawArray(s.length);
+  const arr = allocString(s.length);
   copyString(arr, s);
   return arr;
 }
@@ -438,13 +453,39 @@ export function wrapSymbol(s) {
   if (symbolCache[s]) return symbolCache[s];
 
   const arr = tenure(s.length + RA_BASE);
-  copyString(arr, s);
-  // Overwrite TYPE_STRING with TYPE_SYMBOL.
   writeAt(arr, RA_HEADER, TYPE_SYMBOL | (s.length + RA_BASE));
+  writeAt(arr, RA_GC, GC_FIELD_0);
+  copyString(arr, s);
 
   symbolCache[s] = arr;
   return arr;
 }
+
+
+// Some tests
+export function isPointerArray(p) {
+  return (readAt(arr, PA_HEADER, p) & TYPE_MASK) === TYPE_PA;
+}
+
+
+// Utilities
+export function pointerArrayLength(p) {
+  if (!isPointerArray(p)) throw new Error('pointer array required');
+  const header = readAt(arr, PA_HEADER);
+  return ((header & TYPE_LEN_MASK) - PA_BASE) / 2;
+}
+
+// Find the superObject in the chain that's an instance of cls.
+// Throws if not found, this shouldn't be speculation!
+export function findSuperObj(p, cls) {
+  while (readAt(p, OBJ_CLASS) !== cls) {
+    p = readAt(p, OBJ_SUPER);
+    if (p === MA_NIL) throw new Error('cant happen: findSuperObj failed');
+  }
+  return p;
+}
+
+
 
 // Initialization
 // This sets up some key values in the special area.

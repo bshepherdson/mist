@@ -1,28 +1,44 @@
 // Contains hand-rolled classes and methods necessary to bootstrap the system.
 import {
+  ASCII_TABLE,
   BEHAVIOR_SUPERCLASS, BEHAVIOR_METHODS, BEHAVIOR_INST_VARS,
+  MA_METAMETA_BEHAVIOR, MA_METAMETA_DESCRIPTION, MA_METAMETA,
   METACLASS_THIS_CLASS,
   CLASS_NAME, CLASS_SUBCLASSES,
   CLS_PROTO_OBJECT, CLS_OBJECT, CLS_UNDEFINED_OBJECT,
   CLS_CLASS, CLS_CLASS_DESCRIPTION, CLS_BEHAVIOR, CLS_METACLASS,
-  CLS_BOOLEAN, CLS_TRUE, CLS_FALSE,
   CLS_COLLECTION, CLS_DICTIONARY, CLS_IDENTITY_DICTIONARY, CLS_AA_NODE,
   IV_BEHAVIOR, IV_CLASS_DESCRIPTION, IV_CLASS, IV_METACLASS,
+  OBJ_CLASS, OBJ_SUPER, OBJ_MEMBERS_BASE,
   MA_PROTO_OBJECT_INSTANCE, MA_OBJECT_INSTANCE, MA_NIL,
-  MA_BOOLEAN, MA_TRUE, MA_FALSE,
-  classFriends, initObject, mkInstance, writeAt, wrapSmallInteger, wrapSymbol,
+  allocObject,
+  findSuperObj, initObject, mkInstance, mkInstanceAt, readAt, writeAt,
+  readSmallInteger, wrapSmallInteger, wrapSymbol,
 } from './memory.mjs';
 
-initObject(MA_PROTO_OBJECT_INSTANCE, CLS_PROTO_OBJECT, MA_NIL, 0);
-initObject(MA_OBJECT_INSTANCE, CLS_OBJECT, MA_PROTO_OBJECT_INSTANCE, 0);
+// Bootstrapping proceeds in several phases:
+// 1. vm.mjs         VM's initial setup of the registers.
+// 2. memory.mjs     Memory created, a few pointers in memory updated.
+// 3. bootstrap.mjs
+//    a. Knot-tying setup of the innermost kernel of classes (eg. Class)
+//    b. Define enough classes for IdentityDictionary to exist.
+// 4. tree.mjs       The AA tree used for class & method dictionaries.
+// 5. corelib.mjs
+//    a. Upgrades the slightly hobo classes from bootstrap.mjs.
+//    b. Adds a bunch more built-in classes, like the booleans.
 
 
 // Slight hack: we can't define the method dictionaries until the superclasses
 // have been created, so this starts out as a dummy that returns nil. It gets
 // replaced later and the existing dictionaries updated.
-let dictFactory = () => MA_NIL;
+export const lateBinding = {
+  dictFactory: () => MA_NIL,
+  addToClassDict: (sym, cls) => {},
+};
 
-// Remember the 10 rules of the object system:
+// Class construction
+// ==================
+// The 10 rules of the object system:
 //  1. Everything is an object.
 //  2. Every object is an instance of a class.
 //  3. Every class has a superclass.
@@ -34,62 +50,253 @@ let dictFactory = () => MA_NIL;
 //  8. Every metaclass inherits from Class and Behavior.
 //  9. Every metaclass is an instance of Metaclass.
 // 10. The metaclass of Metaclass is an instance of Metaclass.
+//
+// The hierarchy looks like this:
+//
+//  /------------------------ Behavior
+//  |                             ^   (subclass-of)
+//  |                             |
+//  |                       ClassDescription   /----\
+//  |                             ^        ^   |    v
+//  |                             |         \  |    v
+//  |                           Class       Metaclass
+//  |                             ^             ^
+//  |         (instance-of)       |             ^  (instance-of)
+//  |  ProtoObject ----->> ProtoObject class ---|
+//  |    ^                        ^             |
+//  v    |                        |             |
+//  Object   ------------>>  Object class ------|
+//    ^                           ^             |
+//    |                           |             |
+//  Color     ------------>>  Color class ------|
+//    ^                           ^             |
+//    |                           |             |
+// Transparent  ---->>  Transparent class ------|
+//  ^
+//  ^
+//  |
+// transparentBlue
+//
+// So when we're defining a new class, say Transparent:
+// - Its metaclass (Transparent class) has a superobject chain of
+//   ... -> Behavior -> ClassDescription -> Metaclass -> Transparent class
+// - The superclass field on Behavior is set to Color.
+// - The superclass field on meta-Behavior is Color class.
+// - Then the new class is an instance of the metaclass, with the superobjects
+//   for eg. Behavior -> ClassDescription -> Class -> Object class ->
+//     Color class ->> Transparent.
+// - The OBJ_CLASS field of Transparent is Transparent class!
+export function defClass(cls, name, superclass, opt_instVars, opt_classVars) {
+  // First we set up the metaclass, Transparent class in the example.
+  // This is an instance of Metaclass.
+  const metaclass = mkInstance(CLS_METACLASS);
+  // Extract its nested Behavior, the super-super object, to set members.
+  const metaclassDescription = readAt(metaclass, OBJ_SUPER);
+  const metaclassBehavior = readAt(metaclassDescription, OBJ_SUPER);
 
+  // See the diagram above: the new metaclass (Transparent class)'s superclass
+  // is the superclass's (Color's) metaclass (Color class).
+  // That's the OBJ_CLASS field of superclass!
+  if (superclass === MA_NIL) {
+    // Special case for ProtoObject (where superclass is nil). This is the root
+    // of the regular object hierachy, ie. ProtoObject has no superclass.
+    // However, ProtoObject class's superclass is Class!
+    writeAt(metaclassBehavior, BEHAVIOR_SUPERCLASS, CLS_CLASS);
+  } else {
+    const supermeta = readAt(superclass, OBJ_CLASS);
+    writeAt(metaclassBehavior, BEHAVIOR_SUPERCLASS, supermeta);
+  }
+  writeAt(metaclassBehavior, BEHAVIOR_METHODS, lateBinding.dictFactory());
+  writeAt(metaclassBehavior, BEHAVIOR_INST_VARS,
+      wrapSmallInteger(opt_classVars || 0));
 
-// Given a class pointer, (eg. CLS_MY_CLASS), its name as a platform string, the
-// pointer to its superclass (CLS_MY_SUPER_CLASS) and the inst vars and class
-// vars counts, defines the class and its metaclass.
-function defClass(cls, name, superclass, opt_instVars, opt_classVars) {
-  const {
-    classDescription,
-    behavior,
-    metaclass,
-    metaClassDescription,
-    metaBehavior,
-  } = classFriends(cls);
-
-  // First lets set up the metaclass's superobject chain.
-  initObject(metaBehavior, CLS_BEHAVIOR, MA_OBJECT_INSTANCE, IV_BEHAVIOR);
-
-  // And its instance variables: superclass and methodDict.
-  // The superclass of the Metaclass is the metaclass of my own superclass.
-  const superFriends = classFriends(superclass);
-  writeAt(metaBehavior, BEHAVIOR_SUPERCLASS, superFriends.metaclass);
-  writeAt(metaBehavior, BEHAVIOR_METHODS, dictFactory());
-  writeAt(metaBehavior, BEHAVIOR_INST_VARS, wrapSmallInteger(opt_classVars || 0));
-
-  // Now the meta ClassDescription.
-  initObject(metaClassDescription, CLS_CLASS_DESCRIPTION, metaBehavior, 0);
-
-  // And then the metaclass and its instance variables.
-  initObject(metaclass, CLS_METACLASS, metaClassDescription, IV_METACLASS);
+  // Finally Metaclass itself has an instance variable to set: thisClass.
   writeAt(metaclass, METACLASS_THIS_CLASS, cls);
 
 
-  // Now the Behavior for the class.
-  initObject(behavior, CLS_BEHAVIOR, MA_OBJECT_INSTANCE, IV_BEHAVIOR);
+  // With the metaclass now properly defined, we can make an instance of it:
+  // our new class!
+  mkInstanceAt(metaclass, (_) => cls); // Custom allocator: fixed location.
+
+  // Now chase our way up the superobject chain until we find the Class.
+  let clsInstance = cls;
+  while (readAt(clsInstance, OBJ_CLASS) !== CLS_CLASS) {
+    clsInstance = readAt(clsInstance, OBJ_SUPER);
+  }
+
+  // Set its instance variables: name and subclasses.
+  // TODO: Set subclasses, now or later.
+  const symbol = wrapSymbol(name);
+  writeAt(clsInstance, CLASS_NAME, name);
+
+  // Two more links up the chain to Behavior.
+  const classDescription = readAt(clsInstance, OBJ_SUPER);
+  const behavior = readAt(classDescription, OBJ_SUPER);
+
   writeAt(behavior, BEHAVIOR_SUPERCLASS, superclass);
-  writeAt(behavior, BEHAVIOR_METHODS, dictFactory());
+  writeAt(behavior, BEHAVIOR_METHODS, lateBinding.dictFactory());
   writeAt(behavior, BEHAVIOR_INST_VARS, wrapSmallInteger(opt_instVars || 0));
 
-  // ClassDescription next.
-  initObject(classDescription, CLS_CLASS_DESCRIPTION, behavior, 0);
-
-  // And finally the real class.
-  initObject(cls, CLS_CLASS, classDescription, IV_CLASS);
-  writeAt(cls, CLASS_NAME, wrapSymbol(name));
-  writeAt(cls, CLASS_SUBCLASSES, MA_NIL); // TODO Maintain this set.
-  // Maybe that can be handled outside the bootstrap, and fixed up after
-  // bootstrapping is done?
-
+  lateBinding.addToClassDict(symbol, cls);
   return cls;
 }
 
-// Now we can call defClass to define the hierarchy necessary to create
+
+// We can't actually call defClass yet!
+// It needs to call mkInstance(CLS_METACLASS), which will recursively
+// mkInstance(CLS_CLASS_DESCRIPTION), mkInstance(CLS_BEHAVIOR) and
+// mkInstace(CLS_OBJECT) which is the base case.
+//
+// mkInstance needs the superclass and instVars values off Behavior, so we need
+// to populate that for those three classes.
+
+// First, the canned superobjects for ProtoObject and Object, since they
+// (a) are the root of the hierarchy and (b) have no instance variables, they
+// can be shared universally (saving a lot of memory!)
+initObject(MA_PROTO_OBJECT_INSTANCE, CLS_PROTO_OBJECT, MA_NIL, 0);
+initObject(MA_OBJECT_INSTANCE, CLS_OBJECT, MA_PROTO_OBJECT_INSTANCE, 0);
+
+// Metaclass is itself an instance of Metaclass, so we need to set that up.
+// Object -> Behavior -> ClassDescription -> Metaclass
+// MA_METAMETA_* are the superobjects of this circular instance.
+
+// Behavior:
+initObject(MA_METAMETA_BEHAVIOR, CLS_BEHAVIOR, MA_OBJECT_INSTANCE, IV_BEHAVIOR);
+// Method dictionary will be added later, but we need to set the instVars count
+// and superclass (Metaclass's superclass is ClassDescription).
+writeAt(MA_METAMETA_BEHAVIOR, BEHAVIOR_INST_VARS, wrapSmallInteger(IV_BEHAVIOR));
+writeAt(MA_METAMETA_BEHAVIOR, BEHAVIOR_SUPERCLASS, CLS_CLASS_DESCRIPTION);
+
+// ClassDescription
+initObject(MA_METAMETA_DESCRIPTION, CLS_CLASS_DESCRIPTION, MA_METAMETA_BEHAVIOR,
+    IV_CLASS_DESCRIPTION);
+
+// meta-Metaclass itself.
+initObject(MA_METAMETA, CLS_METACLASS, MA_METAMETA_DESCRIPTION, IV_METACLASS);
+// This circularly Metaclass's thisClass field is set to Metaclass as well.
+// This is circular the other way!
+writeAt(MA_METAMETA, METACLASS_THIS_CLASS, CLS_METACLASS);
+
+
+// Now to actually set up CLS_METACLASS and its parents CLS_BEHAVIOR and
+// CLS_CLASS_DESCRIPTION. We half-populate those, with no OBJ_CLASS fields and
+// such, since there's nothing to point to. Later defClass calls will fill those
+// in, and we're not trying to look up messages!
+//
+// Instead, we just need to be able to build the superObject chain for
+// CLS_METACLASS properly.
+const behaviorBehavior = allocObject(IV_BEHAVIOR);
+initObject(behaviorBehavior, MA_NIL, MA_OBJECT_INSTANCE, IV_BEHAVIOR);
+writeAt(behaviorBehavior, BEHAVIOR_SUPERCLASS, CLS_OBJECT);
+writeAt(behaviorBehavior, BEHAVIOR_INST_VARS, wrapSmallInteger(IV_BEHAVIOR));
+
+const behaviorDescription = allocObject(IV_CLASS_DESCRIPTION);
+initObject(behaviorDescription, MA_NIL, behaviorBehavior, IV_CLASS_DESCRIPTION);
+
+initObject(CLS_BEHAVIOR, MA_NIL, behaviorDescription, IV_CLASS);
+writeAt(CLS_BEHAVIOR, CLASS_NAME, wrapSymbol('Behavior'));
+
+
+// Now set up the sketch of CLS_CLASS_DESCRIPTION.
+const cdBehavior = allocObject(IV_BEHAVIOR);
+initObject(cdBehavior, MA_NIL, MA_OBJECT_INSTANCE, IV_BEHAVIOR);
+writeAt(cdBehavior, BEHAVIOR_SUPERCLASS, CLS_BEHAVIOR);
+writeAt(cdBehavior, BEHAVIOR_INST_VARS, wrapSmallInteger(IV_CLASS_DESCRIPTION));
+
+const cdDescription = allocObject(IV_CLASS_DESCRIPTION);
+initObject(cdDescription, MA_NIL, cdBehavior, IV_CLASS_DESCRIPTION);
+
+initObject(CLS_CLASS_DESCRIPTION, MA_NIL, cdDescription, IV_CLASS);
+writeAt(CLS_CLASS_DESCRIPTION, CLASS_NAME, wrapSymbol('ClassDescription'));
+
+
+// And now CLS_METACLASS
+const metaBehavior = allocObject(IV_BEHAVIOR);
+initObject(metaBehavior, MA_NIL, MA_OBJECT_INSTANCE, IV_BEHAVIOR);
+writeAt(metaBehavior, BEHAVIOR_SUPERCLASS, CLS_CLASS_DESCRIPTION);
+writeAt(metaBehavior, BEHAVIOR_INST_VARS, wrapSmallInteger(IV_METACLASS));
+
+const metaDescription = allocObject(IV_CLASS_DESCRIPTION);
+initObject(metaDescription, MA_NIL, metaBehavior, IV_CLASS_DESCRIPTION);
+
+initObject(CLS_METACLASS, MA_NIL, metaDescription, IV_CLASS);
+writeAt(CLS_METACLASS, CLASS_NAME, wrapSymbol('Metaclass'));
+
+
+// Finally, we need to set up CLS_CLASS.
+const classBehavior = allocObject(IV_BEHAVIOR);
+initObject(classBehavior, MA_NIL, MA_OBJECT_INSTANCE, IV_BEHAVIOR);
+writeAt(classBehavior, BEHAVIOR_SUPERCLASS, CLS_CLASS_DESCRIPTION);
+writeAt(classBehavior, BEHAVIOR_INST_VARS, wrapSmallInteger(IV_CLASS));
+
+const classDescription = allocObject(IV_CLASS_DESCRIPTION);
+initObject(classDescription, MA_NIL, classBehavior, IV_CLASS_DESCRIPTION);
+
+initObject(CLS_CLASS, MA_NIL, classDescription, IV_CLASS);
+writeAt(CLS_CLASS, CLASS_NAME, wrapSymbol('Class'));
+
+
+// Now we should be able to call mkInstance(Metaclass) successfully.
+// And we can call defClass to define the hierarchy necessary to create
 // CLS_IDENTITY_DICTIONARY; then we can fix the existing classes' dictionaries.
 // ProtoObject -> Object -> Collection -> Dictionary -> IdentityDictionary.
 
 defClass(CLS_PROTO_OBJECT, 'ProtoObject', MA_NIL, 0, 0);
+
+// Sanity checks, since something is wrong.
+// ProtoObject (the class) is an instance of ProtoObject class, which has no
+// personal instance variables.
+console.log('CLS_PROTO_OBJECT size',
+    readAt(CLS_PROTO_OBJECT, 0), OBJ_MEMBERS_BASE);
+
+// This is ProtoObject class.
+const protoObjectClass = readAt(CLS_PROTO_OBJECT, OBJ_CLASS);
+// Its class is Metaclass.
+console.log('ProtoObject class class == Metaclass',
+    readAt(protoObjectClass, OBJ_CLASS) === CLS_METACLASS);
+
+const protoObjectSuper1 = readAt(CLS_PROTO_OBJECT, OBJ_SUPER);
+console.log('ProtoObject is a subclass of Class',
+    readAt(protoObjectSuper1, OBJ_CLASS) === CLS_CLASS);
+const protoObjectSuper2 = readAt(protoObjectSuper1, OBJ_SUPER);
+console.log('Class is a subclass of ClassDescription',
+    readAt(protoObjectSuper2, OBJ_CLASS) === CLS_CLASS_DESCRIPTION);
+const protoObjectSuper3 = readAt(protoObjectSuper2, OBJ_SUPER);
+console.log('ClassDescription is a subclass of Behavior',
+    readAt(protoObjectSuper3, OBJ_CLASS) === CLS_BEHAVIOR);
+
+console.log('Which stores the instance variable count (0)',
+    readSmallInteger(protoObjectSuper3 + BEHAVIOR_INST_VARS) === 0);
+
+const protoObjectSuper4 = readAt(protoObjectSuper3, OBJ_SUPER);
+console.log('Behavior is a subclass of Object, with its default superobj',
+    readAt(protoObjectSuper4, OBJ_CLASS) === CLS_OBJECT,
+    protoObjectSuper4 === MA_OBJECT_INSTANCE);
+
+//  /------------------------ Behavior
+//  |                             ^   (subclass-of)
+//  |                             |
+//  |                       ClassDescription   /----\
+//  |                             ^        ^   |    v
+//  |                             |         \  |    v
+//  |                           Class       Metaclass
+//  |                             ^             ^
+//  |         (instance-of)       |             ^  (instance-of)
+//  |  ProtoObject ----->> ProtoObject class ---|
+//  |    ^                        ^             |
+//  v    |                        |             |
+//  Object   ------------>>  Object class ------|
+//    ^                           ^             |
+//    |                           |             |
+//  Color     ------------>>  Color class ------|
+//    ^                           ^             |
+//    |                           |             |
+// Transparent  ---->>  Transparent class ------|
+//  ^
+//  ^
+//  |
+// transparentBlue
+//
 defClass(CLS_OBJECT, 'Object', CLS_PROTO_OBJECT, 0, 0);
 
 defClass(CLS_BEHAVIOR, 'Behavior', CLS_OBJECT, IV_BEHAVIOR, 0);
@@ -102,36 +309,11 @@ defClass(CLS_COLLECTION, 'Collection', CLS_OBJECT, 0, 0);
 defClass(CLS_DICTIONARY, 'Dictionary', CLS_COLLECTION, 1, 0);
 defClass(CLS_IDENTITY_DICTIONARY, 'IdentityDictionary', CLS_DICTIONARY, 1, 0);
 
-// Now fix the dictionary factory.
-dictFactory = () => mkInstance(CLS_IDENTITY_DICTIONARY);
-
-// And update the nil method dictioaries we just created for those classes (and
-// their metaclasses).
-const impoverishedClasses = [
-  CLS_PROTO_OBJECT, CLS_OBJECT,
-  CLS_BEHAVIOR, CLS_CLASS_DESCRIPTION, CLS_CLASS, CLS_METACLASS,
-  CLS_COLLECTION, CLS_DICTIONARY, CLS_IDENTITY_DICTIONARY,
-];
-
-for (const cls of impoverishedClasses) {
-  const {behavior, metaBehavior} = classFriends(cls);
-  writeAt(behavior, BEHAVIOR_METHODS, dictFactory());
-  writeAt(metaBehavior, BEHAVIOR_METHODS, dictFactory());
-  // TODO These need to be added as GC roots!
-}
-
-
-// Now we can call defClass() and get properly constructed classes.
-defClass(CLS_BOOLEAN, 'Boolean', CLS_OBJECT);
-defClass(CLS_TRUE, 'True', CLS_BOOLEAN);
-defClass(CLS_FALSE, 'False', CLS_BOOLEAN);
-
-defClass(CLS_UNDEFINED_OBJECT, 'UndefinedObject', CLS_OBJECT);
-
-initObject(MA_NIL, CLS_UNDEFINED_OBJECT, MA_OBJECT_INSTANCE, 0);
-initObject(MA_BOOLEAN, CLS_BOOLEAN, MA_OBJECT_INSTANCE, 0);
-initObject(MA_TRUE, CLS_TRUE, MA_BOOLEAN, 0);
-initObject(MA_FALSE, CLS_FALSE, MA_BOOLEAN, 0);
-
 defClass(CLS_AA_NODE, 'AANode', CLS_OBJECT, 5, 0);
+
+// TODO Now that there's proper (meta)classes defined for Metaclass and friends,
+// are there impoverished early instances out there? My brain hurts, but I need
+// to think this through. Probably the system will bootstrap correctly and I can
+// check it out with tests like sending messages to Metaclass and Behavior and
+// things later on.
 

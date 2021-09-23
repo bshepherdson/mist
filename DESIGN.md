@@ -322,28 +322,24 @@ Lots of unused space, if I discover useful things.
 We need a scheme for loading literal values produced outside Smalltalk into the
 system.
 
-We define an encoding for literal arrays, as follows:
+Each element begins with a word giving its type:
 
-- First, a length in elements, followed by that many elements.
-- Each element begins with a word giving its own length in words. That's the
-  whole size of the element, including the length word. This is useful for
-  skipping through a literal array to get a particular index.
-- Next comes a word giving the type:
-    - 1: small integer, a 32-bit big-endian literal number (raw, not indirected
-      or tagged)
-    - 2: chracters, a 32-bit big-endian literal character value (raw)
-    - 3: string
-    - 4: symbol
-    - 5: literal array
-- Then follows the data.
+- 1: small integer, a 32-bit big-endian literal number (raw, not indirected
+  or tagged)
+- 2: chracters, a 32-bit big-endian literal character value (raw)
+- 3: string
+- 4: symbol
+- 5: literal array
+- 6: true
+- 7: false
+- 8: nil
 
-Integers and characters have a fixed size. Literal arrays are recursive: after
-the type word comes a word giving the number of elements, then that many
-elements follow, etc.
+True, false and nil have no data at all. Integers are 2 words, characters are 1.
+Literal arrays are recursive: after the type word comes a word giving the number
+of elements, then that many elements follow, etc.
 
-Strings and symbols are encoded the same, but loaded differently. We already
-have a length for them, which is 2 words longer than the value. That many raw
-words follow.
+Strings and symbols are encoded the same, but loaded differently. The first word
+after the type gives the length in words, and that many raw ASCII words follow.
 
 The system interprets these and copies them into memory.
 

@@ -1,6 +1,7 @@
 import {AA_VALUE, MA_NIL, readAt} from './memory.mjs';
 import {insert, lookupNode, treeSize} from './tree.mjs';
 import './bootstrap.mjs';
+import './corelib.mjs';
 
 // JS-only tests of the tree system. Does randomized sanity-checking against a
 // JS object, using numerical keys and values.

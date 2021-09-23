@@ -107,10 +107,10 @@ function popContext(process, opt_ctx) {
   const prev = readAt(process, PROCESS_PREV);
   const next = readAt(process, PROCESS_NEXT);
   if (prev != MA_NIL) {
-    writeAt(prev, PROCESS_NEXT) = next;
+    writeAt(prev, PROCESS_NEXT, next);
   }
   if (next != MA_NIL) {
-    writeAt(next, PROCESS_PREV) = prev;
+    writeAt(next, PROCESS_PREV, prev);
   }
   // If either of those is nil, both should be, since the list is circular.
   // Either way, it's correct to make next the head of the process table's ready
