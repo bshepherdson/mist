@@ -68,85 +68,113 @@ Building from the bottom up:
 - The runtime is a collection of global values (including classes), and two
   collections of live and dormant threads.
 
-### Memory model
+## Memory model
 
 There are several types of objects that need storing. We want this list to be
 as short as possible, but not shorter.
 
 The big optimization here is treating `SmallIntegers` as eg. 31-bit numbers
-using the top bit as a marker. (Eg. top bit `0` means pointers to other objects,
-top bit `1` is a 31-bit 2's complement number.) I haven't actually made that
-optimization yet, so we'll get there.
+using a bit as a marker. (Eg. top bit `0` means pointers to other objects,
+top bit `1` is a 31-bit 2's complement number.) The top bit is used because an
+important target CPU (my invented Mocha 86k 32-bit DCPU successor) has a
+compact/fast `BNG` "branch negative" instruction that can be used to test this.
+
+### Object Formats
 
 All objects in memory (rather than encoded as special pointers) have a common
-64-bit header, which is composed of `tXXXXXXX` and `____gggg`. `t` is the type
-code, `XXXXXXX` is a 28-bit count (usually), and `g` is a 16-bit generation
-count reserved from the GC.
+64-bit header.
 
-The only really fundamental types are regular objects, pointer arrays and raw
-arrays.
+```
+ssssssss __hhhhhh hhhhhhhh hhhhhhhh
+ggggffff __cccccc cccccccc cccccccc
+```
 
-- Objects (`t = 0`) contain two or more pointers to other objects. The number
-  is implied by their class, and inferred by the GC from their size.
-- Pointer arrays (`t = 1`) are the underlying representation of the `Array`
-  class. After the header they contain `k/2 - 1` pointers. (Put the other way,
-  a `k`-element array has a header specifying `2k + 2` words.
-- Raw arrays (`t = 2`) are the underlying representation for `ByteString`s. They
-  do not contain pointers, and so are completely opaque to the GC. After the
-  header they have simply `k - 2` words of raw data.
-- `t = $f` is reserved for various special types, though none are used yet.
-    - `$f` at the top allows small negative integers as specific types!
+- `ssssssss` is an 8-bit slot count. 255 is taken to mean "another 32-bit long
+  giving the count follows the header".
+- `hhhhh...` is a 22-bit "identity hash". This is a magic number assigned to
+  every object at allocation time.
+  - For classes specifically, this is equal to the class index (see below).
+  - For all other objects, it's an arbitrary number intended for use in hashing
+    collections, assigned in some arbitrary way by the allocator.
+- `gggg` is reserved for the GC to store information and tags.
+- `ffff` is the object format, giving the flavour of the object:
+    - `0`: 0-sized object (`nil`, `true`, `false`, etc.)
+    - `1`: fixed size, with instance variables (eg. `Point`, a classic object)
+    - `2`: variable sized, no inst vars. (eg. `Array`)
+    - `3`: variable sized with inst vars too (eg. `MethodContext`)
+    - `4`: unused for now. (Spur: *weak* variably-sized, eg. `WeakArray`)
+    - `5`: unused for now. (Spur: *weak* fixed-sized with inst vars, eg. `Ephemeron`)
+    - `6-7`: 16-bit indexables.
+        - There are two here, because the size field (`ssssssss` or the next
+          long) is in *longs* for all objects, and this notes whether this size
+          is a rounding error or not. This is effectively subtracted from the
+          length in 16-bit words: `ssssssss << 1 - (ffff & 1)`.
+    - `8-15` compiled methods with various forms.
+        - This property is cribbed from Spur without much analysis - not sure
+          yet what they're used for there. Possibly JIT things I don't need.
+- `ccccc...` is a 22-bit class index. All classes are assigned a number
+  permanently in this space, and it never changes.
+    - As noted above, the class has its identity hash (`hhhh...`) set to its own
+      class index. That means that `SomeClass basicNew`, which gets a pointer to
+      the class, can trivially find the class index as well (`self
+      identityHash`) *and* as a bonus there will never be an identityHash
+      collision for classes!
 
-Note that for non-special `t`, `XXXXXXX` gives the total size of the object in
-words, including the 4-word header.
+#### 0-size objects (0)
 
-#### Regular objects
+These are simply the 64-bit header. They have no instance variables, and the
+class is everything one needs to know. `true`, `false`, `nil`, and others.
 
-Regular objects are laid out like this:
+This isn't special, and the VM will allocate this form if a user class has no
+(transitive) instance variables. (Eg. Lexer tokens and other markers with no
+data attached.)
+
+#### Fixed-size with instance variables (1)
+
+This is a very common type; most objects are this.
+
+They are laid out like this:
 
 ```
 $00 header as above
-$02 GC word
-$04 superobject pointer
-$06 class pointer
-$08 instance variables
-... ...
+$02 1st instance variable
+$04 2nd instance variable
+...
 ```
 
-That's only the instance variables of *this* class. The *superobject pointer*
-points to another object, an instance of my superclass, holding *its* instance
-variables.
+The indexes of instance variables start at 1, like Smalltalk arrays, so they are
+effectively (long) offsets into the object.
 
-When methods are looked up on the context, the context has pointers to both the
-fundamental receiver, and the object of the class where this method was found,
-which might be a superobject.
+#### Variable size, no instance variables
 
-**NB:** To greatly reduce memory use at a small cost in complexity, there is a
-single shared instance of `Object` (which has no instance variables) used as the
-superobject for ~all other objects.
-
-#### Pointer arrays
+This is `Array` and similar classes,
 
 ```
-$00 header as above, t = 1
-$02 GC word
-$04 1st element
-$06 2nd element
+$00 header as above
+$02 1st element
+$04 2nd element
 ...
 $2k k-1th element
 ```
 
-#### Raw arrays
+#### Variable size with instance variables
 
-They have this form:
+This is unique(?) to `MethodContext` currently, which has a handful of instance
+variables and then a stack array inlined.
+
+The `ssssssss` size field in the header gives the number of instance variables;
+the following long gives the number of variable fields.
 
 ```
-$00 header as above, t = 2
-$02 GC word
-$04 1st word
-$05 2nd word
-$06 3rd word
+$00   header (`s` size)
+$02   variable count (`v`)
+$04   1st inst var
+$06   2nd inst var
+$08   3rd inst var ...
 ...
+2s+4  1st variable field
+...
+2s+2v last variable field
 ```
 
 ## Memory management and GC
@@ -184,8 +212,9 @@ writing to pointer arrays) need to check if we're storing a pointer from the
 survivor or tenure spaces into the Eden.
 
 In that case, they allocate a new special value, essentially creating a linked
-list of "escaped" pointers. These are tiny pointer arrays that hold a pointer
-to where the offending value was stored, and to the next value in the list.
+list of "escaped" pointers. These are `Association`s, 2-element arrays that hold
+a pointer to where the offending value was stored, and to the next value in the
+list.
 
 Then during a collection these lists can be used to find and update all
 references to new objects in old spaces. This is a vital GC root.
@@ -217,8 +246,8 @@ onto the old generation. Then the roles of new and old generation are swapped.
 This is a more expensive operation, since it's expected that most of the
 survivors continue to survive.
 
-This operation is the one that increments the `g` field in the second word of
-all the objects (it's initially 0).
+This operation is the one that increments the `gggg` field in the header of all
+the objects (it's initially 0).
 That field is a counter used to decide on tenuring.
 
 ### Tenuring

@@ -1,19 +1,18 @@
 // Contains hand-rolled classes and methods necessary to bootstrap the system.
 import {
   ASCII_TABLE,
-  BEHAVIOR_SUPERCLASS, BEHAVIOR_METHODS, BEHAVIOR_INST_VARS,
-  MA_METAMETA_BEHAVIOR, MA_METAMETA_DESCRIPTION, MA_METAMETA,
+  BEHAVIOR_SUPERCLASS, BEHAVIOR_METHODS, BEHAVIOR_FORMAT,
+  MA_METAMETA,
   METACLASS_THIS_CLASS,
   CLASS_NAME, CLASS_SUBCLASSES,
   CLS_PROTO_OBJECT, CLS_OBJECT, CLS_UNDEFINED_OBJECT,
   CLS_CLASS, CLS_CLASS_DESCRIPTION, CLS_BEHAVIOR, CLS_METACLASS,
   CLS_COLLECTION, CLS_DICTIONARY, CLS_IDENTITY_DICTIONARY, CLS_AA_NODE,
   IV_BEHAVIOR, IV_CLASS_DESCRIPTION, IV_CLASS, IV_METACLASS,
-  OBJ_CLASS, OBJ_SUPER, OBJ_MEMBERS_BASE,
-  MA_PROTO_OBJECT_INSTANCE, MA_OBJECT_INSTANCE, MA_NIL,
-  allocObject,
-  findSuperObj, initObject, mkInstance, mkInstanceAt, readAt, writeAt,
-  readSmallInteger, wrapSmallInteger, wrapSymbol,
+  MA_NIL,
+  addClassToTable, classOf, initObject, mkInstance,
+  readIV, writeIV, writeIVNew,
+  fromSmallInteger, toSmallInteger, wrapSymbol,
 } from './memory.mjs';
 
 // Bootstrapping proceeds in several phases:
@@ -78,69 +77,54 @@ export const lateBinding = {
 // transparentBlue
 //
 // So when we're defining a new class, say Transparent:
-// - Its metaclass (Transparent class) has a superobject chain of
-//   ... -> Behavior -> ClassDescription -> Metaclass -> Transparent class
 // - The superclass field on Behavior is set to Color.
 // - The superclass field on meta-Behavior is Color class.
-// - Then the new class is an instance of the metaclass, with the superobjects
-//   for eg. Behavior -> ClassDescription -> Class -> Object class ->
-//     Color class ->> Transparent.
-// - The OBJ_CLASS field of Transparent is Transparent class!
+// - Then the new class is an instance of the metaclass.
+//   - ie. The class field of Transparent is Transparent class!
 export function defClass(cls, name, superclass, opt_instVars, opt_classVars) {
   // First we set up the metaclass, Transparent class in the example.
   // This is an instance of Metaclass.
   const metaclass = mkInstance(CLS_METACLASS);
-  // Extract its nested Behavior, the super-super object, to set members.
-  const metaclassDescription = readAt(metaclass, OBJ_SUPER);
-  const metaclassBehavior = readAt(metaclassDescription, OBJ_SUPER);
 
   // See the diagram above: the new metaclass (Transparent class)'s superclass
   // is the superclass's (Color's) metaclass (Color class).
-  // That's the OBJ_CLASS field of superclass!
-  if (superclass === MA_NIL) {
-    // Special case for ProtoObject (where superclass is nil). This is the root
-    // of the regular object hierachy, ie. ProtoObject has no superclass.
-    // However, ProtoObject class's superclass is Class!
-    writeAt(metaclassBehavior, BEHAVIOR_SUPERCLASS, CLS_CLASS);
-  } else {
-    const supermeta = readAt(superclass, OBJ_CLASS);
-    writeAt(metaclassBehavior, BEHAVIOR_SUPERCLASS, supermeta);
-  }
-  writeAt(metaclassBehavior, BEHAVIOR_METHODS, lateBinding.dictFactory());
-  writeAt(metaclassBehavior, BEHAVIOR_INST_VARS,
-      wrapSmallInteger(opt_classVars || 0));
+  // That's the class field of our superclass!
+  //
+  // Special case for ProtoObject (where superclass is nil). This is the root
+  // of the regular object hierachy, ie. ProtoObject has no superclass.
+  // However, ProtoObject class's superclass is Class!
+  const supermeta = superclass === MA_NIL ? CLS_CLASS : classOf(superclass);
+  writeIV(metaclass, BEHAVIOR_SUPERCLASS, supermeta);
+  writeIV(metaclass, BEHAVIOR_METHODS, lateBinding.dictFactory());
 
-  // Finally Metaclass itself has an instance variable to set: thisClass.
-  writeAt(metaclass, METACLASS_THIS_CLASS, cls);
+  const upstreamClassVars = behaviorToInstVars(supermeta);
+  instVarsFormatBehavior(metaclass, classVars + (opt_classVars || 0));
 
+  // Add the metaclass to the class table.
+  addClassToTable(metaclass);
 
   // With the metaclass now properly defined, we can make an instance of it:
   // our new class!
-  mkInstanceAt(metaclass, (_) => cls); // Custom allocator: fixed location.
-
-  // Now chase our way up the superobject chain until we find the Class.
-  let clsInstance = cls;
-  while (readAt(clsInstance, OBJ_CLASS) !== CLS_CLASS) {
-    clsInstance = readAt(clsInstance, OBJ_SUPER);
-  }
+  const cls = mkInstance(metaclass);
 
   // Set its instance variables: name and subclasses.
   // TODO: Set subclasses, now or later.
   const symbol = wrapSymbol(name);
-  writeAt(clsInstance, CLASS_NAME, name);
+  writeIVNew(cls, CLASS_NAME, name);
+  writeIVNew(cls, BEHAVIOR_SUPERCLASS, superclass);
+  writeIVNew(cls, BEHAVIOR_METHODS, lateBinding.dictFactory());
 
-  // Two more links up the chain to Behavior.
-  const classDescription = readAt(clsInstance, OBJ_SUPER);
-  const behavior = readAt(classDescription, OBJ_SUPER);
+  const upstreamInstVars = behaviorToInstVars(superclass);
+  instVarsFormatBehavior(metaclass, classVars + (opt_classVars || 0));
 
-  writeAt(behavior, BEHAVIOR_SUPERCLASS, superclass);
-  writeAt(behavior, BEHAVIOR_METHODS, lateBinding.dictFactory());
-  writeAt(behavior, BEHAVIOR_INST_VARS, wrapSmallInteger(opt_instVars || 0));
+  addClassToTable(cls);
+
+  // Finally Metaclass itself has an instance variable to set: thisClass.
+  writeIV(metaclass, METACLASS_THIS_CLASS, cls);
 
   lateBinding.addToClassDict(symbol, cls);
   return cls;
 }
-
 
 // We can't actually call defClass yet!
 // It needs to call mkInstance(CLS_METACLASS), which will recursively
