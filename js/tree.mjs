@@ -78,7 +78,7 @@ function split(t) {
 // NB The adjustment of level(T).
 export function insert(t, k, v) {
   if (t === MA_NIL) {
-    const node = mkInstance(CLS_AA_NODE);
+    const node = mkInstance(read(classTable(CLS_AA_NODE)));
     writeAt(node, AA_LEVEL, wrapSmallInteger(1));
     writeAt(node, AA_KEY, k);
     writeAt(node, AA_VALUE, v);

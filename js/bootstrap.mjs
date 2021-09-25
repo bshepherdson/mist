@@ -19,20 +19,26 @@ import {
 // 1. vm.mjs         VM's initial setup of the registers.
 // 2. memory.mjs     Memory created, a few pointers in memory updated.
 // 3. bootstrap.mjs
-//    a. Knot-tying setup of the innermost kernel of classes (eg. Class)
-//    b. Define enough classes for IdentityDictionary to exist.
-// 4. tree.mjs       The AA tree used for class & method dictionaries.
+//    a.                 Knot-tying setup of the innermost kernel of classes
+//    b.                 Define enough classes for IdentityDictionary to exist.
+// 4. dict.mjs       The hobo dictionary used to bootstrap into Smalltalk.
 // 5. corelib.mjs
-//    a. Upgrades the slightly hobo classes from bootstrap.mjs.
-//    b. Adds a bunch more built-in classes, like the booleans.
+//    a.                 Upgrades the slightly hobo classes from bootstrap.mjs.
+//    b.                 Adds a bunch more built-in classes, like the booleans.
+// 6. driver.mjs     Starts reading the input from the Smalltalk files.
 
 
 // Slight hack: we can't define the method dictionaries until the superclasses
 // have been created, so this starts out as a dummy that returns nil. It gets
 // replaced later and the existing dictionaries updated.
+export const impoverishedClasses = {};
 export const lateBinding = {
   dictFactory: () => MA_NIL,
   addToClassDict: (sym, cls) => {},
+  symbolize: (name) => MA_NIL,
+  register: (cls, name) => {
+    impoverishedClasses[name] = cls;
+  },
 };
 
 // Class construction
@@ -81,10 +87,10 @@ export const lateBinding = {
 // - The superclass field on meta-Behavior is Color class.
 // - Then the new class is an instance of the metaclass.
 //   - ie. The class field of Transparent is Transparent class!
-export function defClass(cls, name, superclass, opt_instVars, opt_classVars) {
+export function defClass(clsIndex, name, superclass, opt_instVars, opt_classVars) {
   // First we set up the metaclass, Transparent class in the example.
   // This is an instance of Metaclass.
-  const metaclass = mkInstance(CLS_METACLASS);
+  const metaclass = mkInstance(read(classTable(CLS_METACLASS)));
 
   // See the diagram above: the new metaclass (Transparent class)'s superclass
   // is the superclass's (Color's) metaclass (Color class).
@@ -92,13 +98,20 @@ export function defClass(cls, name, superclass, opt_instVars, opt_classVars) {
   //
   // Special case for ProtoObject (where superclass is nil). This is the root
   // of the regular object hierachy, ie. ProtoObject has no superclass.
-  // However, ProtoObject class's superclass is Class!
-  const supermeta = superclass === MA_NIL ? CLS_CLASS : classOf(superclass);
-  writeIV(metaclass, BEHAVIOR_SUPERCLASS, supermeta);
-  writeIV(metaclass, BEHAVIOR_METHODS, lateBinding.dictFactory());
+  const supermeta = superclass === MA_NIL ?
+      // However, ProtoObject class's superclass is Class!
+      read(classTable(CLS_CLASS)) :
+      // Otherwise, look up the superclass and get *its* class.
+      classOf(superclass);
+
+  // All the writes here are to freshly allocated classes, so we can safely use
+  // the *New forms.
+  writeIVNew(metaclass, BEHAVIOR_SUPERCLASS, supermeta);
+  writeIVNew(metaclass, BEHAVIOR_METHODS, lateBinding.dictFactory());
 
   const upstreamClassVars = behaviorToInstVars(supermeta);
-  instVarsFormatBehavior(metaclass, classVars + (opt_classVars || 0));
+  const metaFormat = fixedInstVarsFormat(classVars + (opt_classVars || 0));
+  writeIVNew(metaclass, BEHAVIOR_FORMAT, metaFormat);
 
   // Add the metaclass to the class table.
   addClassToTable(metaclass);
@@ -109,195 +122,100 @@ export function defClass(cls, name, superclass, opt_instVars, opt_classVars) {
 
   // Set its instance variables: name and subclasses.
   // TODO: Set subclasses, now or later.
-  const symbol = wrapSymbol(name);
+  const symbol = lateBinding.symbolize(name);
   writeIVNew(cls, CLASS_NAME, name);
   writeIVNew(cls, BEHAVIOR_SUPERCLASS, superclass);
   writeIVNew(cls, BEHAVIOR_METHODS, lateBinding.dictFactory());
 
   const upstreamInstVars = behaviorToInstVars(superclass);
-  instVarsFormatBehavior(metaclass, classVars + (opt_classVars || 0));
+  const format = fixedInstVarsFormat(instVars + (opt_instVars || 0));
+  writeIVNew(cls, BEHAVIOR_FORMAT, format);
 
-  addClassToTable(cls);
+  write(classTable(clsIndex), cls);
+  checkOldToNew(classTable(clsIndex), cls);
 
   // Finally Metaclass itself has an instance variable to set: thisClass.
-  writeIV(metaclass, METACLASS_THIS_CLASS, cls);
+  writeIVNew(metaclass, METACLASS_THIS_CLASS, cls);
 
   lateBinding.addToClassDict(symbol, cls);
+  lateBinding.register(cls);
   return cls;
 }
 
 // We can't actually call defClass yet!
-// It needs to call mkInstance(CLS_METACLASS), which will recursively
-// mkInstance(CLS_CLASS_DESCRIPTION), mkInstance(CLS_BEHAVIOR) and
-// mkInstace(CLS_OBJECT) which is the base case.
-//
-// mkInstance needs the superclass and instVars values off Behavior, so we need
-// to populate that for those three classes.
+// It needs to call mkInstance(CLS_METACLASS), which needs the format field of
+// Behavior.
+// It also needs to wrapSymbol for the class name, which needs CLS_SYMBOL to be
+// populated similarly.
+// So we populate these few specific classes by hand.
+// allocObject (and initObject underneath) only need class hashes, ie. raw
+// CLS_FOO values.
 
-// First, the canned superobjects for ProtoObject and Object, since they
-// (a) are the root of the hierarchy and (b) have no instance variables, they
-// can be shared universally (saving a lot of memory!)
-initObject(MA_PROTO_OBJECT_INSTANCE, CLS_PROTO_OBJECT, MA_NIL, 0);
-initObject(MA_OBJECT_INSTANCE, CLS_OBJECT, MA_PROTO_OBJECT_INSTANCE, 0);
-
-// Metaclass is itself an instance of Metaclass, so we need to set that up.
-// Object -> Behavior -> ClassDescription -> Metaclass
-// MA_METAMETA_* are the superobjects of this circular instance.
-
-// Behavior:
-initObject(MA_METAMETA_BEHAVIOR, CLS_BEHAVIOR, MA_OBJECT_INSTANCE, IV_BEHAVIOR);
-// Method dictionary will be added later, but we need to set the instVars count
-// and superclass (Metaclass's superclass is ClassDescription).
-writeAt(MA_METAMETA_BEHAVIOR, BEHAVIOR_INST_VARS, wrapSmallInteger(IV_BEHAVIOR));
-writeAt(MA_METAMETA_BEHAVIOR, BEHAVIOR_SUPERCLASS, CLS_CLASS_DESCRIPTION);
-
-// ClassDescription
-initObject(MA_METAMETA_DESCRIPTION, CLS_CLASS_DESCRIPTION, MA_METAMETA_BEHAVIOR,
-    IV_CLASS_DESCRIPTION);
-
-// meta-Metaclass itself.
-initObject(MA_METAMETA, CLS_METACLASS, MA_METAMETA_DESCRIPTION, IV_METACLASS);
-// This circularly Metaclass's thisClass field is set to Metaclass as well.
-// This is circular the other way!
-writeAt(MA_METAMETA, METACLASS_THIS_CLASS, CLS_METACLASS);
+// Remember that `Metaclass class class == Metaclass`, but `Metaclass class` is
+// a regular class with a name and such.
+const classTotalIVs = IV_BEHAVIOR + IV_CLASS_DESCRIPTION + IV_CLASS;
+const metaclass = allocObject(0, classTotalIVs, 0, alloc);
+writeIV(metaclass, BEHAVIOR_FORMAT, fixedInstVarsFormat(classTotalIVs));
+write(classTable(CLS_METACLASS), metaclass);
+checkOldToNew(classTable(CLS_METACLASS), metaclass);
 
 
-// Now to actually set up CLS_METACLASS and its parents CLS_BEHAVIOR and
-// CLS_CLASS_DESCRIPTION. We half-populate those, with no OBJ_CLASS fields and
-// such, since there's nothing to point to. Later defClass calls will fill those
-// in, and we're not trying to look up messages!
-//
-// Instead, we just need to be able to build the superObject chain for
-// CLS_METACLASS properly.
-const behaviorBehavior = allocObject(IV_BEHAVIOR);
-initObject(behaviorBehavior, MA_NIL, MA_OBJECT_INSTANCE, IV_BEHAVIOR);
-writeAt(behaviorBehavior, BEHAVIOR_SUPERCLASS, CLS_OBJECT);
-writeAt(behaviorBehavior, BEHAVIOR_INST_VARS, wrapSmallInteger(IV_BEHAVIOR));
-
-const behaviorDescription = allocObject(IV_CLASS_DESCRIPTION);
-initObject(behaviorDescription, MA_NIL, behaviorBehavior, IV_CLASS_DESCRIPTION);
-
-initObject(CLS_BEHAVIOR, MA_NIL, behaviorDescription, IV_CLASS);
-writeAt(CLS_BEHAVIOR, CLASS_NAME, wrapSymbol('Behavior'));
+const symbol = allocObject(0, classTotalIVs, 0, alloc);
+writeIV(symbol, BEHAVIOR_FORMAT, fixedInstVarsFormat(classTotalIVs));
+write(classTable(CLS_SYMBOL), symbol);
+checkOldToNew(classTable(CLS_SYMBOL), symbol);
 
 
-// Now set up the sketch of CLS_CLASS_DESCRIPTION.
-const cdBehavior = allocObject(IV_BEHAVIOR);
-initObject(cdBehavior, MA_NIL, MA_OBJECT_INSTANCE, IV_BEHAVIOR);
-writeAt(cdBehavior, BEHAVIOR_SUPERCLASS, CLS_BEHAVIOR);
-writeAt(cdBehavior, BEHAVIOR_INST_VARS, wrapSmallInteger(IV_CLASS_DESCRIPTION));
+// Now I think we can start declaring regular classes!
+const protoObject = defClass(CLS_PROTO_OBJECT, 'ProtoObject', null, 0);
+const object = defClass(CLS_OBJECT, 'Object', protoObject, 0);
+const behavior = defClass(CLS_BEHAVIOR, 'Behavior', object, IV_BEHAVIOR);
+const classDesc = defClass(CLS_CLASS_DESCRIPTION, 'ClassDescription',
+    behavior, IV_CLASS_DESCRIPTION);
+const class_ = defClass(CLS_CLASS, 'Class', classDesc, IV_CLASS);
+const metaclass = defClass(CLS_METACLASS, 'Metaclass', classDesc, IV_METACLASS);
 
-const cdDescription = allocObject(IV_CLASS_DESCRIPTION);
-initObject(cdDescription, MA_NIL, cdBehavior, IV_CLASS_DESCRIPTION);
-
-initObject(CLS_CLASS_DESCRIPTION, MA_NIL, cdDescription, IV_CLASS);
-writeAt(CLS_CLASS_DESCRIPTION, CLASS_NAME, wrapSymbol('ClassDescription'));
-
-
-// And now CLS_METACLASS
-const metaBehavior = allocObject(IV_BEHAVIOR);
-initObject(metaBehavior, MA_NIL, MA_OBJECT_INSTANCE, IV_BEHAVIOR);
-writeAt(metaBehavior, BEHAVIOR_SUPERCLASS, CLS_CLASS_DESCRIPTION);
-writeAt(metaBehavior, BEHAVIOR_INST_VARS, wrapSmallInteger(IV_METACLASS));
-
-const metaDescription = allocObject(IV_CLASS_DESCRIPTION);
-initObject(metaDescription, MA_NIL, metaBehavior, IV_CLASS_DESCRIPTION);
-
-initObject(CLS_METACLASS, MA_NIL, metaDescription, IV_CLASS);
-writeAt(CLS_METACLASS, CLASS_NAME, wrapSymbol('Metaclass'));
+const nilObj = defClass(CLS_UNDEFINED_OBJECT, 'UndefinedObject', object, 0);
+mkInstance(nilObj, undefined, (_) => MA_NIL);
 
 
-// Finally, we need to set up CLS_CLASS.
-const classBehavior = allocObject(IV_BEHAVIOR);
-initObject(classBehavior, MA_NIL, MA_OBJECT_INSTANCE, IV_BEHAVIOR);
-writeAt(classBehavior, BEHAVIOR_SUPERCLASS, CLS_CLASS_DESCRIPTION);
-writeAt(classBehavior, BEHAVIOR_INST_VARS, wrapSmallInteger(IV_CLASS));
+// TODO This could probably be sped up by inlining, but it adds a lot of
+// complexity. Nested (word)arrays will probably do.
+defClass(CLS_COMPILED_METHOD, 'CompiledMethod', IV_METHOD);
+defClass(CLS_BLOCK_CLOSURE, 'BlockClosure', 4);
 
-const classDescription = allocObject(IV_CLASS_DESCRIPTION);
-initObject(classDescription, MA_NIL, classBehavior, IV_CLASS_DESCRIPTION);
+// Collections, far enough for Symbol and String.
+const collection = defClass(CLS_COLLECTION, 'Collection', object, 0);
+const seqColl = defClass(CLS_SEQUENCEABLE_COLLECTION, 'SequenceableCollection',
+    collection, 0);
+const arrColl = defClass(CLS_ARRAYED_COLLECTION, 'ArrayedCollection', seqColl, 0);
 
-initObject(CLS_CLASS, MA_NIL, classDescription, IV_CLASS);
-writeAt(CLS_CLASS, CLASS_NAME, wrapSymbol('Class'));
+const arr = defClass(CLS_ARRAY, 'Array', arrColl, 0);
+// Fix the format. It should be FORMAT_VARIABLE.
+writeIVNew(arr, BEHAVIOR_FORMAT, toSmallInteger(FORMAT_VARIABLE << 24));
+
+const str = defClass(CLS_STRING, 'String', arrColl, 0);
+const sym = defClass(CLS_SYMBOL, 'Symbol', str, 0, 1); // 1 class var: symbol dictionary.
+// Adjust the format! It's FORMAT_WORDS_EVEN and the allocation code handles the
+// length.
+writeIVNew(str, BEHAVIOR_FORMAT, toSmallInteger(FORMAT_WORDS_EVEN << 24));
+writeIVNew(sym, BEHAVIOR_FORMAT, toSmallInteger(FORMAT_WORDS_EVEN << 24));
+
+const mag = defClass(CLS_MAGNITUDE, 'Magnitude', object, 0);
+const num = defClass(CLS_NUMBER, 'Number', mag, 0);
+const integer = defClass(CLS_INTEGER, 'Integer', num, 0);
+const smallInteger = defClass(CLS_SMALL_INTEGER, 'SmallInteger', integer, 0);
 
 
-// Now we should be able to call mkInstance(Metaclass) successfully.
-// And we can call defClass to define the hierarchy necessary to create
-// CLS_IDENTITY_DICTIONARY; then we can fix the existing classes' dictionaries.
-// ProtoObject -> Object -> Collection -> Dictionary -> IdentityDictionary.
+const hashed = defClass(CLS_HASHED_COLLECTION, 'HashedCollection', collection, 2);
+const dict = defClass(CLS_DICTIONARY, 'Dictionary', hashed, 0);
+const idDict = defClass(CLS_IDENTITY_DICTIONARY, 'IdentitiyDictionary', dict, 0);
 
-defClass(CLS_PROTO_OBJECT, 'ProtoObject', MA_NIL, 0, 0);
 
-// Sanity checks, since something is wrong.
-// ProtoObject (the class) is an instance of ProtoObject class, which has no
-// personal instance variables.
-console.log('CLS_PROTO_OBJECT size',
-    readAt(CLS_PROTO_OBJECT, 0), OBJ_MEMBERS_BASE);
+// Rule 10: The metaclass of Metaclass is an instance of Metaclass.
+// TODO I'm not sure this is done?
 
-// This is ProtoObject class.
-const protoObjectClass = readAt(CLS_PROTO_OBJECT, OBJ_CLASS);
-// Its class is Metaclass.
-console.log('ProtoObject class class == Metaclass',
-    readAt(protoObjectClass, OBJ_CLASS) === CLS_METACLASS);
-
-const protoObjectSuper1 = readAt(CLS_PROTO_OBJECT, OBJ_SUPER);
-console.log('ProtoObject is a subclass of Class',
-    readAt(protoObjectSuper1, OBJ_CLASS) === CLS_CLASS);
-const protoObjectSuper2 = readAt(protoObjectSuper1, OBJ_SUPER);
-console.log('Class is a subclass of ClassDescription',
-    readAt(protoObjectSuper2, OBJ_CLASS) === CLS_CLASS_DESCRIPTION);
-const protoObjectSuper3 = readAt(protoObjectSuper2, OBJ_SUPER);
-console.log('ClassDescription is a subclass of Behavior',
-    readAt(protoObjectSuper3, OBJ_CLASS) === CLS_BEHAVIOR);
-
-console.log('Which stores the instance variable count (0)',
-    readSmallInteger(protoObjectSuper3 + BEHAVIOR_INST_VARS) === 0);
-
-const protoObjectSuper4 = readAt(protoObjectSuper3, OBJ_SUPER);
-console.log('Behavior is a subclass of Object, with its default superobj',
-    readAt(protoObjectSuper4, OBJ_CLASS) === CLS_OBJECT,
-    protoObjectSuper4 === MA_OBJECT_INSTANCE);
-
-//  /------------------------ Behavior
-//  |                             ^   (subclass-of)
-//  |                             |
-//  |                       ClassDescription   /----\
-//  |                             ^        ^   |    v
-//  |                             |         \  |    v
-//  |                           Class       Metaclass
-//  |                             ^             ^
-//  |         (instance-of)       |             ^  (instance-of)
-//  |  ProtoObject ----->> ProtoObject class ---|
-//  |    ^                        ^             |
-//  v    |                        |             |
-//  Object   ------------>>  Object class ------|
-//    ^                           ^             |
-//    |                           |             |
-//  Color     ------------>>  Color class ------|
-//    ^                           ^             |
-//    |                           |             |
-// Transparent  ---->>  Transparent class ------|
-//  ^
-//  ^
-//  |
-// transparentBlue
-//
-defClass(CLS_OBJECT, 'Object', CLS_PROTO_OBJECT, 0, 0);
-
-defClass(CLS_BEHAVIOR, 'Behavior', CLS_OBJECT, IV_BEHAVIOR, 0);
-defClass(CLS_CLASS_DESCRIPTION, 'ClassDescription', CLS_BEHAVIOR,
-    IV_CLASS_DESCRIPTION, 0);
-defClass(CLS_CLASS, 'Class', CLS_CLASS_DESCRIPTION, IV_CLASS, 0);
-defClass(CLS_METACLASS, 'Metaclass', CLS_CLASS_DESCRIPTION, IV_METACLASS, 0);
-
-defClass(CLS_COLLECTION, 'Collection', CLS_OBJECT, 0, 0);
-defClass(CLS_DICTIONARY, 'Dictionary', CLS_COLLECTION, 1, 0);
-defClass(CLS_IDENTITY_DICTIONARY, 'IdentityDictionary', CLS_DICTIONARY, 1, 0);
-
-defClass(CLS_AA_NODE, 'AANode', CLS_OBJECT, 5, 0);
-
-// TODO Now that there's proper (meta)classes defined for Metaclass and friends,
-// are there impoverished early instances out there? My brain hurts, but I need
-// to think this through. Probably the system will bootstrap correctly and I can
-// check it out with tests like sending messages to Metaclass and Behavior and
-// things later on.
-
+// We need the hobo implementation of "dictionaries" in dict.mjs. They're
+// not really dictionaries, just arrays with [k1, v1, k2, v2, ...] in arbitrary
+// order. They should get replaced with real dictionaries after we've started
+// loading Smalltalk and defined the real thing.

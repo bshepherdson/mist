@@ -66,12 +66,12 @@ class Driver {
   // 1 = instance-level methods, 2 = class-level methods, 3 = inline code.
   interpret() {
     const array = this.nextValue(); // Array is a Smalltalk pointer array.
-    if (!isPointerArray(array)) {
+    if (classOf(array) !== read(classTable(CLS_ARRAY))) {
       throw new Error('Only arrays are allowed at the top level of input');
     }
 
     // The array starts with a number giving a command.
-    const cmd = readSmallInteger(array + PA_BASE);
+    const cmd = fromSmallInteger(readArray(array, 0));
     switch (cmd) {
       case DRIVER_CMD_METHODS:
       case DRIVER_CMD_CLASS_METHODS:
@@ -91,25 +91,28 @@ class Driver {
     switch (type) {
       case LIT_TYPE_INTEGER:
         const num = this.stream.next32();
-        return wrapSmallInteger(num);
+        return toSmallInteger(num);
 
       case LIT_TYPE_CHARACTER:
         const ch = this.stream.next();
-        return ASCII_TABLE[ch];
+        const asciiTable = readIV(read(classTable(CLS_CHARACTER)), CLASS_VAR1);
+        return readArray(asciiTable, ch);
 
       case LIT_TYPE_STRING:
-        // The length of the string is the len word - 2 (length and type).
-        const str = allocRawArray(len - 2);
-        for (let i = 0; i < len - 2; i++) {
+        // The length comes next, a single word.
+        const len = this.stream.next();
+        const str = mkInstance(read(classTable(CLS_STRING)), len);
+        for (let i = 0; i < len; i++) {
           const ch = this.stream.next();
-          writeWord(str + RA_BASE + i, ch);
+          writeWordArray(str, i, ch);
         }
         return str;
 
       case LIT_TYPE_SYMBOL:
         // Collect into a platform string, then use wrapSymbol.
         const str = '';
-        for (let i = 0; i < len - 2; i++) {
+        const len = this.stream.next();
+        for (let i = 0; i < len; i++) {
           const ch = this.stream.next();
           str += String.fromCharCode(ch);
         }
@@ -118,10 +121,10 @@ class Driver {
       case LIT_TYPE_ARRAY:
         // Nest into a literal array.
         const elements = this.stream.next();
-        const array = allocPointerArray(elements, true /* uninitialized */);
+        const array = mkInstance(read(classTable(CLS_ARRAY)), elements);
         for (let i = 0; i < elements; i++) {
           const value = this.nextValue();
-          writeAt(array, PA_BASE + 2*i, value);
+          writeArray(array, i, value);
         }
         return array;
 
@@ -138,39 +141,40 @@ class Driver {
   }
 
   interpretMethods(array, classy) {
-    // The array is a pointer array containing: cmd, class, methods...
-    const className = readAt(array, PA_BASE + 2);
-    const classNode = lookupNode(read(MA_CLASS_DICT), className);
+    // The array is a pointer array containing: cmd, class name, methods...
+    const className = readArray(array, 1);
+    const classDict = read(MA_CLASS_DICT);
+    const classNode = lookup(classDict, className);
     if (classNode === MA_NIL) throw new Error('Unrecognized class!');
-    const baseClass = readAt(classNode, 
 
     // If the "classy" flag is true, we're adding things to Foo class.
     // Since that's nameless, the symbol is for the real Class, and it uses a
-    // different command number. If this is a classy method, follow the 
-    const cls = classy ? 
+    // different command number. If this is a classy method, f
+    const cls = classy ? classNode : classOf(classNode);
+    const methodDict = readIV(cls, BEHAVIOR_METHODS);
 
     // Then each method follows. It's an array like:
     // #( selectorSymbol argc locals #( bytecode... ) #( literals ) )
-    const len = pointerArrayLength(array);
+    const len = arraySize(array);
     for (let i = 2; i < len; i++) { // Start from 2 because of cmd and class.
-      const method = readAt(array, PA_BASE + 2 * i);
+      const method = readArray(array, i);
 
-      const selector = readAt(method, PA_BASE);
-      const argc = readAt(method + PA_BASE + 2); // Uninterpreted small int
-      const locals = readAt(method + PA_BASE + 4); // Same
-      const bytecode = readAt(method, PA_BASE + 6);
-      const literals = readAt(method, PA_BASE + 8);
+      const selector = readArray(method, 0);
+      const argc = readArray(method, 1); // Uninterpreted small int
+      const locals = readArray(method, 2); // Same
+      const bytecode = readArray(method, 3);
+      const literals = readArray(method, 4);
 
-      const compiled = mkInstance(CLS_COMPILED_METHOD);
-      writeAt(compiled, METHOD_BYTECODE, bytecode);
-      writeAt(compiled, METHOD_LITERALS, literals);
-      writeAt(compiled, METHOD_NAME, selector);
-      writeAt(compiled, METHOD_LOCALS, locals);
-      writeAt(compiled, METHOD_ARGC, argc);
-      writeAt(compiled, METHOD_CLASS, cls);
+      const compiled = mkInstance(read(classTable(CLS_COMPILED_METHOD)));
+      writeIV(compiled, METHOD_BYTECODE, bytecode);
+      writeIV(compiled, METHOD_LITERALS, literals);
+      writeIV(compiled, METHOD_NAME, selector);
+      writeIV(compiled, METHOD_LOCALS, locals);
+      writeIV(compiled, METHOD_ARGC, argc);
+      writeIV(compiled, METHOD_CLASS, cls);
 
       // And add it to the class's method dictionary.
-
+      insert(methodDict, selector, compiled);
     }
   }
 }

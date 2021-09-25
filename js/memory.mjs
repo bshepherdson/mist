@@ -41,20 +41,15 @@ export const MA_NIL   = 0x2000; // Size 4, zero-size object
 export const MA_TRUE  = 0x2004; // Size 4, zero-size object
 export const MA_FALSE = 0x2008; // Size 4, zero-size object
 
-// Each Class has a bunch of component parts:
-// Object -> Behavior -> ClassDescription -> Class, Metaclass.
-// So any given class also has its superobjects, plus its metaclass and *its*
-// superobjects. Since the number and size of superobjects varies, only the
-// actual named class gets stored here. All the others are reachable from it.
-//
 // The classes are *not* tenured, since they can be replaced, and the cost of
 // copying them is less bad than burning up tenured space for them.
 //
-// START HERE: Figure out the classes - it's still a bit of a mess.
+// Instead, we keep a table of class pointers in special memory, with the
+// classes at arbitrary locations. They get treated like ordinary old->new
+// pointers, updated, etc. The identity hash of a class is a (pointer) index
+// into this table, and MA_NEXT_CLASS_INDEX holds the next empty slot.
 //
-// Behavior has 2 instance vars, ClassDescription 0, Class 2 and Metaclass 1.
-// So the total size per class row is (0 + 2 + 1) + 3 headers, and the metaclass
-// trio always follows the original one.
+// Behavior has 3 instance vars, ClassDescription 0, Class 2 and Metaclass 1.
 export const IV_BEHAVIOR = 3;
 export const IV_CLASS_DESCRIPTION = 0;
 export const IV_CLASS = 2;
@@ -68,14 +63,16 @@ const CLASSTABLE_TOP = CLASSTABLE_BASE + CLASSTABLE_SIZE;
 // Some canned class table entries, since we need to refer statically to a bunch
 // of them.
 
-let nextClass_ = CLASSTABLE_BASE;
+let nextClass_ = 0;
 
 function nextClass() {
-  const p = nextClass_;
-  nextClass_ += 2; // Just pointers.
-  return p;
+  return nextClass_++;
 };
 
+// These class literals are class table *indexes*, from 0 to N.
+// They can be turned into pointers into the class table with
+// classTable(CLS_FOO) and read to produce real object pointers with
+// read(classTable(CLS_FOO)).
 export const CLS_PROTO_OBJECT = nextClass();
 export const CLS_OBJECT = nextClass();
 export const CLS_CLASS = nextClass();
@@ -85,6 +82,12 @@ export const CLS_METACLASS = nextClass();
 export const CLS_UNDEFINED_OBJECT = nextClass();
 
 export const CLS_COLLECTION = nextClass();
+export const CLS_SEQUENCEABLE_COLLECTION = nextClass();
+export const CLS_ARRAYED_COLLECTION = nextClass();
+export const CLS_ARRAY = nextClass();
+export const CLS_STRING = nextClass();
+export const CLS_SYMBOL = nextClass();
+export const CLS_HASHED_COLLECTION = nextClass();
 export const CLS_DICTIONARY = nextClass();
 export const CLS_IDENTITY_DICTIONARY = nextClass();
 
@@ -117,7 +120,7 @@ function seq(n) {
 
 export const [
   BEHAVIOR_SUPERCLASS, BEHAVIOR_METHODS, BEHAVIOR_FORMAT,
-  CLASS_NAME, CLASS_SUBCLASSES,
+  CLASS_NAME, CLASS_SUBCLASSES, CLASS_VAR1, // Index for the first class var.
 ] = seq(5);
 
 export const METACLASS_THIS_CLASS = CLASS_NAME; // Same field, after Behavior.
@@ -148,6 +151,7 @@ export const STACK_MAX_SIZE = 19;
 // CompiledMethods have six instance variables: bytecode, literals, name,
 // class, argc, and locals.
 // bytecode is a raw array, literals a pointer array.
+export const IV_METHOD = 6;
 export const [
   METHOD_BYTECODE,
   METHOD_LITERALS,
@@ -155,10 +159,11 @@ export const [
   METHOD_CLASS,
   METHOD_ARGC,
   METHOD_LOCALS,
-] = seq(6);
+] = seq(IV_METHOD);
 
 
-export const [BLOCK_CONTEXT, BLOCK_PC_START, BLOCK_ARGC, BLOCK_ARGV] = seq(4);
+export const IV_BLOCK = 4;
+export const [BLOCK_CONTEXT, BLOCK_PC_START, BLOCK_ARGC, BLOCK_ARGV] = seq(IV_BLOCK);
 export const [AA_KEY, AA_VALUE, AA_LEVEL, AA_LEFT, AA_RIGHT] = seq(5);
 
 export const ASCII_TABLE = [];
@@ -192,12 +197,19 @@ export function write(addr, value) {
 
 
 // Functions for deriving properties of objects, given a pointer to the header.
+// Turns a class table index into a pointer into the *class table*. It must be
+// read() to get the real pointer to the class.
+export function classTable(index) {
+  return CLASSTABLE_BASE + 2 * index;
+}
+
 // Returns the real pointer to the class of this object, indirecting through the
 // class table.
 export function classOf(p) {
-  if (isSmallInteger(p)) return read(CLS_SMALL_INTEGER); // Special case for inlined integers.
-  const classIndex = read(p+2) & MASK_CLASS_INDEX;
-  return read(classTable + (classIndex * 2));
+  const classIndex = isSmallInteger(p) ? // Special case for inlined integers.
+      CLS_SMALL_INTEGER :
+      read(p+2) & MASK_CLASS_INDEX;
+  return read(classTable(classIndex));
 }
 
 // Returns the format tag
@@ -226,39 +238,40 @@ const FORMAT_WORDS_ODD = 7;
 // but these values will be missing if they're not relevant.
 function decodeHeader(p) {
   let size = readWord(p) >> 8;
-  const format = (readWord(p + 2) >> 8) & 0xf
-  switch (format) {
+  const fmt = format(p);
+  switch (fmt) {
     case FORMAT_ZERO:
       return {};
     case FORMAT_VARIABLE_IV:
-      const varSize = read(p + 4);
+      const varSize = read(p - 4);
       return {
         ivc: size,
-        ivp: p + 6,
+        ivp: p + 4,
         pac: varSize,
-        pap: p + 6 + 2 * size,
+        pap: p + 4 + 2 * size,
       };
     case FORMAT_VARIABLE:
-      return size === 255 ?
-          {pac: read(p + 4), pap: p + 6} :
-          {pac: size, pap: p + 4};
+      return {
+        pac: size === 255 ? read(p - 2) : size,
+        pap: p + 4,
+      };
     case FORMAT_FIXED_IV:
-      return size === 255 ?
-          {ivc: read(p + 4), ivp: p + 6} :
-          {ivc: size, ivp: p + 4};
+      return {
+        ivc: size === 255 ? read(p + 4) : size,
+        ivp: p + 4,
+      };
     case FORMAT_WORDS_ODD:
     case FORMAT_WORDS_EVEN:
       const ret = {wac: size, wap: p + 4};
       if (size === 255) {
         ret.wac = read(p + 4);
-        ret.wap += 2;
       }
-      if (format === FORMAT_WORDS_ODD) {
+      if (fmt === FORMAT_WORDS_ODD) {
         ret.wac--; // Odd means the last slot isn't filled.
       }
       return ret;
     default:
-      throw new Error('Don\'t know how to decode header format ' + format);
+      throw new Error('Don\'t know how to decode header format ' + fmt);
   }
   throw new Error('cant happen');
 }
@@ -375,6 +388,7 @@ export function pop(ctx) {
   const sp = fromSmallInteger(readIV(ctx, CTX_STACK_INDEX));
   if (sp <= 0) throw new Error('VM stack underflow');
   const value = readArray(ctx, sp);
+  // Always a number, safe to skip the checks.
   writeIVNew(ctx, CTX_STACK_INDEX, toSmallInteger(sp - 1));
   return value;
 }
@@ -414,7 +428,7 @@ export function tenure(size) {
 // assumed. This accounts for the size word and so on.
 // Generally you can call allocObject() to do this all in one, but this is
 // useful if allocating to the tenured space or a special area.
-// Returns *words* suitable for passing to tenure() or alloc().
+// Returns the length in *words*, suitable for passing to tenure() or alloc().
 export function sizeRequired(instVars, arrayLength) {
   if (instVars === 0 && arrayLength === 0) return 4; // Just the header.
 
@@ -422,7 +436,7 @@ export function sizeRequired(instVars, arrayLength) {
   if (instVars > 0 && arrayLength > 0) {
     return 6 + 2 * total;
   }
-  return 4 + 2 * total + (total >= 255 ? 2 : 0);
+  return 4 + 2 * total + (total >= 255 ? 4 : 0);
 }
 
 // Just a round robin of the 22-bit space for each allocation.
@@ -442,7 +456,9 @@ function identityHash(p) {
 // p is assumed to already point to a large enough memory area!
 // You probably want to call allocObject() instead if allocating to Eden.
 // You can compute the necessary size for same with sizeRequired().
-export function initObject(p, cls, instVars, arrayLength) {
+// Returns updated p! This should be used, as there might be an extra size at
+// the input p, which is no longer the object's pointer.
+export function initObject(p, clsHash, instVars, arrayLength) {
   const hash = nextIdentityHash();
   let fmt, sizeField;
   let extraLength = null;
@@ -461,52 +477,50 @@ export function initObject(p, cls, instVars, arrayLength) {
     extraLength = count >= 255 ? count : null;
   }
 
+  if (extraLength !== null) {
+    write(p, 0xff000000);      // Marker long
+    write(p + 2, extraLength); // Actual size
+    p += 4; // p is now the actual object pointer.
+  }
+
   write(p, (sizeField << 24) | hash);
 
-  // cls is a pointer to a class, and classes have their own class indexes as
-  // their identity hashes.
-  const classIndex = identityHash(cls);
+  // clsHash is the identity hash for this class.
   const gcField = GC_FIELD_0;
-  write(p + 2, (gcField << 28) | (fmt << 24) | classIndex);
-
-  if (extraLength !== null) {
-    write(p + 4, extraLength);
-  }
+  write(p + 2, (gcField << 28) | (fmt << 24) | clsHash);
 
   // Then write all the instVars and array values as nil!
   // We're writing nil, so these raw writes are safe (and aren't old->new).
-  const hdr = decodeHeader(p);
-  for (let i = 0; i < instVars; i++) {
-    write(p + hdr.ivp + 2 * i, MA_NIL);
-  }
-  for (let i = 0; i < arrayLength; i++) {
-    write(p + hdr.pap + 2 * i, MA_NIL);
+  for (let i = 0; i < instVars + arrayLength; i++) {
+    write(p + 4 + 2 * i, MA_NIL);
   }
 
   return p;
 }
 
-function allocWordArray(cls, arrayLength, allocator) {
+function allocWordArray(clsHash, arrayLength, allocator) {
   // The size field actually is in words, so it only overflows for 255 * 2 = 510
-  const size = 4 + arrayLength + (arrayLength >= 510 ? 2 : 0);
-  const p = allocator(size);
+  const size = 4 + arrayLength + (arrayLength >= 510 ? 4 : 0);
+  let p = allocator(size);
 
   // The size field is in words, and the last bit is captured by the even/odd
   // formats.
   const longSize = (arrayLength + 1) >> 1;
   const fmt = (arrayLength & 1) === 1 ? FORMAT_WORDS_ODD : FORMAT_WORDS_EVEN;
 
+  if (longSize >= 255) {
+    write(p, 0xff000000);   // Marker long.
+    write(p + 2, longSize); // Actual size.
+    p += 4;
+  }
+
   const hash = nextIdentityHash();
   const sizeField = Math.min(longSize, 255);
   write(p, (sizeField << 24) | hash);
 
   // The class index is the identity hash of the class's own header.
-  const clsIndex = identityHash(cls);
-  write(p + 2, (GC_FIELD_0 << 28) | (fmt << 24) | clsIndex);
+  write(p + 2, (GC_FIELD_0 << 28) | (fmt << 24) | clsHash);
 
-  if (longSize >= 255) {
-    write(p + 4, longSize); // Not a Smalltalk number, just raw for the VM.
-  }
   return p;
 }
 
@@ -516,11 +530,10 @@ function allocWordArray(cls, arrayLength, allocator) {
 // method does.
 // NB: DO NOT CALL outside of bootstrap. Use basicNew(cls) instead; it knows how
 // to look up this information from the class.
-export function allocObject(cls, instVars, arrayLength, allocator) {
+export function allocObject(clsHash, instVars, arrayLength, allocator) {
   const size = sizeRequired(instVars, arrayLength);
   const p = allocator(size);
-  initObject(p, cls, instVars, arrayLength)
-  return p;
+  return initObject(p, clsHash, instVars, arrayLength);
 }
 
 // Creates a new object with the inst vars from its format field, and with the
@@ -544,9 +557,10 @@ export function mkInstance(cls, opt_arrayLength, opt_allocator) {
   // Creating a 0-length Array etc. is technically legal, so no error for that.
 
   // Allocate and initialize such an object.
+  const clsHash = identityHash(cls);
   return (fmt === FORMAT_WORDS_ODD || fmt === FORMAT_WORDS_EVEN) ?
-      allocWordArray(cls, opt_arrayLength || 0, allocator) :
-      allocObject(cls, instVars, opt_arrayLength || 0, allocator);
+      allocWordArray(clsHash, opt_arrayLength || 0, allocator) :
+      allocObject(clsHash, instVars, opt_arrayLength || 0, allocator);
 }
 
 // Given the pointer to a Class, constructs a new instance of it.
@@ -570,12 +584,22 @@ export function checkOldToNew(p, target) {
   const isNew = target >= MEM_EDEN_BASE;
   if (isOld && isNew) {
     // We store these records as Associations, which are 2-element arrays.
-    const link = mkInstance(read(CLS_ASSOCIATION), 2);
+    const link = mkInstance(read(classTable(CLS_ASSOCIATION)), 2);
     const head = read(MA_ESCAPED_HEAD);
     writeArrayNew(link, 0, p);
     writeArrayNew(link, 1, head);
     write(MA_ESCAPED_HEAD, link);
   }
+}
+
+// Given a pointer to a variable-sized object, return the length of its variable
+// portion in the relevant unit - pointers or words.
+export function arraySize(p) {
+  return decodeHeader(p).pac;
+}
+
+export function wordArraySize(p) {
+  return decodeHeader(p).wac;
 }
 
 
@@ -593,7 +617,7 @@ function copyString(p, s) {
 // Allocate and return the pointer to a new String containing the same
 // characters as the JS string provided.
 export function wrapString(s) {
-  const arr = mkInstance(read(CLS_STRING), s.length);
+  const arr = mkInstance(read(classTable(CLS_STRING)), s.length);
   copyString(arr, s);
   return arr;
 }
@@ -608,7 +632,7 @@ export function wrapSymbol(s) {
   if (symbolCache[s]) return symbolCache[s];
 
   // Allocate our symbol in the tenured space.
-  const arr = mkInstance(read(CLS_SYMBOL), s.length, tenure);
+  const arr = mkInstance(read(classTable(CLS_SYMBOL)), s.length, tenure);
   copyString(arr, s);
 
   symbolCache[s] = arr;
@@ -616,7 +640,7 @@ export function wrapSymbol(s) {
 }
 
 
-export addClassToTable(cls) {
+export function addClassToTable(cls) {
   const next = read(MA_NEXT_CLASS_INDEX); // Raw number.
 
   // Read the object header of the class, and rewrite its identity hash.
@@ -625,9 +649,24 @@ export addClassToTable(cls) {
   write(MA_NEXT_CLASS_INDEX, next + 1);
 
   // Store the class itself into the table.
-  write(CLASSTABLE_BASE + (next << 1), cls);
+  const addr = CLASSTABLE_BASE + (next << 1);
+  if (addr >= CLASSTABLE_TOP) throw new Error('class table full!');
+  write(addr, cls);
+  checkOldToNew(addr, cls);
 }
 
+// Given a pointer to a class, return the number of inst vars it defines.
+// This is complicated because the format field is not a simple number.
+export function behaviorToInstVars(cls) {
+  const fmtRaw = fromSmallInteger(readIV(cls, BEHAVIOR_FORMAT));
+  const fmt = (fmtRaw >> 24) & 0xf;
+  return instVars = fmtRaw & 0xffffff;
+}
+
+// Encodes a Behavior's format field for a FORMAT_FIXED_IV
+export function fixedInstVarsFormat(instVars) {
+  return instVars === 0 ? FORMAT_FIXED_IV : (FORMAT_FIXED_IV << 24) | instVars;
+}
 
 // Initialization
 // This sets up some key values in the special area.
@@ -636,7 +675,7 @@ write(MA_OLD_GEN_START, MEM_TENURED_TOP);
 write(MA_OLD_GEN_ALLOC, MEM_TENURED_TOP);
 write(MA_NEW_GEN_START, MEM_G1_TOP);
 write(MA_NEW_GEN_ALLOC, MEM_G1_TOP);
-write(MA_NEXT_CLASS_INDEX, (nextClass_ - CLASSTABLE_BASE) >> 1);
+write(MA_NEXT_CLASS_INDEX, nextClass_);
 
 write(MA_ESCAPED_HEAD, MA_NIL);
 

@@ -1,7 +1,8 @@
 // A later stage of bootstrapping, which runs after the initial bootstrap, then
 // the AA tree functionality.
 
-import {defClass, lateBinding} from './bootstrap.mjs';
+import {defClass, impoverishedClasses, lateBinding} from './bootstrap.mjs';
+import {insert, mkDict} from './dict.mjs';
 import {
   CLS_BOOLEAN, CLS_TRUE, CLS_FALSE,
   MA_BOOLEAN, MA_TRUE, MA_FALSE,
@@ -9,60 +10,52 @@ import {
 } from './memory.mjs';
 import {insert} from './tree.mjs';
 
-lateBinding.dictFactory = () => mkInstance(CLS_IDENTITY_DICTIONARY);
+lateBinding.dictFactory = () => mkDict();
 
 // And the class dictionary appender.
+
 lateBinding.addToClassDict = (sym, cls) => {
   const dict = read(MA_CLASS_DICT);
-  write(MA_CLASS_DICT, insert(dict, sym, cls));
+  insert(dict, sym, cls);
 };
 
 // And update the nil method dictioaries we just created for those classes (and
 // their metaclasses).
-const impoverishedClasses = [
-  CLS_PROTO_OBJECT, CLS_OBJECT,
-  CLS_BEHAVIOR, CLS_CLASS_DESCRIPTION, CLS_CLASS, CLS_METACLASS,
-  CLS_COLLECTION, CLS_DICTIONARY, CLS_IDENTITY_DICTIONARY,
-  CLS_AA_NODE,
-];
 
-for (const cls of impoverishedClasses) {
-  const {behavior, metaBehavior} = classFriends(cls);
-  writeAt(behavior, BEHAVIOR_METHODS, dictFactory());
-  writeAt(metaBehavior, BEHAVIOR_METHODS, dictFactory());
-  // TODO These need to be added as GC roots!
-
-  lateBinding.addToClassDict(readAt(cls, CLS_NAME), cls);
+for (const name of Object.keys(impoverishedClasses)) {
+  const cls = impoverishedClasses[name];
+  writeIV(cls, BEHAVIOR_METHODS, mkDict());
+  const metaclass = classOf(cls);
+  writeIV(metaclass, BEHAVIOR_METHODS, lateBinding.dictFactory());
+  const symbol = wrapSymbol(name);
+  writeIV(cls, CLASS_NAME);
+  lateBinding.addToClassDict(symbol, cls);
 }
 
+defClass(CLS_BLOCK_CLOSURE, 'BlockClosure', IV_BLOCK);
 
-// Now we can call defClass() and get properly constructed classes.
-defClass(CLS_BOOLEAN, 'Boolean', CLS_OBJECT);
-defClass(CLS_TRUE, 'True', CLS_BOOLEAN);
-defClass(CLS_FALSE, 'False', CLS_BOOLEAN);
-
-defClass(CLS_UNDEFINED_OBJECT, 'UndefinedObject', CLS_OBJECT);
-
-initObject(MA_NIL, CLS_UNDEFINED_OBJECT, MA_OBJECT_INSTANCE, 0);
-initObject(MA_BOOLEAN, CLS_BOOLEAN, MA_OBJECT_INSTANCE, 0);
-initObject(MA_TRUE, CLS_TRUE, MA_BOOLEAN, 0);
-initObject(MA_FALSE, CLS_FALSE, MA_BOOLEAN, 0);
+const ctx = defClass(CLS_CONTEXT, 'MethodContext', 5);
+const fmt = fromSmallInteger(readIV(ctx, BEHAVIOR_FORMAT));
+writeIVNew(ctx, BEHAVIOR_FORMAT,
+    toSmallInteger((fmt & 0xffffff) | (FORMAT_VARIABLE_IV << 24)));
 
 
-defClass(CLS_MAGNITUDE, 'Magnitude', CLS_OBJECT, 0, 0);
-defClass(CLS_CHARACTER, 'Character', CLS_MAGNITUDE, 1, 0);
-defClass(CLS_NUMBER, 'Number', CLS_MAGNITUDE, 0, 0);
-defClass(CLS_INTEGER, 'Integer', CLS_NUMBER, 0, 0);
-defClass(CLS_SMALL_INTEGER, 'SmallInteger', CLS_NUMBER, 1, 0);
+const bool = defClass(CLS_BOOLEAN, 'Boolean', object, 0);
+const true_ = defClass(CLS_TRUE, 'True', bool, 0);
+const false_ = defClass(CLS_FALSE, 'False', bool, 0);
 
-defClass(CLS_COMPILED_METHOD, 'CompiledMethod', CLS_OBJECT, 6, 0);
-defClass(CLS_BLOCK_CLOSURE, 'BlockClosure', CLS_OBJECT, 4, 0);
-defClass(CLS_CONTEXT, 'MethodContext', CLS_OBJECT, 24, 0);
+// Create the built-in instances.
+mkInstance(true_, undefined, (_) => MA_TRUE);
+mkInstance(false_, undefined, (_) => MA_FALSE);
 
+const chr = defClass(CLS_CHARACTER, 'Character', 1, 1);
+const charTable = mkInstance(read(classTable(CLS_ARRAY)), 256);
+writeIV(chr, IV_BEHAVIOR + IV_CLASS_DESCRIPTION + IV_CLASS, charTable);
 
 // Populate the character table.
 for (let i = 0; i < 256; i++) {
-  ASCII_TABLE[i] = mkInstance(CLS_CHARACTER);
-  writeAt(ASCII_TABLE[i], CHAR_VALUE, wrapSmallInteger(i));
+  const c = basicNew(chr);
+  writeIV(c, 0, toSmallInteger(i));
+  writeArrayNew(charTable, i, c);
 }
 

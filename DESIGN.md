@@ -90,7 +90,12 @@ ggggffff __cccccc cccccccc cccccccc
 ```
 
 - `ssssssss` is an 8-bit slot count. 255 is taken to mean "another 32-bit long
-  giving the count follows the header".
+  giving the count precedes the header".
+  - The extra size is at `[p-2]`, before the header. 32-bit unsigned size.
+  - In order to make a block of contiguous objects crawlable, an extra longword
+    lives at `[p-4]`, with `$ff000000` in it. Thus if the first long of a
+    would-be object has `$ff______`, it's a long form header. The real object is
+    4 words farther along.
 - `hhhhh...` is a 22-bit "identity hash". This is a magic number assigned to
   every object at allocation time.
   - For classes specifically, this is equal to the class index (see below).
@@ -163,16 +168,17 @@ This is unique(?) to `MethodContext` currently, which has a handful of instance
 variables and then a stack array inlined.
 
 The `ssssssss` size field in the header gives the number of instance variables;
-the following long gives the number of variable fields.
+the extra size long gives the number of variable fields.
 
 ```
+$-4   `$ff000000` marker
+$-2   variable count (`v`)
 $00   header (`s` size)
-$02   variable count (`v`)
-$04   1st inst var
-$06   2nd inst var
-$08   3rd inst var ...
+$02   1st inst var
+$04   2nd inst var
+$06   3rd inst var ...
 ...
-2s+4  1st variable field
+2s+2  1st variable field
 ...
 2s+2v last variable field
 ```
