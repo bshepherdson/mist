@@ -2,13 +2,14 @@ import {
   ASCII_TABLE,
   CLS_ARRAY, CLS_CHARACTER, CLS_COMPILED_METHOD, CLS_PROCESS, CLS_WORD_ARRAY,
   CLS_STRING,
-  BEHAVIOR_METHODS, CLASS_VAR1, METHOD_NAME, METHOD_CLASS, PROCESS_CONTEXT,
+  BEHAVIOR_METHODS, CLASS_NAME, CLASS_VAR1, METHOD_NAME, METHOD_CLASS,
+  PROCESS_CONTEXT,
   MA_NIL, MA_TRUE, MA_FALSE, MA_CLASS_DICT,
   METHOD_BYTECODE, METHOD_LITERALS, METHOD_LOCALS, METHOD_ARGC,
   allocRawArray, isPointerArray, arraySize,
   classOf, classTable,
   mkInstance,
-  fromSmallInteger, toSmallInteger,
+  asJSString, fromSmallInteger, toSmallInteger,
   read, readArray, readIV,
   wrapString, wrapSymbol,
   writeArray, writeAt, writeIV, writeWordArray,
@@ -204,6 +205,9 @@ export class Driver {
       // And add it to the class's method dictionary.
       insert(methodDict, selector, compiled);
     }
+    console.log('Methods of ' + asJSString(readIV(classNode, CLASS_NAME)) + (classy ? ' class' : ''));
+    printDict(methodDict);
+    console.log('=====================');
   }
 }
 

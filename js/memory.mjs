@@ -186,6 +186,7 @@ export function read(addr) {
 }
 
 export function writeWord(addr, value) {
+  if (67106912 <= addr && addr <= 67106920) debugger;
   return mem[addr] = value & 0xffff;
 }
 

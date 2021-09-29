@@ -10,6 +10,24 @@ Javascript functions."
   ^ self basicNew initialize
 ! methodDictionary
   ^ methodDict
+
+! superclass
+  ^ superclass
+
+! methods
+  ^ self methodDictionary values
+
+! selectors
+  "Answers an Array of Symbols for the methods on this class."
+  ^ self methodDictionary keys
+
+! subclass: subclassSymbol
+  <primitive: 10>
+! subclass: subclassSymbol instanceVariableNames: aSpaceSeparatedString
+  <primitive: 11>
+! subclass: subclassSymbol instanceVariableNames: aSpaceSeparatedString classVarNames: anotherSpaceString
+  <primitive: 12>
+
 ! inheritsFrom: aClass
   | aSuperclass |
   aSuperclass := self superclass.
@@ -39,6 +57,11 @@ Javascript functions."
 ! halt
   "Triggers the debugger!"
   <primitive: 2>
+
+! == anObject
+  <primitive: 30>
+! ~= anObject
+  ^ (self = anObject) not
 
 ! instVarAt: anIndex
   <primitive: 3>
@@ -97,27 +120,9 @@ Javascript functions."
 !!
 
 
-"Subclass and its variations."
 ! Class
-! subclass: aSymbol
-  <primitive: 10>
-! subclass: aSymbol instanceVariableNames: aString
-  <primitive: 11>
-! subclass: aSymbol instanceVariableNames: aString classVariableNames: anotherString
-  <primitive: 12>
-
 ! name
   ^name
-
-! superclass
-  ^ superclass
-
-! methods
-  ^ self methodDictionary values
-
-! selectors
-  "Answers an Array of Symbols for the methods on this class."
-  ^ self methodDictionary keys
 !!
 
 
@@ -270,30 +275,29 @@ Object subclass: #Transcript.
 !!
 
 
-! Object
-! == anObject
-  <primitive: 30>
-! ~= anObject
-  ^ (self = anObject) not
-!!
 
+"Object subclass: #Number
+  instanceVariableNames: 'raw'."
 
-Object subclass: #Number
-  instanceVariableNames: 'raw'.
-
-! Number
+! SmallInteger
 ! + aNumber
   <primitive: 31>
+  ^ super + aNumber
 ! - aNumber
   <primitive: 32>
+  ^ super - aNumber
 ! * aNumber
   <primitive: 33>
+  ^ super * aNumber
 ! // aNumber
   <primitive: 34>
+  ^ super // aNumber
 ! \\ aNumber
   <primitive: 35>
+  ^ super \\ aNumber
 ! < aNumber
   <primitive: 36>
+  ^ super < aNumber
 ! <= aNumber
   ^ (aNumber < self) not
 ! > aNumber
@@ -302,20 +306,23 @@ Object subclass: #Number
   ^ (self < aNumber) not
 ! = aNumber
   <primitive: 37>
+  ^ super = aNumber
 ! ~= aNumber
   ^ (self = aNumber) not
 ! bitOr: aNumber
   <primitive: 38>
+  ^ super bitOr: aNumber
 ! bitAnd: aNumber
   <primitive: 39>
+  ^ super bitAnd: aNumber
 ! bitXor: aNumber
   <primitive: 40>
+  ^ super bitXor: aNumber
 ! bitInvert
   <primitive: 41>
+  ^ super bitInvert: aNumber
 ! negated
   ^0 - self
-! floor
-  ^ self < 0 ifTrue: [self negated floor negated] ifFalse: [self bitOr: 0]
 ! min: aNumber
   ^ self < aNumber ifTrue: [self] ifFalse: [aNumber]
 ! max: aNumber

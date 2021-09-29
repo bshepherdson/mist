@@ -128,6 +128,24 @@ func (p *Parser) parseMethod() {
 	// Either way t is the next token.
 	p.out.EnterMethod(signature, locals)
 
+	// There might be a primitive at the beginning.
+	if t.Id() == TBinary && t.(*BinOp).Op == "<" {
+		// Keyword (with colon) and number.
+		keyword := p.expect(TKeyword, "keyword")
+		number := p.expect(TNumber, "primitive number")
+		gt := p.expect(TBinary, "> closing bracket")
+		if keyword == nil || number == nil || gt == nil || gt.(*BinOp).Op != ">" {
+			p.out.Error(fmt.Errorf("Malformed primitive: got %v %v %v\n", keyword, number, gt))
+			return
+		}
+		n, err := strconv.ParseInt(number.(*Number).Integral, 10, 8)
+		if err != nil {
+			p.out.Error(fmt.Errorf("Could not parse primitive number"))
+		}
+		p.out.VisitPrimitive(ident(keyword), int(n))
+		t = p.lexer.Advance()
+	}
+
 	// Then 0 or more lines of code, ending with dots or a bang.
 	if t.Id() != TBang {
 		p.lexer.Rewind(t)
@@ -256,26 +274,6 @@ func (p *Parser) parseTopExpr() {
 
 // Parses an expression on a whole line. Does not leave anything on the stack.
 func (p *Parser) parseExprLine() {
-	// First possibility, primitives: <keyword: string>
-	t1 := p.lexer.Advance()
-	if t1 != nil && t1.Id() == TBinary && t1.(*BinOp).Op == "<" {
-		// Keyword, colon and string.
-		keyword := p.expect(TKeyword, "keyword")
-		number := p.expect(TNumber, "primitive number")
-		gt := p.expect(TBinary, "> closing bracket")
-		if keyword == nil || number == nil || gt == nil || gt.(*BinOp).Op != ">" {
-			p.out.Error(fmt.Errorf("Malformed primitive: got %v %v %v\n", keyword, number, gt))
-			return
-		}
-		n, err := strconv.ParseInt(number.(*Number).Integral, 10, 8)
-		if err != nil {
-			p.out.Error(fmt.Errorf("Could not parse primitive number"))
-		}
-		p.out.VisitPrimitive(ident(keyword), int(n))
-		return
-	}
-
-	p.lexer.Rewind(t1)
 	p.out.EnterExprLine()
 	p.parseExpr()
 	p.out.LeaveExprLine()

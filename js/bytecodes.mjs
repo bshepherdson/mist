@@ -2,15 +2,17 @@ import {
   classOf, classTable,
   BEHAVIOR_METHODS, BEHAVIOR_SUPERCLASS,
   CTX_METHOD, CTX_LOCALS, CTX_SENDER, CTX_PC, CTX_STACK_INDEX,
+  CLASS_NAME, METACLASS_THIS_CLASS,
+  CLS_ARRAY, CLS_BLOCK_CLOSURE, CLS_METACLASS,
   METHOD_LITERALS,
   MA_CLASS_DICT,
   MA_NIL, MA_TRUE, MA_FALSE,
   push, pop,
-  fromSmallInteger, toSmallInteger,
+  asJSString, fromSmallInteger, toSmallInteger,
   read, readArray, readIV,
   writeArray, writeIV,
 } from './memory.mjs';
-import {lookup} from './dict.mjs';
+import {lookup, printDict} from './dict.mjs';
 import {newContext} from './corelib.mjs';
 
 // Locals on contexts are an Array, in this order:
@@ -147,7 +149,19 @@ export function sendOp(process, ctx, count, selector, isSuper) {
   }
 
   while (cls && cls !== MA_NIL) {
+    if (classOf(cls) === read(classTable(CLS_METACLASS))) {
+      // This is a metaclass - grab its class and get *its* name.
+      const theClass = readIV(cls, METACLASS_THIS_CLASS);
+      const className = readIV(theClass, CLASS_NAME);
+      console.log('Searching ' + asJSString(className) + ' class');
+    } else {
+      // Otherwise this is a Class, ClassDescription, or Behavior.
+      const className = readIV(cls, CLASS_NAME);
+      console.log('Searching ' + asJSString(className));
+    }
+
     const dict = readIV(cls, BEHAVIOR_METHODS);
+    printDict(dict);
     const found = lookup(dict, selector);
     if (found && found !== MA_NIL) {
       method = found;
