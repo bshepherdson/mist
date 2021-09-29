@@ -3,18 +3,21 @@ Only Object and Metaclass are defined in the core VM; everything else flows from
 here. Several of the cornerstone methods, however, are just primitive calls to
 Javascript functions."
 
-! ClassDescription
+! Behavior
 ! basicNew
-  <builtin: 'basicNew'>
+  <primitive: 0>
 !  new
   ^ self basicNew initialize
-  "| inst |
-  inst := self basicNew.
-  inst initialize.
-  ^ inst"
-
 ! methodDictionary
   ^ methodDict
+! inheritsFrom: aClass
+  | aSuperclass |
+  aSuperclass := self superclass.
+  [aSuperclass == nil]
+      whileFalse:
+          [aSuperclass == aClass ifTrue: [^true].
+          aSuperclass := aSuperclass superclass].
+  ^false
 !!
 
 "Do nothing in #initialize by default."
@@ -22,7 +25,7 @@ Javascript functions."
 ! initialize
   ^ self
 ! class
-  <builtin: 'class'>
+  <primitive: 1>
 ! yourself
   ^ self
 ! value
@@ -35,23 +38,32 @@ Javascript functions."
   ^ self class == aClass or: [ self class inheritsFrom: aClass ]
 ! halt
   "Triggers the debugger!"
-  <builtin: 'halt'>
+  <primitive: 2>
 
 ! instVarAt: anIndex
-  <builtin: 'instVarAt:'>
+  <primitive: 3>
 ! instVarAt: anIndex put: aValue
-  <builtin: 'instVarAt:put:'>
+  <primitive: 4>
+
+! basicAt: anIndex
+  <primitive: 26>
+! basicAt: anIndex put: aValue
+  <primitive: 27>
+! at: anIndex
+  <primitive: 26>
+! at: anIndex put: aValue
+  <primitive: 27>
 
 ! perform: aSelector
-  <builtin: 'perform:'>
+  <primitive: 5>
 ! perform: aSelector with: anArg
-  <builtin: 'perform:with:'>
+  <primitive: 6>
 ! perform: aSelector with: anArg with: anotherArg
-  <builtin: 'perform:with:with:'>
+  <primitive: 7>
 ! perform: aSelector with: anArg with: anotherArg with: aThirdArg
-  <builtin: 'perform:with:with:with:'>
+  <primitive: 8>
 ! perform: aSelector withArguments: anArray
-  <builtin: 'perform:withArguments:'>
+  <primitive: 9>
 
 ! fullPrintString
   ^self printString
@@ -88,11 +100,11 @@ Javascript functions."
 "Subclass and its variations."
 ! Class
 ! subclass: aSymbol
-  <builtin: 'subclass:'>
+  <primitive: 10>
 ! subclass: aSymbol instanceVariableNames: aString
-  <builtin: 'subclass:instanceVariableNames:'>
+  <primitive: 11>
 ! subclass: aSymbol instanceVariableNames: aString classVariableNames: anotherString
-  <builtin: 'subclass:instanceVariableNames:classVariableNames:'>
+  <primitive: 12>
 
 ! name
   ^name
@@ -109,20 +121,9 @@ Javascript functions."
 !!
 
 
-! Behavior
-! inheritsFrom: aClass
-  | aSuperclass |
-  aSuperclass := self superclass.
-  [aSuperclass == nil]
-      whileFalse:
-          [aSuperclass == aClass ifTrue: [^true].
-          aSuperclass := aSuperclass superclass].
-  ^false
-!!
 
-
-Object subclass: #BlockClosure
-  instanceVariableNames: 'argc locals bytecode methodRecord argv handlerActive'.
+"Object subclass: #BlockClosurbe
+  instanceVariableNames: 'ctx pc0 argc argv handlerActive'."
 
 "Blocks and evaluating blocks."
 ! Object
@@ -134,17 +135,17 @@ Object subclass: #BlockClosure
 ! isBlock
   ^ true
 ! value
-  <builtin: 'runBlock'>
+  <primitive: 13>
 ! valueNoContextSwitch
-  <builtin: 'runBlockNCS'>
+  <primitive: 14>
 ! value: arg1
-  <builtin: 'runBlock'>
+  <primitive: 15>
 ! value: arg1 value: arg2
-  <builtin: 'runBlock'>
+  <primitive: 16>
 ! value: arg1 value: arg2 value: arg3
-  <builtin: 'runBlock'>
+  <primitive: 17>
 ! value: arg1 value: arg2 value: arg3 value: arg4
-  <builtin: 'runBlock'>
+  <primitive: 18>
 
 ! cull: aValue
   "Runs the receiver with 0 or 1 arguments, depending on what it expects.
@@ -171,7 +172,7 @@ Object subclass: #BlockClosure
 
 
 "Nil and basic checking."
-! NullObject
+! UndefinedObject
 ! ifNil: aBlock
   ^ aBlock value
 ! ifNil: aBlock ifNotNil: otherBlock
@@ -265,13 +266,13 @@ Object subclass: #Transcript.
   self showString: aValue asString
 
 ! showString: aString
-  <builtin: 'console.log.string'>
+  <primitive: 20>
 !!
 
 
 ! Object
 ! == anObject
-  <builtin: '=='>
+  <primitive: 30>
 ! ~= anObject
   ^ (self = anObject) not
 !!
@@ -282,17 +283,17 @@ Object subclass: #Number
 
 ! Number
 ! + aNumber
-  <builtin: '+'>
+  <primitive: 31>
 ! - aNumber
-  <builtin: '-'>
+  <primitive: 32>
 ! * aNumber
-  <builtin: '*'>
-! / aNumber
-  <builtin: '/'>
-! % aNumber
-  <builtin: '%'>
+  <primitive: 33>
+! // aNumber
+  <primitive: 34>
+! \\ aNumber
+  <primitive: 35>
 ! < aNumber
-  <builtin: '<'>
+  <primitive: 36>
 ! <= aNumber
   ^ (aNumber < self) not
 ! > aNumber
@@ -300,17 +301,17 @@ Object subclass: #Number
 ! >= aNumber
   ^ (self < aNumber) not
 ! = aNumber
-  <builtin: 'num='>
+  <primitive: 37>
 ! ~= aNumber
   ^ (self = aNumber) not
 ! bitOr: aNumber
-  <builtin: '|'>
+  <primitive: 38>
 ! bitAnd: aNumber
-  <builtin: '&'>
+  <primitive: 39>
 ! bitXor: aNumber
-  <builtin: '^'>
+  <primitive: 40>
 ! bitInvert
-  <builtin: '^-1'>
+  <primitive: 41>
 ! negated
   ^0 - self
 ! floor
@@ -335,7 +336,7 @@ Object subclass: #Number
   ^ self >= lo and: [self <= hi]
 
 ! printString
-  <builtin: 'numStr'>
+  <primitive: 42>
 !!
 
 

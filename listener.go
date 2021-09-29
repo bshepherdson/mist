@@ -13,8 +13,8 @@ import (
 // Smalltalk listener, consuming the parser's stream of changes.
 type STL struct {
 	cp               *Compiler
+	inMethods        bool
 	methodName       string
-	methodStart      int  // PC for the start of the method.
 	methodLocals     int  // Number of actual local slots needed.
 	methodLocalIndex int  // Index compile-time locals list, includes self, params.
 	first            bool // True for the first expression of a block or method.
@@ -25,85 +25,191 @@ type STL struct {
 	answered, superSend bool
 	scope               *Scope
 	classes             map[string]*class
+	classIndexes        map[int]*class
+	nextClassIndex      int
 }
 
 type class struct {
 	name       string
 	superclass *class
+	index      int
 	members    map[string]int
 }
 
 func (l *STL) initClasses() {
-	l.classes["Object"] = &class{name: "Object"}
+	l.classes["ProtoObject"] = &class{name: "ProtoObject", index: 0}
+	l.classes["Object"] = &class{
+		name:       "Object",
+		superclass: l.classes["ProtoObject"],
+		index:      1,
+	}
 	l.classes["Behavior"] = &class{
 		name:       "Behavior",
 		superclass: l.classes["Object"],
+		members:    instVars(0, "superclass", "methodDict", "format"),
+		index:      2,
 	}
 	l.classes["ClassDescription"] = &class{
 		name:       "ClassDescription",
 		superclass: l.classes["Behavior"],
-		members:    instVars(0, "name", "superclass", "instanceVariables", "methodDict"),
+		index:      3,
 	}
 	l.classes["Class"] = &class{
 		name:       "Class",
 		superclass: l.classes["ClassDescription"],
+		members:    instVars(3, "name", "subclasses"),
+		index:      4,
 	}
 	l.classes["Metaclass"] = &class{
 		name:       "Metaclass",
 		superclass: l.classes["ClassDescription"],
+		members:    instVars(3, "thisClass"),
+		index:      5,
 	}
+	l.classes["UndefinedObject"] = &class{
+		name:       "UndefinedObject",
+		superclass: l.classes["Object"],
+		index:      6,
+	}
+
+	l.classes["Collection"] = &class{
+		name:       "Collection",
+		superclass: l.classes["Object"],
+		index:      7,
+	}
+	l.classes["SequenceableCollection"] = &class{
+		name:       "SequenceableCollection",
+		superclass: l.classes["Collecton"],
+		index:      8,
+	}
+	l.classes["ArrayedCollection"] = &class{
+		name:       "ArrayedCollection",
+		superclass: l.classes["SequenceableCollecton"],
+		index:      9,
+	}
+	l.classes["Array"] = &class{
+		name:       "Array",
+		superclass: l.classes["ArrayedCollection"],
+		index:      10,
+	}
+
 	l.classes["String"] = &class{
 		name:       "String",
-		superclass: l.classes["Object"],
+		superclass: l.classes["ArrayedCollection"],
+		index:      11,
 	}
-	l.classes["NullObject"] = &class{
-		name:       "NullObject",
-		superclass: l.classes["Object"],
+	l.classes["Symbol"] = &class{
+		name:       "Symbol",
+		superclass: l.classes["String"],
+		index:      12,
 	}
+
+	l.classes["HashedCollection"] = &class{
+		name:       "HashedCollection",
+		superclass: l.classes["Collection"],
+		members:    instVars(0, "array", "tally"),
+		index:      13,
+	}
+	l.classes["Dictionary"] = &class{
+		name:       "Dictionary",
+		superclass: l.classes["HashedCollection"],
+		index:      14,
+	}
+	l.classes["IdentityDictionary"] = &class{
+		name:       "IdentityDictionary",
+		superclass: l.classes["Dictionary"],
+		index:      15,
+	}
+
+	l.classes["MethodContext"] = &class{
+		name:       "MethodContext",
+		superclass: l.classes["Object"],
+		members:    instVars(0, "method", "locals", "pc", "sender", "sp"),
+		index:      16,
+	}
+
+	l.classes["CompiledMethod"] = &class{
+		name:       "CompiledMethod",
+		superclass: l.classes["Object"],
+		members:    instVars(0, "bytecode", "literals", "selector", "class", "argc", "locals"),
+		index:      17,
+	}
+
+	l.classes["BlockClosure"] = &class{
+		name:       "BlockClosure",
+		superclass: l.classes["Object"],
+		members:    instVars(0, "ctx", "pc0", "argc", "argv", "handlerActive"),
+		index:      18,
+	}
+
 	l.classes["Boolean"] = &class{
 		name:       "Boolean",
 		superclass: l.classes["Object"],
+		index:      19,
 	}
 	l.classes["True"] = &class{
 		name:       "True",
 		superclass: l.classes["Boolean"],
+		index:      20,
 	}
 	l.classes["False"] = &class{
 		name:       "False",
 		superclass: l.classes["Boolean"],
-	}
-	l.classes["MethodContext"] = &class{
-		name:       "MethodContext",
-		superclass: l.classes["Object"],
-		members:    instVars(0, "method", "locals", "pc", "sender", "stack"),
-	}
-	l.classes["Collection"] = &class{
-		name:       "Collection",
-		superclass: l.classes["Object"],
-	}
-	l.classes["HashedCollection"] = &class{
-		name:       "HashedCollection",
-		superclass: l.classes["Collecton"],
-		members:    instVars(0, "map"),
-	}
-	l.classes["CompiledMethod"] = &class{
-		name:       "CompiledMethod",
-		superclass: l.classes["Object"],
-		members:    instVars(0, "argc", "locals", "bytecode", "class", "selector"),
+		index:      21,
 	}
 
-	l.scope.vars["Object"] = &cell{KindGlobal, 0}
-	l.scope.vars["Behavior"] = &cell{KindGlobal, 0}
-	l.scope.vars["Class"] = &cell{KindGlobal, 0}
-	l.scope.vars["ClassDescription"] = &cell{KindGlobal, 0}
-	l.scope.vars["Metaclass"] = &cell{KindGlobal, 0}
-	l.scope.vars["String"] = &cell{KindGlobal, 0}
-	l.scope.vars["NullObject"] = &cell{KindGlobal, 0}
-	l.scope.vars["Boolean"] = &cell{KindGlobal, 0}
-	l.scope.vars["True"] = &cell{KindGlobal, 0}
-	l.scope.vars["False"] = &cell{KindGlobal, 0}
-	l.scope.vars["Collection"] = &cell{KindGlobal, 0}
-	l.scope.vars["HashedCollection"] = &cell{KindGlobal, 0}
+	l.classes["Magnitude"] = &class{
+		name:       "Magnitude",
+		superclass: l.classes["Object"],
+		index:      22,
+	}
+	l.classes["Character"] = &class{
+		name:       "Character",
+		superclass: l.classes["Magnitude"],
+		members:    instVars(0, "value"),
+		index:      23,
+	}
+	l.classes["Number"] = &class{
+		name:       "Number",
+		superclass: l.classes["Magnitude"],
+		index:      24,
+	}
+	l.classes["Integer"] = &class{
+		name:       "Integer",
+		superclass: l.classes["Number"],
+		index:      25,
+	}
+	l.classes["SmallInteger"] = &class{
+		name:       "SmallInteger",
+		superclass: l.classes["Integer"],
+		index:      26,
+	}
+
+	l.classes["Association"] = &class{
+		name:       "Association",
+		superclass: l.classes["Object"],
+		members:    instVars(0, "key", "value"),
+		index:      27,
+	}
+
+	l.classes["Process"] = &class{
+		name:       "Process",
+		superclass: l.classes["Object"],
+		members:    instVars(0, "context", "next", "prev", "processTable"),
+		index:      28,
+	}
+	l.classes["ProcessTable"] = &class{
+		name:       "ProcessTable",
+		superclass: l.classes["Object"],
+		members:    instVars(0, "ready", "blocked", "nextProriity"),
+		index:      28,
+	}
+
+	l.nextClassIndex = 29
+	l.classIndexes = map[int]*class{}
+	for _, cls := range l.classes {
+		l.classIndexes[cls.index] = cls
+	}
 }
 
 func NewSTListener() *STL {
@@ -118,8 +224,9 @@ func NewSTListener() *STL {
 }
 
 type Scope struct {
-	vars   map[string]*cell
-	parent *Scope
+	vars     map[string]*cell
+	parent   *Scope
+	listener *STL
 }
 
 type cell struct {
@@ -128,6 +235,7 @@ type cell struct {
 
 const (
 	KindGlobal = iota
+	KindClass
 	KindLocal
 	KindInstVar
 	KindArg
@@ -139,6 +247,10 @@ func (s *Scope) lookup(name string) *cell {
 	}
 	if s.parent != nil {
 		return s.parent.lookup(name)
+	}
+	// Try to look it up in the classes list.
+	if cls, ok := s.listener.classes[name]; ok {
+		return &cell{KindClass, cls.index}
 	}
 	return nil
 }
@@ -157,8 +269,9 @@ func (l *STL) popScope() {
 
 func (l *STL) pushScope() {
 	l.scope = &Scope{
-		vars:   map[string]*cell{},
-		parent: l.scope,
+		vars:     map[string]*cell{},
+		parent:   l.scope,
+		listener: l,
 	}
 }
 
@@ -181,7 +294,9 @@ func (l *STL) blockStop(pc int) {
 		l.cp.answer()
 		length = 2
 	}
-	l.cp.bytecodes[start-1].Length = length
+
+	// The length of a block is the word before its first bytecode.
+	l.cp.method.bytecodes[start-1] = uint16(length)
 }
 
 func (l *STL) Error(err error) {
@@ -212,40 +327,11 @@ func (l *STL) compileWrite(name string) {
 // selector, args and locals.
 // The names of those fields are important to the compiler but only indexes are
 // used in the kernel.
-//
-// EnterMethods looks up the (meta)class by name and leaves it on the stack.
-// EnterMethod DUPs the class, then does:
-//
-//   CompiledMethod argc: aNumber locals: aNumber length: inBytecodes.
-//   ... bytecodes follow ...
-//   theClass method: theMethod selector: aSymbol
-//
-// Method.pcStart points at the first of the method's bytecodes; the literal
-// length is two before it (the send, then that pushNumber).
-//
-// The second send consumes the DUPed class, but leaves the one under it.
-// LeaveMethod has to look up the length (which is a pushNumber(0) initially)
-// and adjust it to the actual length in bytecodes.
-// LeaveMethods DROPs that trailing class.
-//
-// This is followed by the length of bytecodes, which that constructor consumes.
-// The PC then points after the method's code. The method then gets attached to
-// its target class as
-//   theClass method: aMethod selector: aSymbol
-
 func (l *STL) EnterMethods(target *parser.MethodsTarget) {
-	// Push the class by name and leave it on the stack throughout defining
-	// methods on it.
-	l.cp.pushGlobal(target.ClassName)
-	className := target.ClassName
-
-	if target.ClassLevel {
-		l.cp.send(false, 0, "class")
-		className = className + " class"
-	}
-
+	l.cp.startMethods(target.ClassName, target.ClassLevel)
+	l.inMethods = true
 	l.pushScope()
-	cls := l.classes[className]
+	cls := l.classes[target.ClassName]
 	if cls != nil && cls.members != nil {
 		for name, idx := range cls.members {
 			l.scope.vars[name] = &cell{KindInstVar, idx}
@@ -254,19 +340,13 @@ func (l *STL) EnterMethods(target *parser.MethodsTarget) {
 }
 
 func (l *STL) LeaveMethods() {
-	l.cp.drop() // The target class which is on the stack to have methods added.
+	l.cp.endMethods()
+	l.inMethods = false
 	l.popScope()
 }
 
 func (l *STL) EnterMethod(sig *parser.MessageSignature, locals []string) {
-	// The class is on the stack at the start.
-	l.cp.pushGlobal("CompiledMethod")
-	l.cp.pushNumber(float64(len(sig.Params)))
-	l.cp.pushNumber(float64(len(locals)))
-	l.cp.pushNumber(0)
-	l.cp.send(false, 3, "argc:locals:length:")
-	// ( cls method )
-
+	l.cp.startMethod(sig.Symbol, len(sig.Params), len(locals))
 	l.methodLocals = len(locals)
 	l.methodLocalIndex = 1 + len(sig.Params) + l.methodLocals
 	l.methodName = sig.Symbol
@@ -281,7 +361,6 @@ func (l *STL) EnterMethod(sig *parser.MessageSignature, locals []string) {
 		l.scope.vars[v] = &cell{KindLocal, 1 + i + len(sig.Params)}
 	}
 
-	l.methodStart = l.cp.pc
 	l.answered = false
 	l.first = true
 }
@@ -293,22 +372,7 @@ func (l *STL) LeaveMethod() {
 		l.cp.answerSelf()
 	}
 
-	// At the end of the method's code, rewrite the length literal at pc - 2.
-	//fmt.Printf("Method started at %d, now at %d: %v\n", l.methodStart, l.cp.pc, l.cp.bytecodes[l.methodStart-2])
-	l.cp.bytecodes[l.methodStart-2].Value = float64(l.cp.pc - l.methodStart)
-	// And the locals count at pc - 3.
-	l.cp.bytecodes[l.methodStart-3].Value = float64(l.methodLocals)
-
-	// After the method, it will be on the stack as the result of calling
-	//   CompiledMethod argc: c locals: t length: len
-	// which returns self (the method).
-	// We've already got the target class on the stack; send it
-	//   aClass method: aMethod selector: aSymbol
-	l.cp.pushString(l.methodName)
-	l.cp.send(false, 0, "asSymbol")         // ( cls method symbol )
-	l.cp.send(false, 2, "method:selector:") // ( cls ) - it answers self
-	// This closes the loop for each method: they start and end with the class on
-	// the stack. LeaveMethods will DROP that final value.
+	l.cp.endMethod()
 }
 
 func (l *STL) EnterReturn() {
@@ -339,7 +403,12 @@ func (l *STL) EnterExprLine() {
 	// then they should be dropped.
 	// If this is the first line of a block or method, however, this should not
 	// be dropped.
-	if l.first {
+	//
+	// Additionally, statements at the top level need to be captured as singular
+	// driver statements.
+	if !l.inMethods {
+		l.cp.startTopLevel()
+	} else if l.first {
 		l.first = false
 	} else {
 		l.cp.drop()
@@ -347,6 +416,10 @@ func (l *STL) EnterExprLine() {
 }
 
 func (l *STL) LeaveExprLine() {
+	if !l.inMethods {
+		l.cp.answer() // Ends the pseudo-method.
+		l.cp.endTopLevel()
+	}
 }
 
 func (l *STL) EnterCascade() {
@@ -373,63 +446,61 @@ func (l *STL) LeaveKeywordSend(keywords []string) {
 	// instance variables.
 	switch combined {
 	case "subclass:instanceVariableNames:classVariableNames:":
-		// These look like: pushGlobal("superclass"), pushString("symbol"),
-		// send("asSymbol"), pushString("instanceVars"), pushString("classVars"),
-		// send("...")
-		bcs := l.cp.bytecodes[l.cp.pc-6 : l.cp.pc]
-		//fmt.Printf("bcs[0]: %v\n", bcs[0])
-		//fmt.Printf("bcs[1]: %v\n", bcs[1])
-		//fmt.Printf("bcs[3]: %v\n", bcs[3])
-		//fmt.Printf("bcs[4]: %v\n", bcs[4])
-		l.recordSubclass(bcs[0], bcs[1], bcs[3], bcs[4])
+		// These look like: pushGlobal(superclass), pushLiteral(classNameSymbol),
+		// pushString("instanceVars"), pushString("classVars"), send("...")
+		bcs := l.cp.method.bytecodes[l.cp.method.pc-5 : l.cp.method.pc]
+		l.recordSubclass(bcs[0], bcs[1], bcs[2], bcs[3])
 	case "subclass:instanceVariableNames:":
-		// These look like: pushGlobal("superclass"), pushString("symbol"),
-		// send("asSymbol"), pushString("instanceVars"), send("...")
-		bcs := l.cp.bytecodes[l.cp.pc-5 : l.cp.pc]
-		//fmt.Printf("bcs[0]: %v\n", bcs[0])
-		//fmt.Printf("bcs[1]: %v\n", bcs[1])
-		//fmt.Printf("bcs[3]: %v\n", bcs[3])
-		l.recordSubclass(bcs[0], bcs[1], bcs[3], nil)
+		// These look like: pushGlobal(superclass), pushLiteral(symbol),
+		// pushString("instanceVars"), send("...")
+		bcs := l.cp.method.bytecodes[l.cp.method.pc-4 : l.cp.method.pc]
+		l.recordSubclass(bcs[0], bcs[1], bcs[2], 0xffff)
 	case "subclass:":
-		// These look like: pushGlobal("superclass"), pushString("symbol"),
-		// send("asSymbol"), send("...")
-		bcs := l.cp.bytecodes[l.cp.pc-4 : l.cp.pc]
-		//fmt.Printf("bcs[0]: %v\n", bcs[0])
-		//fmt.Printf("bcs[1]: %v\n", bcs[1])
-		l.recordSubclass(bcs[0], bcs[1], nil, nil)
+		// These look like: pushGlobal("superclass"), pushLiteral(symbol), send.
+		bcs := l.cp.method.bytecodes[l.cp.method.pc-3 : l.cp.method.pc]
+		l.recordSubclass(bcs[0], bcs[1], 0xffff, 0xffff)
 	}
 }
 
-func (l *STL) recordSubclass(superBC, classBC, instVarsBC, classVarsBC *Bytecode) {
-	superclass := superBC.Name
-	classSym := classBC.Name
+func (l *STL) recordSubclass(superBC, classBC, instVarsBC, classVarsBC uint16) {
+	var superclassStr string
+	if (superBC & 0xff00) == 0x0400 { // Inlined class index
+		superclassStr = l.classIndexes[int(superBC&0xff)].name
+	} else {
+		superclassStr = string(l.cp.method.literals[superBC&0xff].(symbolLit))
+	}
+	classStr := string(l.cp.method.literals[classBC&0xff].(symbolLit))
 	instVars := map[string]int{}
-	if instVarsBC != nil {
-		for i, v := range strings.Split(instVarsBC.Name, " ") {
+	classVars := map[string]int{}
+
+	if instVarsBC != 0xffff {
+		instVarsStr := l.cp.method.literals[instVarsBC&0xff]
+		for i, v := range strings.Split(string(instVarsStr.(stringLit)), " ") {
 			instVars[v] = i
 		}
 	}
-	classVars := map[string]int{}
-	if classVarsBC != nil {
-		for i, v := range strings.Split(classVarsBC.Name, " ") {
+
+	if classVarsBC != 0xffff {
+		classVarsStr := l.cp.method.literals[classVarsBC&0xff]
+		for i, v := range strings.Split(string(classVarsStr.(stringLit)), " ") {
 			classVars[v] = i
 		}
 	}
 
-	//fmt.Printf("%s subclass: %s instVars: %v classVars: %v\n",
-	//superclass, classSym, instVars, classVars)
-
-	l.classes[classSym] = &class{
-		name:       classSym,
-		superclass: l.classes[superclass],
-		members:    instVars,
-	}
-	l.classes[classSym+" class"] = &class{
-		name:       classSym + " class",
-		superclass: l.classes[superclass+" class"],
+	l.classes[classStr+" class"] = &class{
+		name:       classStr + " class",
+		superclass: l.classes[superclassStr+" class"],
 		members:    classVars,
+		index:      l.nextClassIndex,
 	}
-	l.scope.vars[classSym] = &cell{KindGlobal, 0}
+	l.classes[classStr] = &class{
+		name:       classStr,
+		superclass: l.classes[superclassStr],
+		members:    instVars,
+		index:      l.nextClassIndex + 1,
+	}
+	l.nextClassIndex += 2
+	l.scope.vars[classStr] = &cell{KindGlobal, 0}
 }
 
 func (l *STL) EnterBinarySends() {
@@ -466,7 +537,7 @@ func (l *STL) LeaveUnit() {
 func (l *STL) EnterBlock(params, locals []string) {
 	argStart := l.methodLocalIndex
 	l.cp.startBlock(len(params), len(locals), argStart, 0)
-	l.blockStart(l.cp.pc) // Points to the first bytecode.
+	l.blockStart(l.cp.method.pc) // Points to the first bytecode.
 
 	// Nest a scope - the
 	l.pushScope()
@@ -490,7 +561,7 @@ func (l *STL) LeaveBlock() {
 		l.cp.answer()
 	}
 	l.answered = false
-	l.blockStop(l.cp.pc)
+	l.blockStop(l.cp.method.pc)
 	l.popScope()
 }
 
@@ -564,27 +635,29 @@ func (l *STL) VisitIdentifier(id *parser.Ident) {
 	switch spec.kind {
 	case KindGlobal:
 		l.cp.pushGlobal(id.Text)
+	case KindClass:
+		l.cp.pushClass(spec.index)
 	case KindLocal:
 		l.cp.pushLocal(spec.index)
 	case KindArg:
 		l.cp.pushLocal(spec.index)
 	case KindInstVar:
 		l.cp.pushInstVar(spec.index)
+	default:
+		panic("unhandled kind of scope value")
 	}
 }
 
-func (l *STL) VisitPrimitive(keyword, parameter string) {
-	if keyword != "builtin" {
-		l.Error(fmt.Errorf("Only primitives with 'builtin' are allowed (got %s)", keyword))
+func (l *STL) VisitPrimitive(keyword string, index int) {
+	if keyword != "primitive" {
+		l.Error(fmt.Errorf("Only primitives with 'primitive' are allowed (got %s)", keyword))
 	}
-	l.cp.primitive(keyword+":", parameter)
+	l.cp.primitive(index)
 	l.answered = true // Primitives all return something already.
 }
 
 func (l *STL) VisitSymbol(sym *parser.Symbol) {
-	// This is compiled as a literal string and asSymbol.
-	l.cp.pushString(sym.Str)
-	l.cp.send(false, 0, "asSymbol")
+	l.cp.pushSymbol(sym.Str)
 }
 
 func (l *STL) VisitStringLit(str *parser.StringLit) {
@@ -592,36 +665,19 @@ func (l *STL) VisitStringLit(str *parser.StringLit) {
 }
 
 func (l *STL) VisitCharLit(ch *parser.CharLit) {
-	l.cp.pushGlobal("Character")
-	l.cp.pushString(string([]rune{ch.Ch}))
-	l.cp.send(false, 1, "fromString:")
+	l.cp.pushCharacter(ch.Ch)
 }
 
 func (l *STL) VisitNumber(num *parser.Number) {
 	// Two cases for numbers: those with alternative bases are limited to integral
 	// parts. Those with base 10 can have more parts.
-	var value float64
-	var err error
-	if num.Base == 10 {
-		s := num.Integral
-		if num.Floating != "" {
-			s += "." + num.Floating
-		}
-		if num.Exp != "" {
-			s += "e" + num.Exp
-		}
-		value, err = strconv.ParseFloat(s, 64)
-	} else {
-		n, e := strconv.ParseInt(num.Integral, num.Base, 32)
-		value, err = float64(n), e
-	}
-
+	n, err := strconv.ParseInt(num.Integral, num.Base, 32)
 	if err != nil {
 		l.Error(fmt.Errorf("Malformed number: %v", err))
 	}
 	if num.Negative {
-		value = -value
+		n = -n
 	}
 
-	l.cp.pushNumber(value)
+	l.cp.pushNumber(int(n))
 }

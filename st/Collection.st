@@ -2,15 +2,10 @@
 Collection
   HashedCollection      Wraps a raw Javascript map; uses raw string keys.
     Dictionary            Any Smalltalk value as the key, using #hash.
-  Array                 Native array of Smalltalk values.
+  SequenceableCollection
+    ArrayedCollection
+      Array
 "
-
-"Object subclass: #Collection. - This is defined in the VM"
-
-"Early declaration of the Array class, to be filled in later.
-Raw Javascript arrays have their prototype modified to hold $class, turning them
-into Smalltalk values."
-Collection subclass: #Array.
 
 "First, a block of the abstract methods all subclasses must provide."
 ! Collection
@@ -168,7 +163,7 @@ Error subclass: #NotFound
   ^true
 !!
 
-! NullObject
+! UndefinedObject
 ! isEmptyOrNil
   ^ true
 !!

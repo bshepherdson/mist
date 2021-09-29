@@ -48,7 +48,7 @@ type Listener interface {
 	LeaveDynArray()
 
 	VisitIdentifier(*Ident)
-	VisitPrimitive(keyword, value string)
+	VisitPrimitive(keyword string, number int)
 	VisitSymbol(*Symbol)
 	VisitStringLit(*StringLit)
 	VisitCharLit(*CharLit)

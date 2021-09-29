@@ -1,4 +1,13 @@
-import {readAt, writeAt} from 'memory.mjs';
+import {
+  CTX_METHOD, CTX_PC, CTX_SENDER,
+  METHOD_BYTECODE,
+  PROCESS_CONTEXT, PROCESS_NEXT, PROCESS_PREV,
+  PROCESS_TABLE_READY, PROCESS_TABLE_NEXT_PRIORITY,
+  MA_NIL,
+  fromSmallInteger, toSmallInteger,
+  readWordArray, readIV, writeIV,
+} from './memory.mjs';
+import {execute} from './bytecodes.mjs';
 import {vm} from './vm.mjs';
 
 // Processes and priorities
@@ -55,20 +64,20 @@ function nextThread() {
 
 // Helper that reads a bytecode and increments PC.
 function readPC(ctx) {
-  const pc = readSmallInteger(ctx + CTX_PC);
-  const method = readAt(ctx, CTX_METHOD);
-  const bcArray = readAt(method, METHOD_BYTECODE);
-  const bc = readRawArray(bcArray, pc);
+  const pc = fromSmallInteger(readIV(ctx, CTX_PC));
+  const method = readIV(ctx, CTX_METHOD);
+  const bcArray = readIV(method, METHOD_BYTECODE);
+  const bc = readWordArray(bcArray, pc);
 
   // Increment the PC.
-  adjustSmallInteger(ctx + CTX_PC, 1);
+  writeIV(ctx, CTX_PC, toSmallInteger(pc + 1));
   return bc;
 }
 
 // Given a pointer to the current process, execute a single step of its
 // bytecode. This is the fundamental VM operation.
-function tick(process) {
-  const ctx = readAt(process, PROCESS_CONTEXT);
+export function tick(process) {
+  const ctx = readIV(process, PROCESS_CONTEXT);
   const bc = readPC(ctx);
   // Executes a single bytecode!
   execute(process, ctx, bc);
@@ -76,33 +85,60 @@ function tick(process) {
 
 // Given the ST pointer to a new context, makes it the top of this process.
 // ASSUMES the new context's sender is already set properly!
-function pushContext(process, newContext) {
-  writeAt(process, PROCESS_CONTEXT, newContext);
+export function pushContext(process, newContext) {
+  writeIV(process, PROCESS_CONTEXT, newContext);
 }
 
 // Pops a context off this process, making the sender of the old one the new
 // one for the process. If the sender is nil, this thread is expired and we can
 // remove this process from the process table.
-function popContext(process, opt_ctx) {
-  const oldCtx = readAt(process, PROCESS_CONTEXT);
-  const sender = opt_ctx || readAt(oldCtx, CTX_SENDER);
-  if (sender != MA_NIL) return;
+export function popContext(process, opt_ctx) {
+  const oldCtx = readIV(process, PROCESS_CONTEXT);
+  const sender = opt_ctx || readIV(oldCtx, CTX_SENDER);
+  if (sender != MA_NIL) {
+    writeIV(process, PROCESS_CONTEXT, sender);
+    return true;
+  }
 
   // If we're still here, this process needs removing from the table.
   // This is why processes form a doubly-linked list!
-  const prev = readAt(process, PROCESS_PREV);
-  const next = readAt(process, PROCESS_NEXT);
+  writeIV(process, PROCESS_CONTEXT, MA_NIL);
+  const prev = readIV(process, PROCESS_PREV);
+  const next = readIV(process, PROCESS_NEXT);
   if (prev != MA_NIL) {
-    writeAt(prev, PROCESS_NEXT, next);
+    writeIV(prev, PROCESS_NEXT, next);
   }
   if (next != MA_NIL) {
-    writeAt(next, PROCESS_PREV, prev);
+    writeIV(next, PROCESS_PREV, prev);
   }
+
   // If either of those is nil, both should be, since the list is circular.
   // Either way, it's correct to make next the head of the process table's ready
   // list.
-  const pt = readAt(process, PROCESS_PROCESS_TABLE);
-  writeAt(pt, PROCESS_TABLE_READY, next);
+  const pt = readIV(process, PROCESS_PROCESS_TABLE);
+  // Only replace the READY process if it was me!
+  // This is because the driver hand-rolls threads.
+  if (readIV(pt, PROCESS_TABLE_READY) === process) {
+    writeIV(pt, PROCESS_TABLE_READY, next);
+  }
+  return false;
+}
+
+// Adds this context as the root of a new user-priority thread.
+export function fork(ctx) {
+  const pt = readIV(vm.processTable, PROCESS_TABLE_NEXT_PRIORITY);
+  const proc = mkInstance(read(classTable(CLS_PROCESS)));
+  const head = readIV(pt, PROCESS_TABLE_READY);
+  if (head == MA_NIL) {
+    writeIV(proc, PROCESS_NEXT, proc);
+    writeIV(proc, PROCESS_PREV, proc);
+  } else {
+    const prev = readIV(head, PROCESS_PREV);
+    writeIV(proc, PROCESS_NEXT, head);
+    writeIV(head, PROCESS_PREV, proc);
+    writeIV(prev, PROCESS_NEXT, proc);
+  }
+  writeIV(pt, PROCESS_TABLE_READY, proc);
 }
 
 // TODO popTo, probably?

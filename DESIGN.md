@@ -303,8 +303,8 @@ the operand field at all.
     - `$03: push global` Push a global value looked up in the `SystemDictionary`
       by the symbol in the literal table at *operand*.
       table in the VM - see below for that list.
-    - `$04: push standard class` Shorthand for `$03`, pushes a class from a list
-      of common classes in the VM (see below).
+    - `$04: push standard class` Shorthand for `$03`, pushes a class by its
+      literal class index. This has room for 256 built-in classes.
     - `$05: push literal` Push the literal from this method's literals list
       whose index is in *operand*.
     - `$06: push inline number` Interpret *operand* as a signed 8-bit value and
@@ -361,20 +361,22 @@ Each element begins with a word giving its type:
 
 - 1: small integer, a 32-bit big-endian literal number (raw, not indirected
   or tagged)
-- 2: chracters, a 32-bit big-endian literal character value (raw)
+- 2: chracters, a 16-bit big-endian literal character value (raw)
 - 3: string
 - 4: symbol
 - 5: literal array
 - 6: true
 - 7: false
 - 8: nil
+- 9: word array
 
 True, false and nil have no data at all. Integers are 2 words, characters are 1.
 Literal arrays are recursive: after the type word comes a word giving the number
 of elements, then that many elements follow, etc.
 
-Strings and symbols are encoded the same, but loaded differently. The first word
-after the type gives the length in words, and that many raw ASCII words follow.
+Word arrays, strings and symbols are encoded the same, but loaded differently.
+The first word after the type gives the length in words, and that many raw
+words follow. (ASCII values in strings and symbols, arbitrary in word arrays).
 
 The system interprets these and copies them into memory.
 
@@ -413,70 +415,6 @@ user commands as well as for defining subclasses.
 ```
 
 I don't think any more commands are necessary for now.
-
-
-### List of standard classes
-
-This is the list of standard classes that can be pushed with `$04`.
-
-```
-$00 Object
-$01 ProtoObject
-$02 Class
-$03 ClassDescription
-$04 Behavior
-$05 NullObject
-$06 Boolean
-$07 True
-$08 False
-$09 Transcript
-
-$10 Magnitude
-$11 Number
-$12 Integer
-$13 SmallInteger
-
-$20 BlockClosure
-$21 CompiledMethod
-$22 MethodContext
-
-$30 Collection
-$31 SequenceableCollection
-$32 ArrayedCollection
-$33 Array
-$34 String
-$35 ByteString
-$36 Symbol
-$37 Text
-$38 LinkedList
-$39 Interval
-$3a OrderedCollection
-$3b SortedCollection
-$40 Set
-$41 Dictionary
-$42 IdentityDictionary
-$43 Bag
-
-$60 Exception
-$61 Error
-$62 Warning
-$63 NotFound
-$64 MessageNotUnderstood
-$65 Deprecated
-$66 ExceptionSet
-$67 CannotReturn
-$68 BlockCannotReturn
-$69 ContextCannotReturn
-$6a AbstractMethod
-$6b ShouldNotImplement
-
-$80 TestCase
-$81 TestAsserter
-$82 TestSuite
-$83 TestResult
-$84 TestFailure
-$85 TestSkipped
-```
 
 
 ### Enhancements

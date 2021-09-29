@@ -1,5 +1,5 @@
 "Collection subclass: #HashedCollection
-  instanceVariableNames: 'map'.
+  instanceVariableNames: 'array tally'.
   - This is defined in the VM."
 
 Error subclass: #KeyNotFound
@@ -14,8 +14,8 @@ Error subclass: #ValueNotFound
   value := aValue
 !!
 
-Object subclass: #Association
-  instanceVariableNames: 'key value'.
+"Object subclass: #Association
+  instanceVariableNames: 'key value'."
 
 ! Association
 ! value
@@ -43,48 +43,135 @@ Object subclass: #Association
   ^ assoc value: aValue
 !!
 
+! HashedCollection class
+! new
+  ^ self new: 8
+!!
 
 ! HashedCollection
-! initialize
-  super initialize.
-  <builtin: 'new object'>
-! at: aStringKey
-  "Answers the raw value at the given key, or nil."
-  <builtin: 'dict_at:'>
-! at: aStringKey put: aValue
+! needsToGrow
+  "No floats, but we want to check for 2/3rds full.
+  tally/capacity > 2/3
+  3 * tally > 2 * capacity"
+  ^ (2 * self capacity) < (3 * tally)
+
+! initialize: size
+  super initialize: size.
+  array := Array new: size.
+  tally := 0
+
+! hashMask
+  ^ array size - 1 "Powers of 2, so -1 makes a mask."
+
+! findElementOrNil: aKey
+  | index row |
+  index := aKey hash bitAnd: self hashMask.
+  row := array at: index.
+  [row isNil] whileFalse: [
+    (self matchKey: aKey with: row key) ifTrue: [^ index].
+    index := index + 1 bitAnd: self hashMask.
+    row := array at: index].
+  ^ index
+
+! at: aKey ifAbsent: aBlockOrValue
+  "The array is treated as a hash table with linear probing."
+  | asc |
+  asc := array at: (self findElementOrNil: aKey).
+  asc ifNil: [^ asc value].
+  ^aBlockOrValue value
+
+! at: aKey
+  ^ self at: aKey ifAbsent: [self errorKeyNotFound: aKey]
+
+! at: aKey put: aValue
   "Sets an association at the given key, replacing any previous association."
-  <builtin: 'dict_at:put:'>
+  | index row |
+  index := self findElementOrNil: aKey.
+  row := array at: index.
+  row ifNil: [ row value: aValue. ^self ].
+  row at: index put: (Association key: aKey value: aValue).
+  tally := tally + 1.
+  self growIfNeeded
+
+! associationAt: aKey
+  ^ self assocationAt: aKey ifAbsent: [self errorKeyNotFound: aKey]
+
+! associationAt: aKey ifAbsent: aBlockOrValue
+  | asc |
+  asc := array at: (self findElementOrNil: aKey).
+  asc ifNil: [^ asc].
+  ^aBlockOrValue value
+
+! errorKeyNotFound: aKey
+  (KeyNotFound new key: aKey) signal
+! errorValueNotFound: aValue
+  (ValueNotFound new value: aValue) signal
+
+! growIfNeeded
+  | oldArray |
+  self needsToGrow ifFalse: [^self].
+  oldArray := array.
+  array := Array new: self size * 2.
+  tally := 0.
+  array do: [:each | each isNotNil: [self add: each]]
 
 ! values
   "Returns a Smalltalk Array of the values."
-  <builtin: 'dict_values'>
+  | vals index |
+  vals := Array new: tally.
+  index := 1.
+  self associationsDo: [:asc |
+    vals at: index put: asc value. index := index + 1].
+  ^ vals
+
 ! keys
   "Returns a Smalltalk Array of the values."
-  <builtin: 'dict_keys'>
-! size
-  ^ self keys size
+  | vals index |
+  vals := Array new: tally.
+  index := 1.
+  self associationsDo: [:asc | vals at: index put: asc key. index := index + 1].
+  ^ vals
 
-! removeKey: aStringKey
-  ^ self removeKey: aStringKey ifAbsent: [ self errorKeyNotFound: aStringKey ]
-! removeKey: aStringKey ifAbsent: aBlock
-  | value |
-  value := self at: aStringKey.
-  value ifNil: [ ^ aBlock value ]. "Nothing to remove."
-  self rawRemoveKey: aStringKey.
-  ^ value
-! rawRemoveKey: aStringKey
-  <builtin: 'dict_removeKey:'>
-
+! associations
+  | vals index |
+  vals := Array new: tally.
+  index := 1.
+  self associationsDo: [:asc | vals at: index put: asc. index := index + 1].
+  ^ vals
 
 ! associationsDo: aBlock
-  self keys do: [ :each |
-    aBlock value: (Association key: each value: (self at: each)) ]
-! assocations
-  "Returns a Smalltalk Array of Associations."
-  | col |
-  col := Array new.
-  self associationsDo: [ :each | col add: each ].
-  ^ col
+  array do: [:each | each ifNotNil: [aBlock value: each]]
+
+! size
+  ^ tally
+! capacity
+  ^ array size
+
+! removeKey: aKey
+  ^ self removeKey: aKey ifAbsent: [ self errorKeyNotFound: aKey ]
+! removeKey: aKey ifAbsent: aBlock
+  "Removes a key, or calls the block if it's not there.
+  Two cases: Found in the array, and not found."
+  | index row |
+  index := self findElementOrNil: aKey.
+  row := array at: index.
+  row ifNil: [^ aBlock value ].
+  tally := tally - 1.
+  array at: index put: nil.
+  self fixCollisionsFrom: index.
+  ^ row value
+
+! fixCollisionsFrom: start
+  "The element at start has been removed and replaced by nil. We need to adjust
+  any later elements that spilled down due to collisions."
+  | element index |
+  index := start.
+  [ (element := array at: (index := index bitAnd: self hashMask)) isNil ]
+    whileFalse: [
+      | newIndex |
+      (newIndex := self findElementOrNil: element key) = index
+        ifTrue: [array swap: index with: newIndex] ]
+
 
 ! = aDictionary
   "Two HashedCollections are equal iff
@@ -101,21 +188,6 @@ Object subclass: #Association
 
 ! add: anAssoc
   self at: anAssoc key put: anAssoc value
-!!
-
-
-"A Dictionary holds arbitrary Smalltalk keys and values, by the keys' #hash
-values. The Javascript map has the hashes of the keys pointing to the Smalltalk
-*assocations* as its values.
-It uses the superclass methods at:, at:put:, keys and values to implement the
-basic layer. Dictionary is mostly about juggling arbitrary keys into hash
-strings, and arbitrary values into Associations."
-HashedCollection subclass: #Dictionary
-  instanceVariableNames: ''.
-
-! Dictionary
-! add: anAssoc
-  super at: anAssoc key hash put: anAssoc
 
 ! addAll: aKeyedCollection
   aKeyedCollection == self ifFalse: [
@@ -123,39 +195,8 @@ HashedCollection subclass: #Dictionary
       self at: key put: value]].
   ^ aKeyedCollection
 
-! associationAt: aKey
-  ^ self associationAt: aKey ifAbsent: [self errorKeyNotFound: aKey]
-
-! associationAt: aKey ifAbsent: exceptionBlock
-  | assoc |
-  assoc := super at: aKey hash.
-  assoc ifNotNil: [ ^ assoc ].
-  ^ exceptionBlock value
-
-! associationsDo: aBlock
-  "super values is the associations stored as the values in the
-  HashedCollection"
-  super values do: aBlock
-
-! at: aKey
-  ^ self at: aKey ifAbsent: [ self errorKeyNotFound: aKey ]
-! at: aKey ifAbsent: aBlock
-  | assoc |
-  assoc := super at: aKey hash.
-  assoc ifNil: aBlock ifNotNil: [ ^ assoc value ]
-! at: aKey ifPresent: aBlock
-  ^ self at: aKey ifPresent: aBlock ifAbsent: [ ^ nil ]
-! at: aKey ifPresent: presentBlock ifAbsent: absentBlock
-  | assoc |
-  assoc := super at: aKey hash.
-  assoc ifNil: [ ^ absentBlock value ].
-  ^ presentBlock cull: assoc value
 ! at: aKey ifAbsentPut: aValue
-  (super at: aKey hash) ifNil: [ self at: aKey put: aValue ]
-! at: aKey ifPresent: aBlock ifAbsentPut: aValue
-  self at: aKey ifPresent: aBlock ifAbsent: [ self at: aKey put: aValue ]
-! at: aKey put: aValue
-  super at: aKey hash put: (Association key: aKey value: aValue)
+  ^ self at: aKey ifAbsent: [self at: aKey put: aValue]
 
 ! collect: aBlock
   "Evaluate aBlock with each value as the argument. Collect the results into a
@@ -168,11 +209,6 @@ HashedCollection subclass: #Dictionary
 
 ! do: aBlock
   ^ self valuesDo: aBlock
-
-! errorKeyNotFound: aKey
-  (KeyNotFound new key: aKey) signal
-! errorValueNotFound: aValue
-  (ValueNotFound new value: aValue) signal
 
 ! fillFrom: aCollection with: aBlock
   aCollection keysAndValuesDo: [ :key :value |
@@ -187,7 +223,7 @@ HashedCollection subclass: #Dictionary
       ifAbsent: [ ^ false ]) value = anAssoc value
 
 ! includesKey: aKey
-  ^ (super at: aKey hash) isNotNil
+  ^ (super at: aKey) isNotNil
 
 ! isDictionary
   ^ true
@@ -211,13 +247,6 @@ HashedCollection subclass: #Dictionary
 ! remove: anObject ifAbsent: aBlock
   self shouldNotImplement
 
-! removeKey: aKey
-  ^ self removeKey: aKey ifAbsent: [ self errorKeyNotFound: aKey ]
-! removeKey: aKey ifAbsent: aBlock
-  | assoc |
-  assoc := super removeKey: aKey hash ifAbsent: [ ^ aBlock value ].
-  ^ assoc value
-
 ! select: aBlock
   | col |
   col := self copyEmpty.
@@ -225,9 +254,6 @@ HashedCollection subclass: #Dictionary
     (aBlock value: each value) ifTrue: [ col add: each copy ]].
   ^ col
 
-! values
-  "super values are the Associations, extract their values."
-  ^ super values collect: [ :each | each value ]
 ! valuesDo: aBlock
   ^ self associationsDo: [ :each | aBlock value: each value ]
 !!

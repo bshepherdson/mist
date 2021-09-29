@@ -1,7 +1,15 @@
 // A hobo implementation of dictionaries on top of raw arrays. No hashing or
 // anything clever, just [k1, v1, k2, v2, ...] in arbitrary order.
 // This is used for method dictionaries until we have real dictionaries defined.
-import {CLS_ARRAY, arraySize, classTable, read, readArray, readIV, writeArray, writeIV} from './memory.mjs';
+import {
+  CLS_ARRAY, CLS_IDENTITY_DICTIONARY,
+  DICT_ARRAY, DICT_TALLY,
+  MA_NIL,
+  arraySize, classTable, mkInstance, wordArraySize,
+  fromSmallInteger, toSmallInteger,
+  read, readArray, readIV, readWordArray,
+  writeArray, writeArrayNew, writeIV, writeIVNew,
+} from './memory.mjs';
 
 export function mkDict(opt_size) {
   const size = opt_size || 16;
@@ -29,7 +37,7 @@ export function lookup(dict, key) {
 function grow(dict) {
   const src = readIV(dict, DICT_ARRAY);
   const oldSize = arraySize(src);
-  const dst = mkDict(oldSize * 2);
+  const dst = mkInstance(read(classTable(CLS_ARRAY)), 2 * oldSize);
   const tally = fromSmallInteger(readIV(dict, DICT_TALLY));
   for (let i = 0; i < tally * 2; i++) {
     writeArrayNew(dst, i, readArray(src, i));
@@ -42,7 +50,7 @@ export function insert(dict, key, value) {
   const size = arraySize(arr);
   const tally = fromSmallInteger(readIV(dict, DICT_TALLY));
   if (tally * 2 >= size) {
-    grow();
+    grow(dict);
     // Just recurse to update the fields.
     return insert(dict, key, value);
   }
@@ -52,3 +60,23 @@ export function insert(dict, key, value) {
   writeArray(arr, tally * 2 + 1, value);
   writeIV(dict, DICT_TALLY, toSmallInteger(tally + 1));
 }
+
+export function printDict(dict) {
+  const arr = readIV(dict, DICT_ARRAY);
+  const size = arraySize(arr);
+  const tally = fromSmallInteger(readIV(dict, DICT_TALLY));
+
+  for (let i = 0; i < tally; i++) {
+    const k = readArray(arr, 2*i);
+    const v = readArray(arr, 2*i+1);
+    let s = '';
+    for (let j = 0; j < wordArraySize(k); j++) {
+      s += String.fromCharCode(readWordArray(k, j));
+    }
+    console.log(s, v);
+  }
+}
+
+// TODO Might as well make these dictionaries compatible with upstream
+// dictionaries, it's not that hard to rewrite the hashtable logic.
+

@@ -31,10 +31,10 @@ const MA_TENURE_ALLOC = 0x1008;
 // Points to the first escaped pointer linked list entry; see GC design.
 const MA_ESCAPED_HEAD = 0x100a;
 // Class dictionary.
-const MA_CLASS_DICT = 0x100c;
+export const MA_CLASS_DICT = 0x100c;
 const MA_NEXT_CLASS_INDEX = 0x100e;
 
-const MASK_CLASS_INDEX = 0x3fffff;
+export const MASK_CLASS_INDEX = 0x3fffff;
 
 // Some canned ST objects that exist at known places in memory.
 export const MA_NIL   = 0x2000; // Size 4, zero-size object
@@ -73,11 +73,13 @@ function nextClass() {
 // They can be turned into pointers into the class table with
 // classTable(CLS_FOO) and read to produce real object pointers with
 // read(classTable(CLS_FOO)).
+// BE CAREFUL REORDERING THESE - This list is duplicated in the compiler.
+// If you reorder it or add things, it'll need to be updated.
 export const CLS_PROTO_OBJECT = nextClass();
 export const CLS_OBJECT = nextClass();
-export const CLS_CLASS = nextClass();
 export const CLS_BEHAVIOR = nextClass();
 export const CLS_CLASS_DESCRIPTION = nextClass();
+export const CLS_CLASS = nextClass();
 export const CLS_METACLASS = nextClass();
 export const CLS_UNDEFINED_OBJECT = nextClass();
 
@@ -95,18 +97,21 @@ export const CLS_CONTEXT = nextClass();
 export const CLS_COMPILED_METHOD = nextClass();
 export const CLS_BLOCK_CLOSURE = nextClass();
 
-export const CLS_AA_NODE = nextClass();
-
 export const CLS_BOOLEAN = nextClass();
 export const CLS_TRUE = nextClass();
 export const CLS_FALSE = nextClass();
 
-export const CLS_CHARACTER = nextClass();
 export const CLS_MAGNITUDE = nextClass();
+export const CLS_CHARACTER = nextClass();
 export const CLS_NUMBER = nextClass();
 export const CLS_INTEGER = nextClass();
 export const CLS_SMALL_INTEGER = nextClass();
 export const CLS_ASSOCIATION = nextClass();
+
+export const CLS_WORD_ARRAY = nextClass();
+export const CLS_PROCESS = nextClass();
+export const CLS_PROCESS_TABLE = nextClass();
+// BE CAREFUL REORDERING - see above note.
 
 
 // Returns an array of ordered indexes.
@@ -121,7 +126,7 @@ function seq(n) {
 export const [
   BEHAVIOR_SUPERCLASS, BEHAVIOR_METHODS, BEHAVIOR_FORMAT,
   CLASS_NAME, CLASS_SUBCLASSES, CLASS_VAR1, // Index for the first class var.
-] = seq(5);
+] = seq(6);
 
 export const METACLASS_THIS_CLASS = CLASS_NAME; // Same field, after Behavior.
 
@@ -162,10 +167,11 @@ export const [
 ] = seq(IV_METHOD);
 
 
-export const IV_BLOCK = 4;
-export const [BLOCK_CONTEXT, BLOCK_PC_START, BLOCK_ARGC, BLOCK_ARGV] = seq(IV_BLOCK);
-export const [AA_KEY, AA_VALUE, AA_LEVEL, AA_LEFT, AA_RIGHT] = seq(5);
+export const IV_BLOCK = 5;
+export const [BLOCK_CONTEXT, BLOCK_PC_START, BLOCK_ARGC, BLOCK_ARGV, BLOCK_HANDLER_ACTIVE] = seq(IV_BLOCK);
 
+export const [AA_KEY, AA_VALUE, AA_LEVEL, AA_LEFT, AA_RIGHT] = seq(5);
+export const [DICT_ARRAY, DICT_TALLY] = seq(2);
 export const ASCII_TABLE = [];
 
 
@@ -212,17 +218,23 @@ export function classOf(p) {
   return read(classTable(classIndex));
 }
 
-// Returns the format tag
-function format(p) {
-  return readWord(p+2) & 0xf;
+export function hasClass(p, classIndex) {
+  return isSmallInteger(p) ?
+      classIndex === CLS_SMALL_INTEGER :
+      (read(p+2) & MASK_CLASS_INDEX) === classIndex;
 }
 
-const FORMAT_ZERO = 0;
-const FORMAT_FIXED_IV = 1;
-const FORMAT_VARIABLE = 2;
-const FORMAT_VARIABLE_IV = 3;
-const FORMAT_WORDS_EVEN = 6;
-const FORMAT_WORDS_ODD = 7;
+// Returns the format tag
+function format(p) {
+  return (readWord(p+2) >> 8) & 0xf;
+}
+
+export const FORMAT_ZERO = 0;
+export const FORMAT_FIXED_IV = 1;
+export const FORMAT_VARIABLE = 2;
+export const FORMAT_VARIABLE_IV = 3;
+export const FORMAT_WORDS_EVEN = 6;
+export const FORMAT_WORDS_ODD = 7;
 
 // "Decodes" the header for a pointer-type object: that is, one with a header
 // that isn't holding words and isn't a special type like 8+.
@@ -243,7 +255,7 @@ function decodeHeader(p) {
     case FORMAT_ZERO:
       return {};
     case FORMAT_VARIABLE_IV:
-      const varSize = read(p - 4);
+      const varSize = read(p - 2);
       return {
         ivc: size,
         ivp: p + 4,
@@ -262,7 +274,7 @@ function decodeHeader(p) {
       };
     case FORMAT_WORDS_ODD:
     case FORMAT_WORDS_EVEN:
-      const ret = {wac: size, wap: p + 4};
+      const ret = {wac: 2*size, wap: p + 4};
       if (size === 255) {
         ret.wac = read(p + 4);
       }
@@ -303,7 +315,7 @@ export function readWordArray(p, index) {
   if (!hdr.wac) throw new Error('Cannot read word array of non-words object');
   if (hdr.wac <= index) throw new Error('Reading off the end of word array');
 
-  return read(hdr.pap + 2 * index);
+  return readWord(hdr.wap + index);
 }
 
 
@@ -433,8 +445,9 @@ export function sizeRequired(instVars, arrayLength) {
   if (instVars === 0 && arrayLength === 0) return 4; // Just the header.
 
   const total = instVars + arrayLength;
+  // Variables plus IVs requires the length word every time.
   if (instVars > 0 && arrayLength > 0) {
-    return 6 + 2 * total;
+    return 8 + 2 * total;
   }
   return 4 + 2 * total + (total >= 255 ? 4 : 0);
 }
@@ -445,10 +458,11 @@ export function sizeRequired(instVars, arrayLength) {
 function nextIdentityHash() {
   const hash = vm.nextIdentityHash;
   vm.nextIdentityHash = (vm.nextIdentityHash + 1) & MASK_CLASS_INDEX;
+  return hash;
 }
 
 // Reads the identityHash out of an object header.
-function identityHash(p) {
+export function identityHash(p) {
   return read(p) & MASK_CLASS_INDEX;
 }
 
@@ -622,6 +636,16 @@ export function wrapString(s) {
   return arr;
 }
 
+// Given a pointer to a String or Symbol, read it into a JS string.
+export function asJSString(p) {
+  const len = wordArraySize(p);
+  let s = '';
+  for (let i = 0; i < len; i++) {
+    s += String.fromCharCode(readWordArray(p, i));
+  }
+  return s;
+}
+
 // Allocate and return the pointer to a new Symbol containing the same
 // characters as the JS string provided.
 // NB: Symbols are allocated in tenured space! This means their pointers are
@@ -640,19 +664,22 @@ export function wrapSymbol(s) {
 }
 
 
-export function addClassToTable(cls) {
-  const next = read(MA_NEXT_CLASS_INDEX); // Raw number.
+export function addClassToTable(cls, opt_classHash) {
+  const next = opt_classHash || read(MA_NEXT_CLASS_INDEX); // Raw number.
 
   // Read the object header of the class, and rewrite its identity hash.
-  const hdr1 = read(p);
-  write(p, (hdr1 & ~MASK_CLASS_INDEX) | next);
-  write(MA_NEXT_CLASS_INDEX, next + 1);
+  const hdr1 = read(cls);
+  write(cls, (hdr1 & ~MASK_CLASS_INDEX) | next);
+  if (typeof opt_classHash === 'undefined') {
+    write(MA_NEXT_CLASS_INDEX, next + 1);
+  }
 
   // Store the class itself into the table.
-  const addr = CLASSTABLE_BASE + (next << 1);
+  const addr = classTable(next);
   if (addr >= CLASSTABLE_TOP) throw new Error('class table full!');
   write(addr, cls);
-  checkOldToNew(addr, cls);
+  // The class table is already GC roots, so no need to old->new it.
+  return next;
 }
 
 // Given a pointer to a class, return the number of inst vars it defines.
@@ -660,12 +687,14 @@ export function addClassToTable(cls) {
 export function behaviorToInstVars(cls) {
   const fmtRaw = fromSmallInteger(readIV(cls, BEHAVIOR_FORMAT));
   const fmt = (fmtRaw >> 24) & 0xf;
-  return instVars = fmtRaw & 0xffffff;
+  return fmtRaw & 0xffffff;
 }
 
 // Encodes a Behavior's format field for a FORMAT_FIXED_IV
 export function fixedInstVarsFormat(instVars) {
-  return instVars === 0 ? FORMAT_FIXED_IV : (FORMAT_FIXED_IV << 24) | instVars;
+  return instVars === 0 ?
+      (FORMAT_ZERO << 24) :
+      (FORMAT_FIXED_IV << 24) | instVars;
 }
 
 // Initialization

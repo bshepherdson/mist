@@ -1,30 +1,37 @@
 // Contains hand-rolled classes and methods necessary to bootstrap the system.
+import {vm} from './vm.mjs';
 import {
-  ASCII_TABLE,
-  BEHAVIOR_SUPERCLASS, BEHAVIOR_METHODS, BEHAVIOR_FORMAT,
-  MA_METAMETA,
+  BEHAVIOR_SUPERCLASS, BEHAVIOR_FORMAT, BEHAVIOR_METHODS,
+  FORMAT_VARIABLE, FORMAT_WORDS_EVEN,
+  MASK_CLASS_INDEX,
   METACLASS_THIS_CLASS,
-  CLASS_NAME, CLASS_SUBCLASSES,
+  CLASS_NAME,
   CLS_PROTO_OBJECT, CLS_OBJECT, CLS_UNDEFINED_OBJECT,
   CLS_CLASS, CLS_CLASS_DESCRIPTION, CLS_BEHAVIOR, CLS_METACLASS,
-  CLS_COLLECTION, CLS_DICTIONARY, CLS_IDENTITY_DICTIONARY, CLS_AA_NODE,
-  IV_BEHAVIOR, IV_CLASS_DESCRIPTION, IV_CLASS, IV_METACLASS,
+  CLS_COMPILED_METHOD, CLS_BLOCK_CLOSURE,
+  CLS_COLLECTION, CLS_SEQUENCEABLE_COLLECTION, CLS_ARRAYED_COLLECTION,
+  CLS_HASHED_COLLECTION, CLS_DICTIONARY, CLS_IDENTITY_DICTIONARY,
+  CLS_ARRAY, CLS_WORD_ARRAY, CLS_SYMBOL, CLS_STRING,
+  CLS_MAGNITUDE, CLS_NUMBER, CLS_INTEGER, CLS_SMALL_INTEGER,
+  IV_BEHAVIOR, IV_CLASS_DESCRIPTION, IV_CLASS, IV_METACLASS, IV_METHOD,
   MA_NIL,
-  addClassToTable, classOf, initObject, mkInstance,
-  readIV, writeIV, writeIVNew,
-  fromSmallInteger, toSmallInteger, wrapSymbol,
+  addClassToTable, alloc, allocObject,
+  classOf, classTable, mkInstance,
+  behaviorToInstVars, fixedInstVarsFormat,
+  read, readIV, write, writeIV, writeIVNew,
+  fromSmallInteger, toSmallInteger,
 } from './memory.mjs';
 
 // Bootstrapping proceeds in several phases:
 // 1. vm.mjs         VM's initial setup of the registers.
 // 2. memory.mjs     Memory created, a few pointers in memory updated.
 // 3. bootstrap.mjs
-//    a.                 Knot-tying setup of the innermost kernel of classes
-//    b.                 Define enough classes for IdentityDictionary to exist.
+//    a.               Knot-tying setup of the innermost kernel of classes
+//    b.               Define enough classes for IdentityDictionary to exist.
 // 4. dict.mjs       The hobo dictionary used to bootstrap into Smalltalk.
 // 5. corelib.mjs
-//    a.                 Upgrades the slightly hobo classes from bootstrap.mjs.
-//    b.                 Adds a bunch more built-in classes, like the booleans.
+//    a.               Upgrades the slightly hobo classes from bootstrap.mjs.
+//    b.               Adds a bunch more built-in classes, like the booleans.
 // 6. driver.mjs     Starts reading the input from the Smalltalk files.
 
 
@@ -110,8 +117,9 @@ export function defClass(clsIndex, name, superclass, opt_instVars, opt_classVars
   writeIVNew(metaclass, BEHAVIOR_METHODS, lateBinding.dictFactory());
 
   const upstreamClassVars = behaviorToInstVars(supermeta);
-  const metaFormat = fixedInstVarsFormat(classVars + (opt_classVars || 0));
-  writeIVNew(metaclass, BEHAVIOR_FORMAT, metaFormat);
+  const metaFormat = fixedInstVarsFormat(
+      upstreamClassVars + (opt_classVars || 0));
+  writeIVNew(metaclass, BEHAVIOR_FORMAT, toSmallInteger(metaFormat));
 
   // Add the metaclass to the class table.
   addClassToTable(metaclass);
@@ -122,82 +130,148 @@ export function defClass(clsIndex, name, superclass, opt_instVars, opt_classVars
 
   // Set its instance variables: name and subclasses.
   // TODO: Set subclasses, now or later.
-  const symbol = lateBinding.symbolize(name);
-  writeIVNew(cls, CLASS_NAME, name);
+  // Name might be a string (bootstrapping) or a pointer to a Symbol already.
+  const symbol = typeof name === 'string' ? lateBinding.symbolize(name) : name;
+  writeIVNew(cls, CLASS_NAME, symbol);
   writeIVNew(cls, BEHAVIOR_SUPERCLASS, superclass);
   writeIVNew(cls, BEHAVIOR_METHODS, lateBinding.dictFactory());
 
   const upstreamInstVars = behaviorToInstVars(superclass);
-  const format = fixedInstVarsFormat(instVars + (opt_instVars || 0));
-  writeIVNew(cls, BEHAVIOR_FORMAT, format);
+  const format = fixedInstVarsFormat(
+      upstreamInstVars + (opt_instVars || 0));
+  writeIVNew(cls, BEHAVIOR_FORMAT, toSmallInteger(format));
 
-  write(classTable(clsIndex), cls);
-  checkOldToNew(classTable(clsIndex), cls);
+  addClassToTable(cls, clsIndex);
 
   // Finally Metaclass itself has an instance variable to set: thisClass.
   writeIVNew(metaclass, METACLASS_THIS_CLASS, cls);
 
   lateBinding.addToClassDict(symbol, cls);
-  lateBinding.register(cls);
+  lateBinding.register(cls, name);
   return cls;
 }
 
 // We can't actually call defClass yet!
 // It needs to call mkInstance(CLS_METACLASS), which needs the format field of
 // Behavior.
-// It also needs to wrapSymbol for the class name, which needs CLS_SYMBOL to be
-// populated similarly.
-// So we populate these few specific classes by hand.
 // allocObject (and initObject underneath) only need class hashes, ie. raw
 // CLS_FOO values.
+// A few things (such as adding to the class dictionary and defining symbols)
+// are late-bound so they can be filled in later.
 
-// Remember that `Metaclass class class == Metaclass`, but `Metaclass class` is
-// a regular class with a name and such.
+// (Proto)Object instances have no instance variables. ProtoObject (the Class)
+// has 5 (inherited from Behavior and Class, its superclasses) and
+// ProtoObject class has 4 (it's an instance of Metaclass).
+//
+// The minimum we need to start constructing regular classes is:
+// ProtoObject, Object,
+// Behavior, ClassDescription, Class,
+// Metaclass, and then the metaclasses for all the above.
+//
+// We'll have to create these in an impoverished way, with fields blanked out,
+// and then populate them.
 const classTotalIVs = IV_BEHAVIOR + IV_CLASS_DESCRIPTION + IV_CLASS;
-const metaclass = allocObject(0, classTotalIVs, 0, alloc);
-writeIV(metaclass, BEHAVIOR_FORMAT, fixedInstVarsFormat(classTotalIVs));
-write(classTable(CLS_METACLASS), metaclass);
-checkOldToNew(classTable(CLS_METACLASS), metaclass);
+const metaclassTotalIVs = IV_BEHAVIOR + IV_CLASS_DESCRIPTION + IV_METACLASS;
 
+// That gives how many instance variables *this class's instances have!
+// Classes always have classTotalIVs.
+// This doesn't populate the name (no symbols) or the subclasses or methods
+// lists.
+function bootstrapClass(clsHash, itsClassHash, superclass, instVars) {
+  const cls = allocObject(itsClassHash, classTotalIVs, 0, alloc);
+  // The format describes the instances of this new class: fixed with instVars.
+  writeIVNew(cls, BEHAVIOR_FORMAT,
+      toSmallInteger(fixedInstVarsFormat(instVars)));
+  writeIV(cls, BEHAVIOR_SUPERCLASS, superclass);
+  write(classTable(clsHash), cls);
 
-const symbol = allocObject(0, classTotalIVs, 0, alloc);
-writeIV(symbol, BEHAVIOR_FORMAT, fixedInstVarsFormat(classTotalIVs));
-write(classTable(CLS_SYMBOL), symbol);
-checkOldToNew(classTable(CLS_SYMBOL), symbol);
+  // The identityHash of a class is its own class index.
+  const hdr1 = read(cls);
+  write(cls, (hdr1 & ~MASK_CLASS_INDEX) | clsHash);
+
+  return cls;
+}
+
+const protoObject = bootstrapClass(CLS_PROTO_OBJECT, 0, MA_NIL, 0);
+const object = bootstrapClass(CLS_OBJECT, 0, protoObject, 0);
+const behavior = bootstrapClass(CLS_BEHAVIOR, 0, object, IV_BEHAVIOR);
+const classDesc = bootstrapClass(CLS_CLASS_DESCRIPTION, 0, behavior,
+    IV_BEHAVIOR + IV_CLASS_DESCRIPTION);
+const class_ = bootstrapClass(CLS_CLASS, 0, classDesc, classTotalIVs);
+// Metaclass is itself a class, and its instances are metaclasses, so its
+// format field holds metaclassTotalIVs.
+const metaclass = bootstrapClass(CLS_METACLASS, 0, classDesc,
+    metaclassTotalIVs);
+
+// Register all of these classes as "impoverished" and in need of polishing up.
+lateBinding.register(protoObject, 'ProtoObject');
+lateBinding.register(object, 'Object');
+lateBinding.register(behavior, 'Behavior');
+lateBinding.register(classDesc, 'ClassDescription');
+lateBinding.register(class_, 'Class');
+lateBinding.register(metaclass, 'Metaclass');
+
+// Now those bootstrapping classes all have 0 in the class field, which needs
+// fixing. We create the metaclasses at nameless slots in the class table,
+// and get the number back.
+function bootstrapMetaclass(metaclassFor, superclass) {
+  const meta = allocObject(CLS_METACLASS, metaclassTotalIVs, 0, alloc);
+  writeIVNew(meta, BEHAVIOR_FORMAT,
+      toSmallInteger(fixedInstVarsFormat(classTotalIVs)));
+  writeIV(meta, BEHAVIOR_SUPERCLASS, superclass);
+  const hash = addClassToTable(meta);
+
+  // Write that into the target class's header.
+  const cls = read(classTable(metaclassFor));
+  const hdr2 = read(cls + 2);
+  write(cls + 2, (hdr2 & ~MASK_CLASS_INDEX) | hash);
+
+  // Metaclasses are themselves classes, so they need their identity hashes to
+  // be their own class indexes.
+  const hdr1 = read(meta);
+  write(meta, (hdr1 & ~MASK_CLASS_INDEX) | hash);
+
+  writeIV(meta, METACLASS_THIS_CLASS, cls);
+  return meta;
+}
+
+const protoObjectClass = bootstrapMetaclass(CLS_PROTO_OBJECT,
+    read(classTable(CLS_CLASS)));
+const objectClass = bootstrapMetaclass(CLS_OBJECT, protoObjectClass);
+const behaviorClass = bootstrapMetaclass(CLS_BEHAVIOR, objectClass);
+const classDescClass = bootstrapMetaclass(CLS_CLASS_DESCRIPTION, behaviorClass);
+const classClass = bootstrapMetaclass(CLS_CLASS, classDescClass);
+const metaclassClass = bootstrapMetaclass(CLS_METACLASS, classDescClass);
+
 
 
 // Now I think we can start declaring regular classes!
-const protoObject = defClass(CLS_PROTO_OBJECT, 'ProtoObject', null, 0);
-const object = defClass(CLS_OBJECT, 'Object', protoObject, 0);
-const behavior = defClass(CLS_BEHAVIOR, 'Behavior', object, IV_BEHAVIOR);
-const classDesc = defClass(CLS_CLASS_DESCRIPTION, 'ClassDescription',
-    behavior, IV_CLASS_DESCRIPTION);
-const class_ = defClass(CLS_CLASS, 'Class', classDesc, IV_CLASS);
-const metaclass = defClass(CLS_METACLASS, 'Metaclass', classDesc, IV_METACLASS);
-
 const nilObj = defClass(CLS_UNDEFINED_OBJECT, 'UndefinedObject', object, 0);
-mkInstance(nilObj, undefined, (_) => MA_NIL);
+mkInstance(nilObj, undefined /* arrayLength */, (_) => MA_NIL);
 
 
 // TODO This could probably be sped up by inlining, but it adds a lot of
 // complexity. Nested (word)arrays will probably do.
-defClass(CLS_COMPILED_METHOD, 'CompiledMethod', IV_METHOD);
-defClass(CLS_BLOCK_CLOSURE, 'BlockClosure', 4);
+defClass(CLS_COMPILED_METHOD, 'CompiledMethod', object, IV_METHOD);
+defClass(CLS_BLOCK_CLOSURE, 'BlockClosure', object, 4);
 
 // Collections, far enough for Symbol and String.
 const collection = defClass(CLS_COLLECTION, 'Collection', object, 0);
 const seqColl = defClass(CLS_SEQUENCEABLE_COLLECTION, 'SequenceableCollection',
     collection, 0);
-const arrColl = defClass(CLS_ARRAYED_COLLECTION, 'ArrayedCollection', seqColl, 0);
+const arrColl =
+    defClass(CLS_ARRAYED_COLLECTION, 'ArrayedCollection', seqColl, 0);
 
 const arr = defClass(CLS_ARRAY, 'Array', arrColl, 0);
 // Fix the format. It should be FORMAT_VARIABLE.
 writeIVNew(arr, BEHAVIOR_FORMAT, toSmallInteger(FORMAT_VARIABLE << 24));
 
-const str = defClass(CLS_STRING, 'String', arrColl, 0);
+const wordArr = defClass(CLS_WORD_ARRAY, 'WordArray', arrColl, 0);
+const str = defClass(CLS_STRING, 'String', wordArr, 0);
 const sym = defClass(CLS_SYMBOL, 'Symbol', str, 0, 1); // 1 class var: symbol dictionary.
 // Adjust the format! It's FORMAT_WORDS_EVEN and the allocation code handles the
 // length.
+writeIVNew(wordArr, BEHAVIOR_FORMAT, toSmallInteger(FORMAT_WORDS_EVEN << 24));
 writeIVNew(str, BEHAVIOR_FORMAT, toSmallInteger(FORMAT_WORDS_EVEN << 24));
 writeIVNew(sym, BEHAVIOR_FORMAT, toSmallInteger(FORMAT_WORDS_EVEN << 24));
 
@@ -207,13 +281,10 @@ const integer = defClass(CLS_INTEGER, 'Integer', num, 0);
 const smallInteger = defClass(CLS_SMALL_INTEGER, 'SmallInteger', integer, 0);
 
 
-const hashed = defClass(CLS_HASHED_COLLECTION, 'HashedCollection', collection, 2);
+const hashed =
+    defClass(CLS_HASHED_COLLECTION, 'HashedCollection', collection, 2);
 const dict = defClass(CLS_DICTIONARY, 'Dictionary', hashed, 0);
-const idDict = defClass(CLS_IDENTITY_DICTIONARY, 'IdentitiyDictionary', dict, 0);
-
-
-// Rule 10: The metaclass of Metaclass is an instance of Metaclass.
-// TODO I'm not sure this is done?
+const idDict = defClass(CLS_IDENTITY_DICTIONARY, 'IdentityDictionary', dict, 0);
 
 // We need the hobo implementation of "dictionaries" in dict.mjs. They're
 // not really dictionaries, just arrays with [k1, v1, k2, v2, ...] in arbitrary

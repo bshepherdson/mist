@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"io/ioutil"
 	"os"
 
 	"github.com/shepheb/mist/parser"
@@ -25,14 +24,15 @@ func main() {
 		p.Parse()
 	}
 
-	str, err := Jsonify(list.cp.bytecodes)
+	arr := list.cp.Emit()
+	f, err := os.Create("st.bin")
+	defer f.Close()
 	if err != nil {
-		fmt.Printf("Failed to encode JSON: %v\n", err)
+		fmt.Printf("Failed to open output file: %v\n", err)
 		return
 	}
-	err = ioutil.WriteFile("st.json", []byte(str), 0644)
-	if err != nil {
-		fmt.Printf("Failed to write JSON file: %v\n", err)
-		return
+
+	for _, b := range arr {
+		f.Write([]byte{byte(b & 0xff), byte(b >> 8)})
 	}
 }

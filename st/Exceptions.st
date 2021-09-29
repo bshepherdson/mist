@@ -352,9 +352,9 @@ CannotReturn subclass: #ContextCannotReturn
   ^ ((self new result: aValue) target: aContext) signal
 !!
 
-! NullObject
+! UndefinedObject
 ! handleSignal: anError
-  <builtin: 'throw'>
+  <primitive: 21>
 !!
 
 

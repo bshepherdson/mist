@@ -107,7 +107,7 @@ func (l *dummyListener) VisitArrayElement() {
 func (l *dummyListener) VisitIdentifier(id *Ident) {
 }
 
-func (l *dummyListener) VisitPrimitive(keyword, parameter string) {
+func (l *dummyListener) VisitPrimitive(keyword string, number int) {
 }
 
 func (l *dummyListener) VisitSymbol(sym *Symbol) {

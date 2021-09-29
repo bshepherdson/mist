@@ -9,26 +9,20 @@ ST_FILES=st/Kernel.st st/Exceptions.st \
 				 st/Strings.st st/SUnit.st
 ST_TESTS=st/tests/Basics.st
 
-all.js: js/*.js
-	cat $(JS_FILES) > $@
-
 mist: *.go parser/*.go
 	$(GO) build
 
-plain.json: st/*.st mist
+plain.bin: st/*.st mist
 	./mist $(ST_FILES)
-	mv st.json plain.json
+	mv st.bin plain.bin
 
-testing.json: st/*.st st/tests/*.st mist
+testing.bin: st/*.st st/tests/*.st mist
 	./mist $(ST_FILES) $(ST_TESTS)
-	mv st.json testing.json
+	mv st.bin testing.bin
 
-all: plain.json
+all: plain.bin
 
-run: all FORCE
-	$(NODEJS) run.js
-
-test: testing.json
+test: testing.bin
 
 watch:
 	while true; do \
@@ -37,7 +31,7 @@ watch:
 	done
 
 clean: FORCE
-	rm -f all.js st.json mist
+	rm -f st.bin plain.bin testing.bin mist
 
 FORCE:
 

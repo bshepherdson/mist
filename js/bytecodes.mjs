@@ -1,29 +1,45 @@
+import {
+  classOf, classTable,
+  BEHAVIOR_METHODS, BEHAVIOR_SUPERCLASS,
+  CTX_METHOD, CTX_LOCALS, CTX_SENDER, CTX_PC, CTX_STACK_INDEX,
+  METHOD_LITERALS,
+  MA_CLASS_DICT,
+  MA_NIL, MA_TRUE, MA_FALSE,
+  push, pop,
+  fromSmallInteger, toSmallInteger,
+  read, readArray, readIV,
+  writeArray, writeIV,
+} from './memory.mjs';
+import {lookup} from './dict.mjs';
+import {newContext} from './corelib.mjs';
+
 // Locals on contexts are an Array, in this order:
-// self, methodOwner, args..., locals + block args...
+// self, args..., locals + block args...
 // self is the original receiver the message was actually sent to.
 // methodOwner is self, or the superobject corresponding to where the method was
 // found.
 
-function readLocal(ctx, number) {
-  const locals = readAt(ctx, CTX_LOCALS); // Pointer to a pointer array.
-  return readAt(locals, PA_BASE + 2*number);
+export function readLocal(ctx, number) {
+  const locals = readIV(ctx, CTX_LOCALS); // Pointer to a pointer array.
+  return readArray(locals, number);
+}
+
+export function readLiteral(ctx, number) {
+  const method = readIV(ctx, CTX_METHOD);
+  const lits = readIV(method, METHOD_LITERALS); // Pointer to a pointer array.
+  return readArray(lits, number);
 }
 
 // Returns the pointer for reference; used to check for writing from old to new.
-function writeLocal(ctx, number, value) {
-  const locals = readAt(ctx, CTX_LOCALS); // Pointer to a pointer array.
-  writeAt(locals, PA_BASE + 2*number, value);
-  return locals + PA_BASE + 2*number;
+export function writeLocal(ctx, number, value) {
+  const locals = readIV(ctx, CTX_LOCALS); // Pointer to a pointer array.
+  writeArray(locals, number, value);
 }
 
 // Returns the pointer to self, the 0th local.
 // This is the actual receiver, even if the method is defined on a superclass.
-function self(ctx) {
+export function self(ctx) {
   return readLocal(ctx, 0);
-}
-
-function superObject(ctx) {
-  return readLocal(ctx, 1);
 }
 
 
@@ -75,18 +91,19 @@ function pushOp(process, ctx, count, operand) {
     case 1: // Push local whose number is the operand.
       return push(ctx, readLocal(ctx, operand));
     case 2: // Push instance variable whose number is the operand.
-      return push(ctx, readAt(ctx, OBJ_MEMBERS_BASE + 2*operand));
+      return push(ctx, readIV(self(ctx), operand));
     case 3: // Push global by looking up the literal symbol in SystemDictionary.
-      const g = systemDictionaryLookup(readLiteral(ctx, operand));
+      const dict = read(MA_CLASS_DICT);
+      const g = lookup(dict, readLiteral(ctx, operand));
       return push(ctx, g);
-    case 4: // Push global from the defined list.
-      const g = globalsDictionary[operand];
-      return push(ctx, g);
+    case 4: // Push global by the class index.
+      const classIndex = operand;
+      return push(ctx, read(classTable(classIndex)));
     case 5: // Push literal generally.
       return push(ctx, readLiteral(ctx, operand));
     case 6: // Push inline number - signed 8-bit operand.
       let n = operand < 128 ? operand : operand - 256;
-      return push(ctx, wrapNumber(n));
+      return push(ctx, toSmallInteger(n));
     default:
       throw new Error('Unknown push type: ' + count);
   }
@@ -94,21 +111,18 @@ function pushOp(process, ctx, count, operand) {
 }
 
 function storeOp(process, ctx, count, operand) {
-  // TODO These are the ops that require checking for old -> new pointer writes!
   const value = pop(ctx);
   if (count === 0) { // Store local - operand gives the local number to use.
-    const pLocal = writeLocal(ctx, operand, value);
-    checkOldToNew(pLocal, value);
+    writeLocal(ctx, operand, value);
   } else if (count === 1) {
     const me = self(ctx);
-    writeAt(me, OBJ_MEMBERS_BASE + 2*operand, value);
-    checkOldToNew(me + OBJ_MEMBERS_BASE + 2*operand, value);
+    writeIV(me, operand, value);
   } else {
     throw new Error('Invalid store destination ' + count);
   }
 }
 
-function sendOp(process, ctx, count, operand, isSuper, opt_returnCtx) {
+export function sendOp(process, ctx, count, selector, isSuper) {
   // The receiver is on the stack, followed by the arguments: rcvr arg1 arg2...
   // We need to create a new array containing 2 + argc + locals cells.
 
@@ -116,36 +130,32 @@ function sendOp(process, ctx, count, operand, isSuper, opt_returnCtx) {
   // rcvr arg1 arg2 ___
   // 2    3    4    5
   // So SP = 5; we want 2. That's SP - argc - 1.
-  const ixReceiver = readSmallInteger(ctx + CTX_STACK_INDEX) - count - 1;
-  const argv = ctx + CTX_STACK_BASE + 2*ixReceiver + 2;
-  const receiver = readAt(ctx, argv - 2);
+  const ixReceiver = fromSmallInteger(readIV(ctx, CTX_STACK_INDEX)) - count - 1;
+  const receiver = readArray(ctx, ixReceiver);
   // We need to pop those off the stack. Conveniently, the empty-ascending new
   // index is ixReceiver.
-  wrapSmallInteger(ctx + CTX_STACK_INDEX, ixReceiver);
+  writeIV(ctx, CTX_STACK_INDEX, toSmallInteger(ixReceiver));
 
   // We need to look up the method we're wanting to call.
-  const selector = readLiteral(ctx, operand); // A symbol.
   let method = null;
 
-  let sup = receiver;
-  let cls = readAt(receiver, OBJ_CLASS);
+  let cls = classOf(receiver);
   if (isSuper) {
     // Super sends begin the search at the super of the owner of current method.
-    sup = readAt(superObj(ctx), OBJ_SUPER);
-    cls = readAt(readAt(ctx, METHOD_CLASS), CLASS_SUPERCLASS);
+    cls = readIV(readIV(ctx, CTX_METHOD), METHOD_CLASS);
+    cls = readIV(cls, BEHAVIOR_SUPERCLASS);
   }
 
-  while (cls && cls != MA_NIL) {
-    const dict = readAt(cls, CLASS_METHODS);
-    const found = identDictLookup(dict, selector);
-    if (found && found != MA_NIL) {
+  while (cls && cls !== MA_NIL) {
+    const dict = readIV(cls, BEHAVIOR_METHODS);
+    const found = lookup(dict, selector);
+    if (found && found !== MA_NIL) {
       method = found;
       break;
     }
 
     // Didn't find it, so escalate to the superclass.
-    cls = readAt(cls, CLASS_SUPERCLASS);
-    sup = readAt(sup, OBJ_SUPER);
+    cls = readIV(cls, BEHAVIOR_SUPERCLASS);
   }
 
   if (!method) {
@@ -155,35 +165,27 @@ function sendOp(process, ctx, count, operand, isSuper, opt_returnCtx) {
   // Now we have all the pieces: receiver, target method, the superobject and
   // class where we found it, arguments, and local count.
   // Check that the argument count matches the method.
-  const expectedArgs = readSmallInteger(method + METHOD_ARGC);
+  const expectedArgs = fromSmallInteger(readIV(method, METHOD_ARGC));
   if (expectedArgs !== count) {
     throw new ArgumentCountMismatchError('FIXME', selector, expectedArgs, count);
   }
 
   // Get the number of locals needed.
-  const nLocals = readSmallInteger(method + METHOD_LOCALS);
-  // Create an array of 2 + argc + nLocals.
-  const locals = allocPointerArray(2 + count + nLocals);
-  writeAt(locals, PA_BASE, receiver);
-  writeAt(locals, PA_BASE + 2, sup);
+  const nLocals = fromSmallInteger(readIV(method, METHOD_LOCALS));
+  // Create an array of 1 + argc + nLocals.
+  const locals = mkInstance(read(classTable(CLS_ARRAY)), 1 + count + nLocals);
+  writeIV(locals, 0, receiver);
   for (let i = 0; i < count; i++) {
-    const arg = readAt(argv, 2 * i);
-    writeAt(locals, PA_BASE + 4 + 2 * i, arg);
+    const arg = readArray(ctx, ixReceiver + i + 1);
+    writeArray(locals, 1 + i, arg);
   }
   // Locals are already initialized to nil.
 
   // Create a context.
-  const newCtx = allocPointerArray(24, true); // Skip initializing.
-  writeAt(newCtx, OBJ_SUPER, MA_OBJECT_INSTANCE);
-  writeAt(newCtx, OBJ_CLASS, CLS_CONTEXT);
-  writeAt(newCtx, CTX_METHOD, method);
-  writeAt(newCtx, CTX_LOCALS, locals);
-  writeAt(newCtx, CTX_PC, wrapSmallInteger(0));
-  writeAt(newCtx, CTX_SENDER, opt_returnCtx || ctx);
-  writeAt(newCtx, CTX_STACK_INDEX, wrapSmallInteger(0)); // Empty ascending, 0-based.
+  const newCtx = newContext(method, ctx, locals);
 
   // Our new context is ready. Push it onto the current process as the new top.
-  writeAt(process, PROCESS_CONTEXT, newCtx);
+  writeIV(process, PROCESS_CONTEXT, newCtx);
   return newCtx;
 }
 
@@ -198,21 +200,18 @@ function sendOp(process, ctx, count, operand, isSuper, opt_returnCtx) {
 function startBlock(process, ctx, argc, argStart) {
   const len = readPC(ctx); // PC now points at the first opcode of the block.
 
-  const block = allocObject(CLS_BLOCK_CLOSURE, MA_OBJECT_INSTANCE, 4);
-  writeAt(block, BLOCK_ARGC, wrapSmallInteger(argc));
+  const block = mkInstance(read(classTable(CLS_BLOCK_CLOSURE)));
+  writeIV(block, BLOCK_ARGC, toSmallInteger(argc));
   // Index into the parent locals where my args and locals are.
-  writeAt(block, BLOCK_ARGV, wrapSmallInteger(argStart));
+  writeIV(block, BLOCK_ARGV, toSmallInteger(argStart));
   // No need to read and reallocate numbers, this can be a pointer copy if
   // they're pointers.
-  writeAt(block, BLOCK_PC_START, readAt(ctx, CTX_PC));
+  writeIV(block, BLOCK_PC_START, readIV(ctx, CTX_PC));
 
-  // Need to find the containing context. If the current context is running a
-  // block, chase that back until we find a context whose method is a
-  // CompiledMethod rather than a block.
-  let parentCtx = ctx;
-  while (readAt(parentCtx, OBJ_CLASS) === CLS_BLOCK_CLOSURE) {
-    parentCtx = readAt(parentCtx, BLOCK_CONTEXT);
-  }
+  // Need to find the containing context. That's ctx if this is a top-level
+  // block. If ctx is a block, though, pull its method field.
+  const parentCtx = hasClass(ctx, CLS_BLOCK_CLOSURE) ?
+      readIV(ctx, CTX_METHOD) : ctx;
 
   // Now parentCtx is really the containing method's context, which holds the
   // locals.
@@ -220,11 +219,12 @@ function startBlock(process, ctx, argc, argStart) {
   // Proof: the parent method must have been called before the block, so the
   // parentCtx is older than this new BlockClosure, this always a new -> new or
   // new -> old pointer, even if a BlockClosure long outlives the original call.
-  writeAt(block, BLOCK_CONTEXT, parentCtx);
+  writeIVNew(block, BLOCK_CONTEXT, parentCtx);
 
   // Final steps:
   // Advance PC past the block's code.
-  adjustSmallInteger(ctx, CTX_PC, len);
+  const pc = fromSmallInteger(readIV(ctx, CTX_PC));
+  writeIV(ctx, CTX_PC, toSmallInteger(pc + len));
 
   // And push the new block onto the stack.
   push(ctx, block);
@@ -232,12 +232,12 @@ function startBlock(process, ctx, argc, argStart) {
 
 
 
-function answer(process, ctx, value) {
+export function answer(process, ctx, value) {
   // We need to pop the sender context to the top of the process chain, and push
   // the value onto its stack.
   // Special case: top-level return to an empty chain. If the sender context is
   // nil, don't try to push!
-  const parentCtx = readAt(ctx, CTX_SENDER);
+  const parentCtx = readIV(ctx, CTX_SENDER);
   popContext(process);
   if (parentCtx !== MA_NIL) {
     push(parentCtx, value); // Can be an old -> new store, but push() checks.
@@ -249,13 +249,13 @@ function blockAnswer(process, ctx) {
   // context chain. If the sender chain doesn't contain our parent method's
   // context, then this is an error. (It's legal to be in that situation, but
   // not to try to do a block return from it.)
-  const block = readAt(ctx, CTX_METHOD);
-  const container = readAt(block, BLOCK_CONTEXT);
-  let chain = readAt(ctx, CTX_SENDER);
+  const block = readIV(ctx, CTX_METHOD);
+  const container = readIV(block, BLOCK_CONTEXT);
+  let chain = readIV(ctx, CTX_SENDER);
   while (true) {
     // Good case: this ancestor is the containing method.
     if (chain === container) break;
-    chain = readAt(chain, CTX_SENDER);
+    chain = readIV(chain, CTX_SENDER);
     // Bad case: we've run out of senders and failed to find the method.
     if (!chain || chain === MA_NIL) {
       throw new Error(
@@ -266,13 +266,14 @@ function blockAnswer(process, ctx) {
   // If we got to here, we know this is a legal block return.
   // Push the value to the containing method's *parent's* stack, then pop to
   // be running that context.
-  const targetCtx = readAt(container, CTX_SENDER);
+  const targetCtx = readIV(container, CTX_SENDER);
   push(targetCtx, pop(ctx));
   popContext(process, targetCtx);
 }
 
 function skip(process, ctx, delta) {
-  adjustSmallInteger(ctx, CTX_PC, delta);
+  const pc = fromSmallInteger(readIV(ctx, CTX_PC));
+  writeIV(ctx, CTX_PC, toSmallInteger(pc + delta));
 }
 
 function maybeSkip(process, ctx, on, toPush, delta) {
@@ -313,7 +314,7 @@ function miscOp(process, ctx, count, operand) {
   throw new Error('unknown misc op ' + count);
 }
 
-const primitives = {};
+export const primitives = {};
 
 function primitiveOp(process, ctx, count, operand) {
   const prim = primitives[operand];
@@ -326,7 +327,7 @@ function primitiveOp(process, ctx, count, operand) {
   // ignored(?)
 }
 
-function execute(process, ctx, bc) {
+export function execute(process, ctx, bc) {
   // First, we split the bytecode into the three fields.
   const op = (bc >> 12) & 0xf;
   const count = (bc >> 8) & 0xf;
@@ -335,8 +336,8 @@ function execute(process, ctx, bc) {
   switch (op) {
     case 0: return pushOp(process, ctx, count, operand);
     case 1: return storeOp(process, ctx, count, operand);
-    case 2: return sendOp(process, ctx, count, operand, false);
-    case 3: return sendOp(process, ctx, count, operand, true);
+    case 2: return sendOp(process, ctx, count, readLiteral(ctx, operand), false);
+    case 3: return sendOp(process, ctx, count, readLiteral(ctx, operand), true);
     case 4: throw new Error('canned send is not implemented yet');
     case 5: return startBlock(process, ctx, count, operand);
     case 6: return miscOp(process, ctx, count, operand);

@@ -183,9 +183,9 @@ func (l *debugListener) VisitIdentifier(id *Ident) {
 	l.inner.VisitIdentifier(id)
 }
 
-func (l *debugListener) VisitPrimitive(keyword, parameter string) {
-	fmt.Printf("VisitPrimitive %s: %s\n", keyword, parameter)
-	l.inner.VisitPrimitive(keyword, parameter)
+func (l *debugListener) VisitPrimitive(keyword string, number int) {
+	fmt.Printf("VisitPrimitive %s: %d\n", keyword, number)
+	l.inner.VisitPrimitive(keyword, number)
 }
 
 func (l *debugListener) VisitSymbol(sym *Symbol) {

@@ -3,6 +3,7 @@ package parser
 import (
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 )
 
@@ -260,13 +261,17 @@ func (p *Parser) parseExprLine() {
 	if t1 != nil && t1.Id() == TBinary && t1.(*BinOp).Op == "<" {
 		// Keyword, colon and string.
 		keyword := p.expect(TKeyword, "keyword")
-		str := p.expect(TString, "string literal")
+		number := p.expect(TNumber, "primitive number")
 		gt := p.expect(TBinary, "> closing bracket")
-		if keyword == nil || str == nil || gt == nil || gt.(*BinOp).Op != ">" {
-			p.out.Error(fmt.Errorf("Malformed primitive: got %v %v %v\n", keyword, str, gt))
+		if keyword == nil || number == nil || gt == nil || gt.(*BinOp).Op != ">" {
+			p.out.Error(fmt.Errorf("Malformed primitive: got %v %v %v\n", keyword, number, gt))
 			return
 		}
-		p.out.VisitPrimitive(ident(keyword), str.(*StringLit).Str)
+		n, err := strconv.ParseInt(number.(*Number).Integral, 10, 8)
+		if err != nil {
+			p.out.Error(fmt.Errorf("Could not parse primitive number"))
+		}
+		p.out.VisitPrimitive(ident(keyword), int(n))
 		return
 	}
 
@@ -517,6 +522,7 @@ func (p *Parser) parseConstArray() {
 	p.lexer.constArrayDepth++
 	p.out.EnterConstArray()
 
+loop:
 	for {
 		t := p.lexer.Advance()
 		switch t.Id() {
@@ -525,7 +531,7 @@ func (p *Parser) parseConstArray() {
 			p.parseConstArray()
 		case TParenClose:
 			// End of this array, break
-			break
+			break loop
 		case TSymbol:
 			// Symbols (no hash on these)
 			p.out.VisitSymbol(t.(*Symbol))
