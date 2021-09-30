@@ -181,6 +181,8 @@ Javascript functions."
 ! UndefinedObject
 ! ifNil: aBlock
   ^ aBlock value
+! ifNotNil: aBlock
+  ^ self
 ! ifNil: aBlock ifNotNil: otherBlock
   ^ aBlock value
 ! isNil
@@ -194,6 +196,8 @@ Javascript functions."
 ! Object
 ! ifNil: aBlock
   ^ self
+! ifNotNil: aBlock
+  ^ aBlock value
 ! ifNil: aBlock ifNotNil: otherBlock
   ^ otherBlock value
 ! ifNotNil: aBlock ifNil: otherBlock

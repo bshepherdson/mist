@@ -3,6 +3,7 @@ import './corelib';
 import './bytecodes';
 import './primitives';
 import {DebugDriver, Driver, WordStream} from './driver';
+import './debug';
 
 function main() {
   fetch('/testing.bin').then(resp => resp.arrayBuffer()).then(buf => {

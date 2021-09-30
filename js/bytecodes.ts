@@ -1,6 +1,6 @@
 import {
   stw, stl, ptr,
-  classOf, classTable, hasClass,
+  classOf, classTable, hasClass, methodFor,
   BEHAVIOR_METHODS, BEHAVIOR_SUPERCLASS,
   BLOCK_ARGC, BLOCK_ARGV, BLOCK_PC_START, BLOCK_CONTEXT,
   CTX_METHOD, CTX_LOCALS, CTX_SENDER, CTX_PC, CTX_STACK_INDEX,
@@ -32,7 +32,7 @@ export function readLocal(ctx: ptr, index: number): ptr {
 }
 
 export function readLiteral(ctx: ptr, index: number): ptr {
-  const method = readIV(ctx, CTX_METHOD);
+  const method = methodFor(ctx);
   const lits = readIV(method, METHOD_LITERALS); // Pointer to a pointer array.
   return readArray(lits, index);
 }
@@ -149,7 +149,7 @@ export function sendOp(process: ptr, ctx: ptr, count: number, selector: ptr,
   let cls = classOf(receiver);
   if (isSuper) {
     // Super sends begin the search at the super of the owner of current method.
-    cls = readIV(readIV(ctx, CTX_METHOD), METHOD_CLASS);
+    cls = readIV(methodFor(ctx), METHOD_CLASS);
     cls = readIV(cls, BEHAVIOR_SUPERCLASS);
   }
 
@@ -158,12 +158,15 @@ export function sendOp(process: ptr, ctx: ptr, count: number, selector: ptr,
       // This is a metaclass - grab its class and get *its* name.
       const theClass = readIV(cls, METACLASS_THIS_CLASS);
       const className = readIV(theClass, CLASS_NAME);
+      console.log('Searching ' + asJSString(className));
     } else {
       // Otherwise this is a Class, ClassDescription, or Behavior.
       const className = readIV(cls, CLASS_NAME);
+      console.log('Searching ' + asJSString(className));
     }
 
     const dict = readIV(cls, BEHAVIOR_METHODS);
+    printDict(dict);
     const found = lookup(dict, selector);
     if (found && found !== MA_NIL) {
       method = found;
@@ -229,8 +232,9 @@ function startBlock(process: ptr, ctx: ptr, argc: number, argStart: number) {
 
   // Need to find the containing context. That's ctx if this is a top-level
   // block. If ctx is a block, though, pull its method field.
-  const parentCtx = hasClass(ctx, CLS_BLOCK_CLOSURE) ?
-      readIV(ctx, CTX_METHOD) : ctx;
+  const methodOrBlock = readIV(ctx, CTX_METHOD);
+  const parentCtx = hasClass(methodOrBlock, CLS_BLOCK_CLOSURE) ?
+      readIV(methodOrBlock, BLOCK_CONTEXT) : ctx;
 
   // Now parentCtx is really the containing method's context, which holds the
   // locals.
@@ -248,8 +252,6 @@ function startBlock(process: ptr, ctx: ptr, argc: number, argStart: number) {
   // And push the new block onto the stack.
   push(ctx, block);
 }
-
-
 
 export function answer(process: ptr, ctx: ptr, value: ptr) {
   // We need to pop the sender context to the top of the process chain, and push

@@ -624,6 +624,7 @@ export function checkOldToNew(p: ptr, target: ptr) {
 export function arraySize(p: ptr): number {
   const hdr = decodeHeader(p);
   if (hdr.pa) return hdr.pa[0];
+  if (Object.keys(hdr).length === 0) return 0; // Special case: 0-length array
   throw new Error('Cannot take the array size of a non-array object');
 }
 
@@ -714,6 +715,14 @@ export function fixedInstVarsFormat(instVars: number): stl {
       (Format.ZERO << 24) :
       (Format.FIXED_IV << 24) | instVars;
 }
+
+export function methodFor(ctx: ptr): ptr {
+  const methodOrBlock = readIV(ctx, CTX_METHOD);
+  return hasClass(methodOrBlock, CLS_COMPILED_METHOD) ?
+      methodOrBlock :
+      readIV(readIV(methodOrBlock, BLOCK_CONTEXT), CTX_METHOD);
+}
+
 
 // Initialization
 // This sets up some key values in the special area.

@@ -65,15 +65,13 @@ func (c *Compiler) startMethod(selector string, argc, locals int) {
 	}
 }
 
-func (c *Compiler) endMethod() {
+func (c *Compiler) endMethod(locals int) {
 	// Encode the method into its array form.
 	// They are #( #selectorSymbol argc locals #( bytecode ) #( literals ) )
-	// TODO Probably want to add byte arrays as another type? It'll make bytecode
-	// way more compact, N + 1 words instead of 3N + 1.
 	m := []STLiteral{
 		symbolLit(c.method.selector),
 		intLit(c.method.params),
-		intLit(c.method.locals),
+		intLit(locals),
 		rawArray(c.method.bytecodes),
 		litArray(c.method.literals),
 	}

@@ -256,7 +256,6 @@ mkInstance(nilObj, undefined /* arrayLength */, (_) => MA_NIL);
 // TODO This could probably be sped up by inlining, but it adds a lot of
 // complexity. Nested (word)arrays will probably do.
 defClass(CLS_COMPILED_METHOD, 'CompiledMethod', object, IV_METHOD);
-defClass(CLS_BLOCK_CLOSURE, 'BlockClosure', object, 4);
 
 // Collections, far enough for Symbol and String.
 const collection = defClass(CLS_COLLECTION, 'Collection', object, 0);

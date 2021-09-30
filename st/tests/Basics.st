@@ -140,7 +140,6 @@ TestCase subclass: #LogicBasics.
   self assert: (17   ifNotNil: [6] ifNil: [7]) equals: 6
 !!
 
-Transcript show: '7'.
-"Transcript show: (ArithmeticBasics suite , LogicBasics suite) run printString."
+Transcript show: (ArithmeticBasics suite , LogicBasics suite) run printString.
 99 halt.
 

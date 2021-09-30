@@ -134,7 +134,7 @@ primitives[12] = function(process: ptr, ctx: ptr) {
 
 function runBlock(process: ptr, ctx: ptr, argc: number) {
   const block = self(ctx);
-  const argcWanted = fromSmallInteger(readIV(ctx, BLOCK_ARGC));
+  const argcWanted = fromSmallInteger(readIV(block, BLOCK_ARGC));
   if (argc !== argcWanted) {
     throw new BlockArgumentCountMismatchError(argcWanted, argc);
   }

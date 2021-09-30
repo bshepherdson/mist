@@ -372,7 +372,7 @@ func (l *STL) LeaveMethod() {
 		l.cp.answerSelf()
 	}
 
-	l.cp.endMethod()
+	l.cp.endMethod(l.methodLocals)
 }
 
 func (l *STL) EnterReturn() {

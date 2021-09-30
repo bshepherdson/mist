@@ -6,7 +6,7 @@ import {
   PROCESS_CONTEXT, PROCESS_NEXT, PROCESS_PREV,
   PROCESS_TABLE_READY, PROCESS_TABLE_NEXT_PRIORITY, PROCESS_PROCESS_TABLE,
   MA_NIL,
-  classTable, mkInstance,
+  methodFor, classTable, mkInstance,
   fromSmallInteger, toSmallInteger,
   read, readWordArray, readIV, writeIV,
 } from './memory';
@@ -68,7 +68,7 @@ function nextThread(): ptr|null {
 // Helper that reads a bytecode and increments PC.
 export function readPC(ctx: ptr): stw {
   const pc = fromSmallInteger(readIV(ctx, CTX_PC));
-  const method = readIV(ctx, CTX_METHOD);
+  const method = methodFor(ctx);
   const bcArray = readIV(method, METHOD_BYTECODE);
   const bc = readWordArray(bcArray, pc);
 
