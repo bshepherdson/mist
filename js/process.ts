@@ -1,4 +1,5 @@
 import {
+  ptr, stw,
   CTX_METHOD, CTX_PC, CTX_SENDER,
   CLS_PROCESS,
   METHOD_BYTECODE,
@@ -8,9 +9,9 @@ import {
   classTable, mkInstance,
   fromSmallInteger, toSmallInteger,
   read, readWordArray, readIV, writeIV,
-} from './memory.mjs';
-import {execute} from './bytecodes.mjs';
-import {vm} from './vm.mjs';
+} from './memory';
+import {execute} from './bytecodes';
+import {vm} from './vm';
 
 // Processes and priorities
 //
@@ -53,19 +54,19 @@ import {vm} from './vm.mjs';
 
 // Examines the process table to find and return the next Process that should be
 // run. Returns JS null if none is ready to run.
-function nextThread() {
+function nextThread(): ptr|null {
   let pt = vm.processTable;
   while (pt != MA_NIL) {
-    const ready = readAt(pt, PROCESS_TABLE_READY);
+    const ready = readIV(pt, PROCESS_TABLE_READY);
     if (ready != MA_NIL) return ready;
-    pt = readAt(pt, PROCESS_TABLE_NEXT_PRIORITY);
+    pt = readIV(pt, PROCESS_TABLE_NEXT_PRIORITY);
   }
   // If we reach here, then there's nothing ready to run - so idle.
   return null;
 }
 
 // Helper that reads a bytecode and increments PC.
-export function readPC(ctx) {
+export function readPC(ctx: ptr): stw {
   const pc = fromSmallInteger(readIV(ctx, CTX_PC));
   const method = readIV(ctx, CTX_METHOD);
   const bcArray = readIV(method, METHOD_BYTECODE);
@@ -78,7 +79,7 @@ export function readPC(ctx) {
 
 // Given a pointer to the current process, execute a single step of its
 // bytecode. This is the fundamental VM operation.
-export function tick(process) {
+export function tick(process: ptr) {
   const ctx = readIV(process, PROCESS_CONTEXT);
   const bc = readPC(ctx);
   // Executes a single bytecode!
@@ -87,14 +88,14 @@ export function tick(process) {
 
 // Given the ST pointer to a new context, makes it the top of this process.
 // ASSUMES the new context's sender is already set properly!
-export function pushContext(process, newContext) {
+export function pushContext(process: ptr, newContext: ptr) {
   writeIV(process, PROCESS_CONTEXT, newContext);
 }
 
 // Pops a context off this process, making the sender of the old one the new
 // one for the process. If the sender is nil, this thread is expired and we can
 // remove this process from the process table.
-export function popContext(process, opt_ctx) {
+export function popContext(process: ptr, opt_ctx?: ptr): boolean {
   const oldCtx = readIV(process, PROCESS_CONTEXT);
   const sender = opt_ctx || readIV(oldCtx, CTX_SENDER);
   if (sender != MA_NIL) {
@@ -129,7 +130,8 @@ export function popContext(process, opt_ctx) {
 }
 
 // Adds this context as the root of a new user-priority thread.
-export function fork(ctx) {
+// Returns the new Process.
+export function fork(ctx: ptr): ptr {
   let pt = readIV(vm.processTable, PROCESS_TABLE_NEXT_PRIORITY);
   pt = readIV(pt, PROCESS_TABLE_NEXT_PRIORITY);
   const proc = mkInstance(read(classTable(CLS_PROCESS)));

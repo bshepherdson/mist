@@ -1,8 +1,8 @@
-import './bootstrap.mjs';
-import './corelib.mjs';
-import './bytecodes.mjs';
-import './primitives.mjs';
-import {DebugDriver, Driver, WordStream} from './driver.mjs';
+import './bootstrap';
+import './corelib';
+import './bytecodes';
+import './primitives';
+import {DebugDriver, Driver, WordStream} from './driver';
 
 function main() {
   fetch('/testing.bin').then(resp => resp.arrayBuffer()).then(buf => {

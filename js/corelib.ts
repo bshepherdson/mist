@@ -1,24 +1,26 @@
 // A later stage of bootstrapping, which runs after the initial bootstrap, then
 // the AA tree functionality.
 
-import {defClass, impoverishedClasses, lateBinding} from './bootstrap.mjs';
-import {insert, mkDict} from './dict.mjs';
+import {defClass, impoverishedClasses, lateBinding} from './bootstrap';
+import {insert, mkDict} from './dict';
 import {
+  ptr, Format,
   CLS_BOOLEAN, CLS_TRUE, CLS_FALSE,
   CLS_ASSOCIATION, CLS_CONTEXT, CLS_BLOCK_CLOSURE,
   CLS_ARRAY, CLS_CHARACTER, CLS_PROCESS, CLS_PROCESS_TABLE, CLS_OBJECT,
   CTX_PC, CTX_STACK_INDEX, CTX_METHOD, CTX_LOCALS, CTX_SENDER,
-  MA_BOOLEAN, MA_TRUE, MA_FALSE, MA_CLASS_DICT, MA_NIL,
+  MA_TRUE, MA_FALSE, MA_CLASS_DICT, MA_NIL,
   BEHAVIOR_FORMAT, BEHAVIOR_METHODS, CLASS_NAME,
-  FORMAT_VARIABLE_IV, CLASS_VAR1, PROCESS_TABLE_NEXT_PRIORITY, IV_BLOCK,
+  CLASS_VAR1, PROCESS_TABLE_NEXT_PRIORITY, IV_BLOCK,
   basicNew, classOf, classTable, mkInstance,
   fromSmallInteger, toSmallInteger, wrapSymbol,
   read, readIV, write, writeIV, writeIVNew, writeArrayNew,
-} from './memory.mjs';
-import {vm} from './vm.mjs';
+} from './memory';
+import {vm} from './vm';
 
 lateBinding.dictFactory = () => mkDict();
 lateBinding.symbolize = wrapSymbol;
+lateBinding.register = (cls, name) => {};
 
 // And the class dictionary appender.
 
@@ -48,7 +50,7 @@ defClass(CLS_BLOCK_CLOSURE, 'BlockClosure', object, IV_BLOCK);
 const ctx = defClass(CLS_CONTEXT, 'MethodContext', object, 5);
 const fmt = fromSmallInteger(readIV(ctx, BEHAVIOR_FORMAT));
 writeIVNew(ctx, BEHAVIOR_FORMAT,
-    toSmallInteger((fmt & 0xffffff) | (FORMAT_VARIABLE_IV << 24)));
+    toSmallInteger((fmt & 0xffffff) | (Format.VARIABLE_IV << 24)));
 
 
 const bool = defClass(CLS_BOOLEAN, 'Boolean', object, 0);
@@ -84,7 +86,7 @@ for (let i = 0; i < 256; i++) {
 }
 
 // Tricky to initialize these, so capturing it in a function.
-export function newContext(method, sender, locals) {
+export function newContext(method: ptr, sender: ptr, locals: ptr): ptr {
   const ctx = mkInstance(read(classTable(CLS_CONTEXT)), 19);
   writeIV(ctx, CTX_PC, toSmallInteger(0));
   writeIV(ctx, CTX_STACK_INDEX, toSmallInteger(0));

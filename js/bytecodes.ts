@@ -1,4 +1,5 @@
 import {
+  stw, stl, ptr,
   classOf, classTable, hasClass,
   BEHAVIOR_METHODS, BEHAVIOR_SUPERCLASS,
   BLOCK_ARGC, BLOCK_ARGV, BLOCK_PC_START, BLOCK_CONTEXT,
@@ -13,10 +14,11 @@ import {
   asJSString, fromSmallInteger, toSmallInteger,
   read, readArray, readIV,
   writeArray, writeIV, writeIVNew,
-} from './memory.mjs';
-import {lookup, printDict} from './dict.mjs';
-import {newContext} from './corelib.mjs';
-import {popContext, readPC} from './process.mjs';
+} from './memory';
+import {ArgumentCountMismatchError} from './errors';
+import {lookup, printDict} from './dict';
+import {newContext} from './corelib';
+import {popContext, readPC} from './process';
 
 // Locals on contexts are an Array, in this order:
 // self, args..., locals + block args...
@@ -24,26 +26,25 @@ import {popContext, readPC} from './process.mjs';
 // methodOwner is self, or the superobject corresponding to where the method was
 // found.
 
-export function readLocal(ctx, number) {
+export function readLocal(ctx: ptr, index: number): ptr {
   const locals = readIV(ctx, CTX_LOCALS); // Pointer to a pointer array.
-  return readArray(locals, number);
+  return readArray(locals, index);
 }
 
-export function readLiteral(ctx, number) {
+export function readLiteral(ctx: ptr, index: number): ptr {
   const method = readIV(ctx, CTX_METHOD);
   const lits = readIV(method, METHOD_LITERALS); // Pointer to a pointer array.
-  return readArray(lits, number);
+  return readArray(lits, index);
 }
 
-// Returns the pointer for reference; used to check for writing from old to new.
-export function writeLocal(ctx, number, value) {
+export function writeLocal(ctx: ptr, index: number, value: ptr) {
   const locals = readIV(ctx, CTX_LOCALS); // Pointer to a pointer array.
-  writeArray(locals, number, value);
+  writeArray(locals, index, value);
 }
 
 // Returns the pointer to self, the 0th local.
 // This is the actual receiver, even if the method is defined on a superclass.
-export function self(ctx) {
+export function self(ctx: ptr): ptr {
   return readLocal(ctx, 0);
 }
 
@@ -74,7 +75,7 @@ export function self(ctx) {
 //    - `$07: push inline character` Interpret *operand* as an unsigned 8-bit
 //      ASCII value and push it as a character. Larger characters can be
 //      constructed dynamically with runtime code, or as literals in the array.
-function pushOp(process, ctx, count, operand) {
+function pushOp(process: ptr, ctx: ptr, count: number, operand: number) {
   switch (count) {
     case 0:
       switch (operand) {
@@ -115,7 +116,7 @@ function pushOp(process, ctx, count, operand) {
   throw new Error('cant happen');
 }
 
-function storeOp(process, ctx, count, operand) {
+function storeOp(process: ptr, ctx: ptr, count: number, operand: number) {
   const value = pop(ctx);
   if (count === 0) { // Store local - operand gives the local number to use.
     writeLocal(ctx, operand, value);
@@ -127,7 +128,8 @@ function storeOp(process, ctx, count, operand) {
   }
 }
 
-export function sendOp(process, ctx, count, selector, isSuper) {
+export function sendOp(process: ptr, ctx: ptr, count: number, selector: ptr,
+    isSuper: boolean): ptr {
   // The receiver is on the stack, followed by the arguments: rcvr arg1 arg2...
   // We need to create a new array containing 2 + argc + locals cells.
 
@@ -183,7 +185,8 @@ export function sendOp(process, ctx, count, selector, isSuper) {
   // Check that the argument count matches the method.
   const expectedArgs = fromSmallInteger(readIV(method, METHOD_ARGC));
   if (expectedArgs !== count) {
-    throw new ArgumentCountMismatchError('FIXME', selector, expectedArgs, count);
+    throw new ArgumentCountMismatchError('FIXME', asJSString(selector),
+        expectedArgs, count);
   }
 
   // Get the number of locals needed.
@@ -213,7 +216,7 @@ export function sendOp(process, ctx, count, selector, isSuper) {
 // and since we don't want to copy them either, we will have to leverage the
 // containing method when running a block. To facilitate that, the BlockClosure
 // stores a pcStart (a new value not in the original JS implementation).
-function startBlock(process, ctx, argc, argStart) {
+function startBlock(process: ptr, ctx: ptr, argc: number, argStart: number) {
   const len = readPC(ctx); // PC now points at the first opcode of the block.
 
   const block = mkInstance(read(classTable(CLS_BLOCK_CLOSURE)));
@@ -248,7 +251,7 @@ function startBlock(process, ctx, argc, argStart) {
 
 
 
-export function answer(process, ctx, value) {
+export function answer(process: ptr, ctx: ptr, value: ptr) {
   // We need to pop the sender context to the top of the process chain, and push
   // the value onto its stack.
   // Special case: top-level return to an empty chain. If the sender context is
@@ -260,7 +263,7 @@ export function answer(process, ctx, value) {
   }
 }
 
-function blockAnswer(process, ctx) {
+function blockAnswer(process: ptr, ctx: ptr) {
   // Block returns are only legal if the block's containing method is on the
   // context chain. If the sender chain doesn't contain our parent method's
   // context, then this is an error. (It's legal to be in that situation, but
@@ -287,12 +290,12 @@ function blockAnswer(process, ctx) {
   popContext(process, targetCtx);
 }
 
-function skip(process, ctx, delta) {
+function skip(process: ptr, ctx: ptr, delta: number) {
   const pc = fromSmallInteger(readIV(ctx, CTX_PC));
   writeIV(ctx, CTX_PC, toSmallInteger(pc + delta));
 }
 
-function maybeSkip(process, ctx, on, toPush, delta) {
+function maybeSkip(process: ptr, ctx: ptr, on: ptr, toPush: ptr, delta: number) {
   const tos = pop(ctx);
   if (tos === on) {
     push(ctx, toPush);
@@ -301,7 +304,7 @@ function maybeSkip(process, ctx, on, toPush, delta) {
   // If it wasn't on, then continue normally and don't push.
 }
 
-function miscOp(process, ctx, count, operand) {
+function miscOp(process: ptr, ctx: ptr, count: number, operand: number) {
   switch (count) {
     case 0: // DUP
       return push(ctx, peek(ctx));
@@ -330,9 +333,10 @@ function miscOp(process, ctx, count, operand) {
   throw new Error('unknown misc op ' + count);
 }
 
-export const primitives = {};
+export type Primitive = (process: ptr, ctx: ptr) => void;
+export const primitives: {[key: number]: Primitive} = {};
 
-function primitiveOp(process, ctx, count, operand) {
+function primitiveOp(process: ptr, ctx: ptr, count: number, operand: number) {
   const prim = primitives[operand];
   if (!prim) throw new Error('unknown primitive');
 
@@ -343,7 +347,7 @@ function primitiveOp(process, ctx, count, operand) {
   // ignored(?)
 }
 
-export function execute(process, ctx, bc) {
+export function execute(process: ptr, ctx: ptr, bc: stw) {
   // First, we split the bytecode into the three fields.
   const op = (bc >> 12) & 0xf;
   const count = (bc >> 8) & 0xf;

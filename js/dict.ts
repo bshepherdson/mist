@@ -2,6 +2,7 @@
 // anything clever, just [k1, v1, k2, v2, ...] in arbitrary order.
 // This is used for method dictionaries until we have real dictionaries defined.
 import {
+  ptr,
   CLS_ARRAY, CLS_IDENTITY_DICTIONARY,
   DICT_ARRAY, DICT_TALLY,
   MA_NIL,
@@ -9,22 +10,18 @@ import {
   fromSmallInteger, toSmallInteger,
   read, readArray, readIV, readWordArray,
   writeArray, writeArrayNew, writeIV, writeIVNew,
-} from './memory.mjs';
+} from './memory';
 
-export const debugDict = {};
-
-export function mkDict(opt_size) {
-  const size = opt_size || 16;
+export function mkDict(size = 16): ptr {
   const dict = mkInstance(read(classTable(CLS_IDENTITY_DICTIONARY)));
   const arr = mkInstance(read(classTable(CLS_ARRAY)), 2 * size);
   writeIV(dict, DICT_ARRAY, arr);
   writeIVNew(dict, DICT_TALLY, toSmallInteger(0));
-  debugDict[dict] = {};
   return dict;
 }
 
 // IdentityDictionary, so we're comparing the pointers of keys and values.
-export function lookup(dict, key) {
+export function lookup(dict: ptr, key: ptr): ptr {
   const arr = readIV(dict, DICT_ARRAY);
   const tally = fromSmallInteger(readIV(dict, DICT_TALLY));
   for (let i = 0; i < tally; i++) {
@@ -37,7 +34,7 @@ export function lookup(dict, key) {
 }
 
 // Doubles the size of the array, copying the contents.
-function grow(dict) {
+function grow(dict: ptr) {
   const src = readIV(dict, DICT_ARRAY);
   const oldSize = arraySize(src);
   const dst = mkInstance(read(classTable(CLS_ARRAY)), 2 * oldSize);
@@ -49,8 +46,7 @@ function grow(dict) {
   writeIV(dict, DICT_ARRAY, dst);
 }
 
-export function insert(dict, key, value) {
-  debugDict[dict][key] = value;
+export function insert(dict: ptr, key: ptr, value: ptr): undefined {
   const arr = readIV(dict, DICT_ARRAY);
   const size = arraySize(arr);
   const tally = fromSmallInteger(readIV(dict, DICT_TALLY));
@@ -66,7 +62,7 @@ export function insert(dict, key, value) {
   writeIV(dict, DICT_TALLY, toSmallInteger(tally + 1));
 }
 
-export function printDict(dict) {
+export function printDict(dict: ptr) {
   const arr = readIV(dict, DICT_ARRAY);
   const size = arraySize(arr);
   const tally = fromSmallInteger(readIV(dict, DICT_TALLY));

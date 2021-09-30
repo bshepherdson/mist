@@ -3,20 +3,21 @@ const path = require('path');
 module.exports = {
   mode: 'development',
   watch: true,
-  entry: './js/main.mjs',
+  entry: './js/main.ts',
+  devtool: 'inline-source-map',
   output: {
     filename: 'main.js',
     path: path.resolve(__dirname, 'dist'),
   },
+  resolve: {
+    extensions: ['.ts', '.js'],
+  },
   module: {
     rules: [
       {
-        test: /\.mjs$/,
-        include: [path.resolve(__dirname, "js")],
-        loader: 'babel-loader',
-        options: {
-          presets: ['@babel/preset-env'],
-        },
+        test: /\.ts$/,
+        use: 'ts-loader',
+        exclude: /node_modules/,
       },
     ],
   },

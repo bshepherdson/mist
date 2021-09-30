@@ -1,8 +1,9 @@
 // Contains hand-rolled classes and methods necessary to bootstrap the system.
-import {vm} from './vm.mjs';
+import {vm} from './vm';
 import {
+  IdentityHash, ptr,
   BEHAVIOR_SUPERCLASS, BEHAVIOR_FORMAT, BEHAVIOR_METHODS,
-  FORMAT_VARIABLE, FORMAT_WORDS_EVEN,
+  Format,
   MASK_CLASS_INDEX,
   METACLASS_THIS_CLASS,
   CLASS_NAME,
@@ -20,7 +21,7 @@ import {
   behaviorToInstVars, fixedInstVarsFormat,
   read, readIV, write, writeIV, writeIVNew,
   fromSmallInteger, toSmallInteger,
-} from './memory.mjs';
+} from './memory';
 
 // Bootstrapping proceeds in several phases:
 // 1. vm.mjs         VM's initial setup of the registers.
@@ -38,13 +39,15 @@ import {
 // Slight hack: we can't define the method dictionaries until the superclasses
 // have been created, so this starts out as a dummy that returns nil. It gets
 // replaced later and the existing dictionaries updated.
-export const impoverishedClasses = {};
+export const impoverishedClasses: {[name: string]: ptr} = {};
 export const lateBinding = {
   dictFactory: () => MA_NIL,
-  addToClassDict: (sym, cls) => {},
-  symbolize: (name) => MA_NIL,
-  register: (cls, name) => {
-    impoverishedClasses[name] = cls;
+  addToClassDict: (sym: ptr, cls: ptr) => {},
+  symbolize: (name: string) => MA_NIL,
+  register: (cls: ptr, name: ptr|string) => {
+    if (typeof name === 'string') {
+      impoverishedClasses[name] = cls;
+    }
   },
 };
 
@@ -94,7 +97,8 @@ export const lateBinding = {
 // - The superclass field on meta-Behavior is Color class.
 // - Then the new class is an instance of the metaclass.
 //   - ie. The class field of Transparent is Transparent class!
-export function defClass(clsIndex, name, superclass, opt_instVars, opt_classVars) {
+export function defClass(clsIndex: IdentityHash, name: string|ptr,
+    superclass: ptr, instVars = 0, classVars = 0): ptr {
   // First we set up the metaclass, Transparent class in the example.
   // This is an instance of Metaclass.
   const metaclass = mkInstance(read(classTable(CLS_METACLASS)));
@@ -117,8 +121,7 @@ export function defClass(clsIndex, name, superclass, opt_instVars, opt_classVars
   writeIVNew(metaclass, BEHAVIOR_METHODS, lateBinding.dictFactory());
 
   const upstreamClassVars = behaviorToInstVars(supermeta);
-  const metaFormat = fixedInstVarsFormat(
-      upstreamClassVars + (opt_classVars || 0));
+  const metaFormat = fixedInstVarsFormat(upstreamClassVars + classVars);
   writeIVNew(metaclass, BEHAVIOR_FORMAT, toSmallInteger(metaFormat));
 
   // Add the metaclass to the class table.
@@ -137,8 +140,7 @@ export function defClass(clsIndex, name, superclass, opt_instVars, opt_classVars
   writeIVNew(cls, BEHAVIOR_METHODS, lateBinding.dictFactory());
 
   const upstreamInstVars = behaviorToInstVars(superclass);
-  const format = fixedInstVarsFormat(
-      upstreamInstVars + (opt_instVars || 0));
+  const format = fixedInstVarsFormat(upstreamInstVars + instVars);
   writeIVNew(cls, BEHAVIOR_FORMAT, toSmallInteger(format));
 
   addClassToTable(cls, clsIndex);
@@ -177,7 +179,8 @@ const metaclassTotalIVs = IV_BEHAVIOR + IV_CLASS_DESCRIPTION + IV_METACLASS;
 // Classes always have classTotalIVs.
 // This doesn't populate the name (no symbols) or the subclasses or methods
 // lists.
-function bootstrapClass(clsHash, itsClassHash, superclass, instVars) {
+function bootstrapClass(clsHash: IdentityHash, itsClassHash: IdentityHash,
+    superclass: ptr, instVars: number): ptr {
   const cls = allocObject(itsClassHash, classTotalIVs, 0, alloc);
   // The format describes the instances of this new class: fixed with instVars.
   writeIVNew(cls, BEHAVIOR_FORMAT,
@@ -214,7 +217,7 @@ lateBinding.register(metaclass, 'Metaclass');
 // Now those bootstrapping classes all have 0 in the class field, which needs
 // fixing. We create the metaclasses at nameless slots in the class table,
 // and get the number back.
-function bootstrapMetaclass(metaclassFor, superclass) {
+function bootstrapMetaclass(metaclassFor: IdentityHash, superclass: ptr): ptr {
   const meta = allocObject(CLS_METACLASS, metaclassTotalIVs, 0, alloc);
   writeIVNew(meta, BEHAVIOR_FORMAT,
       toSmallInteger(fixedInstVarsFormat(classTotalIVs)));
@@ -263,17 +266,17 @@ const arrColl =
     defClass(CLS_ARRAYED_COLLECTION, 'ArrayedCollection', seqColl, 0);
 
 const arr = defClass(CLS_ARRAY, 'Array', arrColl, 0);
-// Fix the format. It should be FORMAT_VARIABLE.
-writeIVNew(arr, BEHAVIOR_FORMAT, toSmallInteger(FORMAT_VARIABLE << 24));
+// Fix the format. It should be Format.VARIABLE.
+writeIVNew(arr, BEHAVIOR_FORMAT, toSmallInteger(Format.VARIABLE << 24));
 
 const wordArr = defClass(CLS_WORD_ARRAY, 'WordArray', arrColl, 0);
 const str = defClass(CLS_STRING, 'String', wordArr, 0);
 const sym = defClass(CLS_SYMBOL, 'Symbol', str, 0, 1); // 1 class var: symbol dictionary.
-// Adjust the format! It's FORMAT_WORDS_EVEN and the allocation code handles the
+// Adjust the format! It's Format.WORDS_EVEN and the allocation code handles the
 // length.
-writeIVNew(wordArr, BEHAVIOR_FORMAT, toSmallInteger(FORMAT_WORDS_EVEN << 24));
-writeIVNew(str, BEHAVIOR_FORMAT, toSmallInteger(FORMAT_WORDS_EVEN << 24));
-writeIVNew(sym, BEHAVIOR_FORMAT, toSmallInteger(FORMAT_WORDS_EVEN << 24));
+writeIVNew(wordArr, BEHAVIOR_FORMAT, toSmallInteger(Format.WORDS_EVEN << 24));
+writeIVNew(str, BEHAVIOR_FORMAT, toSmallInteger(Format.WORDS_EVEN << 24));
+writeIVNew(sym, BEHAVIOR_FORMAT, toSmallInteger(Format.WORDS_EVEN << 24));
 
 const mag = defClass(CLS_MAGNITUDE, 'Magnitude', object, 0);
 const num = defClass(CLS_NUMBER, 'Number', mag, 0);

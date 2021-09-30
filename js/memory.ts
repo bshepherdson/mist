@@ -1,16 +1,22 @@
 // Memory access and management for our Smalltalk VM.
-import {vm} from './vm.mjs';
+import {vm} from './vm';
+
+export type ptr = number;
+export type stw = number;
+export type stl = number;
+export type sti = number;
+export type IdentityHash = number;
 
 const MEM_SIZE = 1024 * 1024 * 64; // 64MW = 128MB for now.
-const MEM_SPECIAL_TOP = 0x10000; // 64KW of magic should be plenty.
+const MEM_SPECIAL_TOP: ptr = 0x10000; // 64KW of magic should be plenty.
 
 const MW4 = 4 * 1024 * 1024; // 4 MW is our unit size for several things.
 
-const MEM_TENURED_TOP = MW4; // 4MW of tenure + special.
-const MEM_G1_TOP = MEM_TENURED_TOP + MW4; // 4MW for each generation
-const MEM_G2_TOP = MEM_G1_TOP + MW4;      // 4MW for each generation
-const MEM_EDEN_BASE = MEM_G2_TOP;         // Eden gets the rest = 42MW
-const MEM_EDEN_TOP = MEM_SIZE;
+const MEM_TENURED_TOP: ptr = MW4; // 4MW of tenure + special.
+const MEM_G1_TOP: ptr = MEM_TENURED_TOP + MW4; // 4MW for each generation
+const MEM_G2_TOP: ptr = MEM_G1_TOP + MW4;      // 4MW for each generation
+const MEM_EDEN_BASE: ptr = MEM_G2_TOP;         // Eden gets the rest = 42MW
+const MEM_EDEN_TOP: ptr = MEM_SIZE;
 
 const mem = new Uint16Array(MEM_SIZE);
 
@@ -22,24 +28,24 @@ const GC_FIELD_0 = 0; // Initial value of the GC field in the object header.
 
 // Pointers to the ends of the ranges for new and old generations. (Indirected
 // because they get swapped.)
-const MA_OLD_GEN_START = 0x1000;
-const MA_OLD_GEN_ALLOC = 0x1002;
-const MA_NEW_GEN_START = 0x1004;
-const MA_NEW_GEN_ALLOC = 0x1006;
-const MA_TENURE_ALLOC = 0x1008;
+const MA_OLD_GEN_START: ptr = 0x1000;
+const MA_OLD_GEN_ALLOC: ptr = 0x1002;
+const MA_NEW_GEN_START: ptr = 0x1004;
+const MA_NEW_GEN_ALLOC: ptr = 0x1006;
+const MA_TENURE_ALLOC: ptr = 0x1008;
 
 // Points to the first escaped pointer linked list entry; see GC design.
-const MA_ESCAPED_HEAD = 0x100a;
+const MA_ESCAPED_HEAD: ptr = 0x100a;
 // Class dictionary.
-export const MA_CLASS_DICT = 0x100c;
-export const MA_NEXT_CLASS_INDEX = 0x100e;
+export const MA_CLASS_DICT: ptr = 0x100c;
+export const MA_NEXT_CLASS_INDEX: ptr = 0x100e;
 
-export const MASK_CLASS_INDEX = 0x3fffff;
+export const MASK_CLASS_INDEX: ptr = 0x3fffff;
 
 // Some canned ST objects that exist at known places in memory.
-export const MA_NIL   = 0x2000; // Size 4, zero-size object
-export const MA_TRUE  = 0x2004; // Size 4, zero-size object
-export const MA_FALSE = 0x2008; // Size 4, zero-size object
+export const MA_NIL: ptr   = 0x2000; // Size 4, zero-size object
+export const MA_TRUE: ptr  = 0x2004; // Size 4, zero-size object
+export const MA_FALSE: ptr = 0x2008; // Size 4, zero-size object
 
 // The classes are *not* tenured, since they can be replaced, and the cost of
 // copying them is less bad than burning up tenured space for them.
@@ -56,16 +62,16 @@ export const IV_CLASS = 2;
 export const IV_METACLASS = 1;
 
 
-const CLASSTABLE_BASE = 0x3000;
+const CLASSTABLE_BASE: ptr = 0x3000;
 const CLASSTABLE_SIZE = 0x1000; // 4096 words = 2048 classes
-const CLASSTABLE_TOP = CLASSTABLE_BASE + CLASSTABLE_SIZE;
+const CLASSTABLE_TOP: ptr = CLASSTABLE_BASE + CLASSTABLE_SIZE;
 
 // Some canned class table entries, since we need to refer statically to a bunch
 // of them.
 
 let nextClass_ = 0;
 
-function nextClass() {
+function nextClass(): number {
   return nextClass_++;
 };
 
@@ -115,7 +121,7 @@ export const CLS_PROCESS_TABLE = nextClass();
 
 
 // Returns an array of ordered indexes.
-function seq(n) {
+function seq(n: number): Array<number> {
   const ret = [];
   for (let i = 0; i < n; i++) {
     ret.push(i);
@@ -139,7 +145,7 @@ export const [
     seq(4);
 
 // Contexts are stored as 24-pointer objects.
-// They are (currently?) the only FORMAT_VARIABLE_IV object.
+// They are (currently?) the only Format.VARIABLE_IV object.
 // They have 5 instVars: method, locals, pc, sender, stack index.
 // The remaining 19 values are the stack. The stack pointer is empty-ascending
 // and in values, not words. Eg. it starts out at 0, then becomes 1, 2, etc.
@@ -177,19 +183,19 @@ export const ASCII_TABLE = [];
 
 // Functions for accessing the memory.
 // Longs are stored big-endian, ie. the high word is at the lower address.
-export function readWord(addr) {
+export function readWord(addr: ptr): stw {
   return mem[addr];
 }
 
-export function read(addr) {
+export function read(addr: ptr): stl {
   return (mem[addr] << 16) | mem[addr+1];
 }
 
-export function writeWord(addr, value) {
-  return mem[addr] = value & 0xffff;
+export function writeWord(addr: ptr, value: stw) {
+  mem[addr] = value & 0xffff;
 }
 
-export function write(addr, value) {
+export function write(addr: ptr, value: stl) {
   writeWord(addr, value >> 16);
   writeWord(addr + 1, value);
 }
@@ -203,83 +209,87 @@ export function write(addr, value) {
 // Functions for deriving properties of objects, given a pointer to the header.
 // Turns a class table index into a pointer into the *class table*. It must be
 // read() to get the real pointer to the class.
-export function classTable(index) {
+export function classTable(index: number): ptr {
   return CLASSTABLE_BASE + 2 * index;
 }
 
 // Returns the real pointer to the class of this object, indirecting through the
 // class table.
-export function classOf(p) {
+export function classOf(p: ptr): ptr {
   const classIndex = isSmallInteger(p) ? // Special case for inlined integers.
       CLS_SMALL_INTEGER :
       read(p+2) & MASK_CLASS_INDEX;
   return read(classTable(classIndex));
 }
 
-export function hasClass(p, classIndex) {
+export function hasClass(p: ptr, classIndex: number): boolean {
   return isSmallInteger(p) ?
       classIndex === CLS_SMALL_INTEGER :
       (read(p+2) & MASK_CLASS_INDEX) === classIndex;
 }
 
 // Returns the format tag
-function format(p) {
+function format(p: ptr): Format {
   return (readWord(p+2) >> 8) & 0xf;
 }
 
-export const FORMAT_ZERO = 0;
-export const FORMAT_FIXED_IV = 1;
-export const FORMAT_VARIABLE = 2;
-export const FORMAT_VARIABLE_IV = 3;
-export const FORMAT_WORDS_EVEN = 6;
-export const FORMAT_WORDS_ODD = 7;
+export enum Format {
+  ZERO = 0,
+  FIXED_IV = 1,
+  VARIABLE = 2,
+  VARIABLE_IV = 3,
+  WORDS_EVEN = 6,
+  WORDS_ODD = 7,
+}
 
 // "Decodes" the header for a pointer-type object: that is, one with a header
 // that isn't holding words and isn't a special type like 8+.
 // The returned value gives:
 // {
-//   ivc: instance variables count
-//   ivp: pointer to first instance variable.
-//   pac: pointer array element count (in longwords/pointers)
-//   pap: pointer array first element pointer
-//   wac: word array element count (in words)
-//   wap: word array first element pointer
+//   iv: [count, ptr to first]  count in pointers
+//   pa: [count, ptr to first]  count in pointers
+//   wa: [count, ptr to first]  count in words
 // }
 // but these values will be missing if they're not relevant.
-function decodeHeader(p) {
+interface header {
+  pa?: [number, ptr];
+  wa?: [number, ptr];
+  iv?: [number, ptr];
+}
+
+function decodeHeader(p: ptr): header {
   let size = readWord(p) >> 8;
   const fmt = format(p);
   switch (fmt) {
-    case FORMAT_ZERO:
+    case Format.ZERO:
       return {};
-    case FORMAT_VARIABLE_IV:
+    case Format.VARIABLE_IV:
       const varSize = read(p - 2);
       return {
-        ivc: size,
-        ivp: p + 4,
-        pac: varSize,
-        pap: p + 4 + 2 * size,
+        iv: [size, p + 4],
+        pa: [varSize, p + 4 + 2 * size],
       };
-    case FORMAT_VARIABLE:
+    case Format.VARIABLE:
       return {
-        pac: size === 255 ? read(p - 2) : size,
-        pap: p + 4,
+        pa: [
+          size === 255 ? read(p - 2) : size,
+          p + 4,
+        ],
       };
-    case FORMAT_FIXED_IV:
+    case Format.FIXED_IV:
       return {
-        ivc: size === 255 ? read(p + 4) : size,
-        ivp: p + 4,
+        iv: [size === 255 ? read(p + 4) : size, p + 4],
       };
-    case FORMAT_WORDS_ODD:
-    case FORMAT_WORDS_EVEN:
-      const ret = {wac: 2*size, wap: p + 4};
+    case Format.WORDS_ODD:
+    case Format.WORDS_EVEN:
+      const ret: [number, ptr] = [2*size, p + 4];
       if (size === 255) {
-        ret.wac = read(p + 4);
+        ret[0] = read(p + 4);
       }
-      if (fmt === FORMAT_WORDS_ODD) {
-        ret.wac--; // Odd means the last slot isn't filled.
+      if (fmt === Format.WORDS_ODD) {
+        ret[0]--; // Odd means the last slot isn't filled.
       }
-      return ret;
+      return {wa: ret};
     default:
       throw new Error('Don\'t know how to decode header format ' + fmt);
   }
@@ -290,30 +300,30 @@ function decodeHeader(p) {
 // Some helpers for reading from objects.
 // These have sanity checks for eg. trying to read the IVs of a variable type.
 // 0-based indexing.
-export function readIV(p, index) {
+export function readIV(p: ptr, index: number): stl {
   const hdr = decodeHeader(p);
-  if (!hdr.ivc) throw new Error('Cannot read IVs of non-IV object');
-  if (hdr.ivc <= index) throw new Error('Reading off the end of object');
+  if (!hdr.iv) throw new Error('Cannot read IVs of non-IV object');
+  if (hdr.iv[0] <= index) throw new Error('Reading off the end of object');
 
-  return read(hdr.ivp + 2 * index);
+  return read(hdr.iv[1] + 2 * index);
 }
 
-export function readArray(p, index) {
+export function readArray(p: ptr, index: number): stl {
   const hdr = decodeHeader(p);
-  if (!hdr.pac) {
+  if (!hdr.pa) {
     throw new Error('Cannot read variable-length part of fixed object');
   }
-  if (hdr.pac <= index) throw new Error('Reading off the end of array');
+  if (hdr.pa[0] <= index) throw new Error('Reading off the end of array');
 
-  return read(hdr.pap + 2 * index);
+  return read(hdr.pa[1] + 2 * index);
 }
 
-export function readWordArray(p, index) {
+export function readWordArray(p: ptr, index: number): stw {
   const hdr = decodeHeader(p);
-  if (!hdr.wac) throw new Error('Cannot read word array of non-words object');
-  if (hdr.wac <= index) throw new Error('Reading off the end of word array');
+  if (!hdr.wa) throw new Error('Cannot read word array of non-words object');
+  if (hdr.wa[0] <= index) throw new Error('Reading off the end of word array');
 
-  return readWord(hdr.wap + index);
+  return readWord(hdr.wa[1] + index);
 }
 
 
@@ -322,39 +332,42 @@ export function readWordArray(p, index) {
 // where a check needs to be performed.
 //
 // These return the address actually written, mostly to make checkOldToNew easy.
-export function writeIVNew(p, index, value) {
+export function writeIVNew(p: ptr, index: number, value: stl): ptr {
   const hdr = decodeHeader(p);
-  if (!hdr.ivc) throw new Error('Cannot write IVs of non-IV object');
-  const addr = hdr.ivp + 2 * index;
+  if (!hdr.iv) throw new Error('Cannot write IVs of non-IV object');
+  if (hdr.iv[0] <= index) throw new Error('Writing off the end of IVs');
+  const addr = hdr.iv[1] + 2 * index;
   write(addr, value);
   return addr;
 }
 
-export function writeIV(p, index, value) {
+export function writeIV(p: ptr, index: number, value: stl): ptr {
   const addr = writeIVNew(p, index, value);
   checkOldToNew(addr, value);
   return addr;
 }
 
-export function writeArrayNew(p, index, value) {
+export function writeArrayNew(p: ptr, index: number, value: stl): ptr {
   const hdr = decodeHeader(p);
-  if (!hdr.pac) throw new Error('Cannot write array of non-array');
-  const addr = hdr.pap + 2 * index;
+  if (!hdr.pa) throw new Error('Cannot write array of non-array');
+  if (hdr.pa[0] <= index) throw new Error('Writing off the end of pointer array');
+  const addr = hdr.pa[1] + 2 * index;
   write(addr, value);
   return addr;
 }
 
-export function writeArray(p, index, value) {
+export function writeArray(p: ptr, index: number, value: stl): ptr {
   const addr = writeArrayNew(p, index, value);
   checkOldToNew(addr, value);
   return addr;
 }
 
 // No need for the "new" variant of a word array; they're not pointers.
-export function writeWordArray(p, index, value) {
+export function writeWordArray(p: ptr, index: number, value: stl): ptr {
   const hdr = decodeHeader(p);
-  if (!hdr.wac) throw new Error('Cannot write word array of non-words object');
-  const addr = hdr.wap + index;
+  if (!hdr.wa) throw new Error('Cannot write word array of non-words object');
+  if (hdr.wa[0] <= index) throw new Error('Writing off the end of word array');
+  const addr = hdr.wa[1] + index;
   writeWord(addr, value);
   return addr;
 }
@@ -367,7 +380,7 @@ export function writeWordArray(p, index, value) {
 // this bit is clear on pointers.
 //
 // Given a would-be pointer, decode it as a number. Throws if it's not a number!
-export function fromSmallInteger(p) {
+export function fromSmallInteger(p: ptr): sti {
   if (p >= 0) throw new Error('pointers found in readSmallInteger');
   // Shift left, then *arithmetic* shift right.
   return (p << 1) >> 1;
@@ -375,18 +388,18 @@ export function fromSmallInteger(p) {
 
 // Given a JS number, encodes it as a SmallInteger, a pseudo-pointer with the
 // top bit always set. The top bit is lost.
-export function toSmallInteger(n) {
+export function toSmallInteger(n: sti): ptr {
   return n | 0x80000000;
 }
 
-export function isSmallInteger(p) {
+export function isSmallInteger(p: ptr): boolean {
   return p < 0;
 }
 
 
 // Working with the stack on a MethodContext. The stack pointer is in an IV,
 // giving a 0-based index into the variable portion.
-export function push(ctx, value) {
+export function push(ctx: ptr, value: stl) {
   const sp = fromSmallInteger(readIV(ctx, CTX_STACK_INDEX));
   if (sp >= STACK_MAX_SIZE) throw new Error('VM stack overflow');
   writeArray(ctx, sp, value);
@@ -394,7 +407,7 @@ export function push(ctx, value) {
   writeIVNew(ctx, CTX_STACK_INDEX, toSmallInteger(sp + 1));
 }
 
-export function pop(ctx) {
+export function pop(ctx: ptr): stl {
   const sp = fromSmallInteger(readIV(ctx, CTX_STACK_INDEX));
   if (sp <= 0) throw new Error('VM stack underflow');
   const value = readArray(ctx, sp - 1);
@@ -403,7 +416,7 @@ export function pop(ctx) {
   return value;
 }
 
-export function peek(ctx) {
+export function peek(ctx: ptr): stl {
   const sp = fromSmallInteger(readIV(ctx, CTX_STACK_INDEX));
   return readArray(ctx, sp - 1);
 }
@@ -414,7 +427,7 @@ export function peek(ctx) {
 // space for it in the Eden and return a pointer to it.
 // This is the raw allocation function - it allocates in *words*. It rounds up
 // to keep the Eden 32-bit aligned.
-export function alloc(size) {
+export function alloc(size: number): ptr {
   const p = (vm.allocationPointer - size) & ~1;
   if (p < MEM_EDEN_BASE) {
     throw new Error('Minor GC needed but not implemented!');
@@ -427,19 +440,19 @@ export function alloc(size) {
 // This is used for tenuring, but also for things like Symbols that are
 // permanently cached.
 // Keeps the tenure pointer 32-bit aligned.
-export function tenure(size) {
+export function tenure(size: number): ptr {
   const p = read(MA_TENURE_ALLOC); // Raw number, not a Smalltalk value.
   write(MA_TENURE_ALLOC, (p + size + 1) & ~1); // Keep it aligned.
   return p;
 }
 
 // Computes the size required for a regular object with the specified instVars
-// and array length. Both can be 0, in which case a FORMAT_ZERO object is
+// and array length. Both can be 0, in which case a Format.ZERO object is
 // assumed. This accounts for the size word and so on.
 // Generally you can call allocObject() to do this all in one, but this is
 // useful if allocating to the tenured space or a special area.
 // Returns the length in *words*, suitable for passing to tenure() or alloc().
-export function sizeRequired(instVars, arrayLength) {
+export function sizeRequired(instVars: number, arrayLength: number): number {
   if (instVars === 0 && arrayLength === 0) return 4; // Just the header.
 
   const total = instVars + arrayLength;
@@ -453,14 +466,14 @@ export function sizeRequired(instVars, arrayLength) {
 // Just a round robin of the 22-bit space for each allocation.
 // Perhaps this should be a PRNG for better scattering? This plan keeps the low
 // bits changing fast, which is I guess okay for hash tables and truncation.
-function nextIdentityHash() {
+function nextIdentityHash(): IdentityHash {
   const hash = vm.nextIdentityHash;
   vm.nextIdentityHash = (vm.nextIdentityHash + 1) & MASK_CLASS_INDEX;
   return hash;
 }
 
 // Reads the identityHash out of an object header.
-export function identityHash(p) {
+export function identityHash(p: ptr): IdentityHash {
   return read(p) & MASK_CLASS_INDEX;
 }
 
@@ -470,20 +483,21 @@ export function identityHash(p) {
 // You can compute the necessary size for same with sizeRequired().
 // Returns updated p! This should be used, as there might be an extra size at
 // the input p, which is no longer the object's pointer.
-export function initObject(p, clsHash, instVars, arrayLength) {
+export function initObject(p: ptr, clsHash: IdentityHash,
+    instVars: number, arrayLength: number): ptr {
   const hash = nextIdentityHash();
   let fmt, sizeField;
   let extraLength = null;
 
   if (instVars > 0 && arrayLength > 0) {
-    fmt = FORMAT_VARIABLE_IV;
+    fmt = Format.VARIABLE_IV;
     sizeField = instVars;
     extraLength = arrayLength;
   } else if (instVars === 0 && arrayLength === 0) {
-    fmt = FORMAT_ZERO;
+    fmt = Format.ZERO;
     sizeField = 0;
   } else {
-    fmt = instVars > 0 ? FORMAT_FIXED_IV : FORMAT_VARIABLE;
+    fmt = instVars > 0 ? Format.FIXED_IV : Format.VARIABLE;
     const count = instVars + arrayLength;
     sizeField = Math.min(count, 255);
     extraLength = count >= 255 ? count : null;
@@ -510,7 +524,8 @@ export function initObject(p, clsHash, instVars, arrayLength) {
   return p;
 }
 
-function allocWordArray(clsHash, arrayLength, allocator) {
+function allocWordArray(clsHash: IdentityHash, arrayLength: number,
+    allocator: (size: number) => ptr) {
   // The size field actually is in words, so it only overflows for 255 * 2 = 510
   const size = 4 + arrayLength + (arrayLength >= 510 ? 4 : 0);
   let p = allocator(size);
@@ -518,7 +533,7 @@ function allocWordArray(clsHash, arrayLength, allocator) {
   // The size field is in words, and the last bit is captured by the even/odd
   // formats.
   const longSize = (arrayLength + 1) >> 1;
-  const fmt = (arrayLength & 1) === 1 ? FORMAT_WORDS_ODD : FORMAT_WORDS_EVEN;
+  const fmt = (arrayLength & 1) === 1 ? Format.WORDS_ODD : Format.WORDS_EVEN;
 
   if (longSize >= 255) {
     write(p, 0xff000000);   // Marker long.
@@ -542,7 +557,8 @@ function allocWordArray(clsHash, arrayLength, allocator) {
 // method does.
 // NB: DO NOT CALL outside of bootstrap. Use basicNew(cls) instead; it knows how
 // to look up this information from the class.
-export function allocObject(clsHash, instVars, arrayLength, allocator) {
+export function allocObject(clsHash: IdentityHash, instVars: number,
+    arrayLength: number, allocator: (size: number) => ptr) {
   const size = sizeRequired(instVars, arrayLength);
   const p = allocator(size);
   return initObject(p, clsHash, instVars, arrayLength);
@@ -554,32 +570,31 @@ export function allocObject(clsHash, instVars, arrayLength, allocator) {
 // The length is in words for word-type formats and pointers otherwise.
 //
 // opt_allocator is alloc, tenure, or something else with the same signature.
-export function mkInstance(cls, opt_arrayLength, opt_allocator) {
+export function mkInstance(cls: ptr, arrayLength = 0, allocator = alloc) {
   // Read the format number out of the class. This is defined on Behavior, and
   // is encoded as ____ffff sssssss ssssssss ssssssss, a 24-bit size field.
-  const allocator = opt_allocator || alloc;
   const fmtRaw = fromSmallInteger(readIV(cls, BEHAVIOR_FORMAT));
   const fmt = (fmtRaw >> 24) & 0xf;
   const instVars = fmtRaw & 0xffffff;
 
-  const isFixed = fmt === FORMAT_ZERO || fmt === FORMAT_FIXED_IV;
-  if (opt_arrayLength && opt_arrayLength > 0 && isFixed) {
+  const isFixed = fmt === Format.ZERO || fmt === Format.FIXED_IV;
+  if (arrayLength > 0 && isFixed) {
     throw new Error('Illegal: non-variable class with nonzero array length');
   }
   // Creating a 0-length Array etc. is technically legal, so no error for that.
 
   // Allocate and initialize such an object.
   const clsHash = identityHash(cls);
-  return (fmt === FORMAT_WORDS_ODD || fmt === FORMAT_WORDS_EVEN) ?
-      allocWordArray(clsHash, opt_arrayLength || 0, allocator) :
-      allocObject(clsHash, instVars, opt_arrayLength || 0, allocator);
+  return (fmt === Format.WORDS_ODD || fmt === Format.WORDS_EVEN) ?
+      allocWordArray(clsHash, arrayLength, allocator) :
+      allocObject(clsHash, instVars, arrayLength, allocator);
 }
 
 // Given the pointer to a Class, constructs a new instance of it.
 // This is essentially basicNew.
 // Only works for regular objects! Special types should be calling other
 // primitives.
-export function basicNew(cls) {
+export function basicNew(cls: ptr): ptr {
   return mkInstance(cls);
 }
 
@@ -589,7 +604,7 @@ export function basicNew(cls) {
 // If it is, we create a new Association in Eden that points to *p*. Then later
 // the GC can check if p still contains a newspace pointer, recursively copy it,
 // and update p.
-export function checkOldToNew(p, target) {
+export function checkOldToNew(p: ptr, target: ptr) {
   if (isSmallInteger(target)) return; // No pointer to track.
 
   const isOld = p < MEM_EDEN_BASE;
@@ -606,12 +621,16 @@ export function checkOldToNew(p, target) {
 
 // Given a pointer to a variable-sized object, return the length of its variable
 // portion in the relevant unit - pointers or words.
-export function arraySize(p) {
-  return decodeHeader(p).pac;
+export function arraySize(p: ptr): number {
+  const hdr = decodeHeader(p);
+  if (hdr.pa) return hdr.pa[0];
+  throw new Error('Cannot take the array size of a non-array object');
 }
 
-export function wordArraySize(p) {
-  return decodeHeader(p).wac;
+export function wordArraySize(p: ptr): number {
+  const hdr = decodeHeader(p);
+  if (hdr.wa) return hdr.wa[0];
+  throw new Error('Cannot take the word array size of a non-word-array object');
 }
 
 
@@ -620,7 +639,7 @@ export function wordArraySize(p) {
 //
 // Copies a JS string s into a (sufficiently large!) blank space at p.
 // p points to the header, not the first data word.
-function copyString(p, s) {
+function copyString(p: ptr, s: string) {
   for (let i = 0; i < s.length; i++) {
     writeWordArray(p, i, s.charCodeAt(i));
   }
@@ -628,14 +647,14 @@ function copyString(p, s) {
 
 // Allocate and return the pointer to a new String containing the same
 // characters as the JS string provided.
-export function wrapString(s) {
+export function wrapString(s: string): ptr {
   const arr = mkInstance(read(classTable(CLS_STRING)), s.length);
   copyString(arr, s);
   return arr;
 }
 
 // Given a pointer to a String or Symbol, read it into a JS string.
-export function asJSString(p) {
+export function asJSString(p: ptr): string {
   const len = wordArraySize(p);
   let s = '';
   for (let i = 0; i < len; i++) {
@@ -649,8 +668,8 @@ export function asJSString(p) {
 // NB: Symbols are allocated in tenured space! This means their pointers are
 // fixed and can be used to as raw keys in a search tree.
 // Symbols are also deduplicated, currently by using a JS object.
-const symbolCache = {};
-export function wrapSymbol(s) {
+const symbolCache: {[sym: string]: ptr} = {};
+export function wrapSymbol(s: string): ptr {
   if (symbolCache[s]) return symbolCache[s];
 
   // Allocate our symbol in the tenured space.
@@ -662,7 +681,8 @@ export function wrapSymbol(s) {
 }
 
 
-export function addClassToTable(cls, opt_classHash) {
+export function addClassToTable(cls: ptr, opt_classHash?: IdentityHash):
+    IdentityHash {
   const next = opt_classHash || read(MA_NEXT_CLASS_INDEX); // Raw number.
 
   // Read the object header of the class, and rewrite its identity hash.
@@ -682,17 +702,17 @@ export function addClassToTable(cls, opt_classHash) {
 
 // Given a pointer to a class, return the number of inst vars it defines.
 // This is complicated because the format field is not a simple number.
-export function behaviorToInstVars(cls) {
+export function behaviorToInstVars(cls: ptr): number {
   const fmtRaw = fromSmallInteger(readIV(cls, BEHAVIOR_FORMAT));
   const fmt = (fmtRaw >> 24) & 0xf;
   return fmtRaw & 0xffffff;
 }
 
-// Encodes a Behavior's format field for a FORMAT_FIXED_IV
-export function fixedInstVarsFormat(instVars) {
+// Encodes a Behavior's format field for a Format.FIXED_IV
+export function fixedInstVarsFormat(instVars: number): stl {
   return instVars === 0 ?
-      (FORMAT_ZERO << 24) :
-      (FORMAT_FIXED_IV << 24) | instVars;
+      (Format.ZERO << 24) :
+      (Format.FIXED_IV << 24) | instVars;
 }
 
 // Initialization
