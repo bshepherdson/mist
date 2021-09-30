@@ -4,7 +4,8 @@
 import {defClass, impoverishedClasses, lateBinding} from './bootstrap.mjs';
 import {insert, mkDict} from './dict.mjs';
 import {
-  CLS_BOOLEAN, CLS_TRUE, CLS_FALSE, CLS_CONTEXT, CLS_BLOCK_CLOSURE,
+  CLS_BOOLEAN, CLS_TRUE, CLS_FALSE,
+  CLS_ASSOCIATION, CLS_CONTEXT, CLS_BLOCK_CLOSURE,
   CLS_ARRAY, CLS_CHARACTER, CLS_PROCESS, CLS_PROCESS_TABLE, CLS_OBJECT,
   CTX_PC, CTX_STACK_INDEX, CTX_METHOD, CTX_LOCALS, CTX_SENDER,
   MA_BOOLEAN, MA_TRUE, MA_FALSE, MA_CLASS_DICT, MA_NIL,
@@ -32,7 +33,6 @@ write(MA_CLASS_DICT, mkDict(256));
 // their metaclasses).
 
 for (const name of Object.keys(impoverishedClasses)) {
-  console.log('enriching ' + name);
   const cls = impoverishedClasses[name];
   writeIV(cls, BEHAVIOR_METHODS, mkDict());
   const metaclass = classOf(cls);
@@ -65,6 +65,7 @@ writeIV(chr, CLASS_VAR1, charTable);
 
 defClass(CLS_PROCESS, 'Process', object, 4);
 defClass(CLS_PROCESS_TABLE, 'ProcessTable', object, 3);
+defClass(CLS_ASSOCIATION, 'Association', object, 2);
 
 // Populate the process table - four priorities.
 let pt = MA_NIL;
@@ -93,6 +94,4 @@ export function newContext(method, sender, locals) {
   return ctx;
 }
 
-// START HERE: Either the Kernel.st or this bootstrap has to define the
-// subclassing functions. I guess it's a method on Class that uses a primitive.
 

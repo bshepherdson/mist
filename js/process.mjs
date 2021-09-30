@@ -1,11 +1,13 @@
 import {
   CTX_METHOD, CTX_PC, CTX_SENDER,
+  CLS_PROCESS,
   METHOD_BYTECODE,
   PROCESS_CONTEXT, PROCESS_NEXT, PROCESS_PREV,
-  PROCESS_TABLE_READY, PROCESS_TABLE_NEXT_PRIORITY,
+  PROCESS_TABLE_READY, PROCESS_TABLE_NEXT_PRIORITY, PROCESS_PROCESS_TABLE,
   MA_NIL,
+  classTable, mkInstance,
   fromSmallInteger, toSmallInteger,
-  readWordArray, readIV, writeIV,
+  read, readWordArray, readIV, writeIV,
 } from './memory.mjs';
 import {execute} from './bytecodes.mjs';
 import {vm} from './vm.mjs';
@@ -63,7 +65,7 @@ function nextThread() {
 }
 
 // Helper that reads a bytecode and increments PC.
-function readPC(ctx) {
+export function readPC(ctx) {
   const pc = fromSmallInteger(readIV(ctx, CTX_PC));
   const method = readIV(ctx, CTX_METHOD);
   const bcArray = readIV(method, METHOD_BYTECODE);
@@ -119,15 +121,20 @@ export function popContext(process, opt_ctx) {
   // Only replace the READY process if it was me!
   // This is because the driver hand-rolls threads.
   if (readIV(pt, PROCESS_TABLE_READY) === process) {
-    writeIV(pt, PROCESS_TABLE_READY, next);
+    // This process is dying, so if it was the last one in the circular list,
+    // just store nil.
+    writeIV(pt, PROCESS_TABLE_READY, process === next ? MA_NIL : next);
   }
   return false;
 }
 
 // Adds this context as the root of a new user-priority thread.
 export function fork(ctx) {
-  const pt = readIV(vm.processTable, PROCESS_TABLE_NEXT_PRIORITY);
+  let pt = readIV(vm.processTable, PROCESS_TABLE_NEXT_PRIORITY);
+  pt = readIV(pt, PROCESS_TABLE_NEXT_PRIORITY);
   const proc = mkInstance(read(classTable(CLS_PROCESS)));
+  writeIV(proc, PROCESS_CONTEXT, ctx);
+  writeIV(proc, PROCESS_PROCESS_TABLE, pt);
   const head = readIV(pt, PROCESS_TABLE_READY);
   if (head == MA_NIL) {
     writeIV(proc, PROCESS_NEXT, proc);
@@ -139,6 +146,7 @@ export function fork(ctx) {
     writeIV(prev, PROCESS_NEXT, proc);
   }
   writeIV(pt, PROCESS_TABLE_READY, proc);
+  return proc;
 }
 
 // TODO popTo, probably?

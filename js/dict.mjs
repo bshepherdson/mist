@@ -11,7 +11,7 @@ import {
   writeArray, writeArrayNew, writeIV, writeIVNew,
 } from './memory.mjs';
 
-const debugDict = {};
+export const debugDict = {};
 
 export function mkDict(opt_size) {
   const size = opt_size || 16;
@@ -38,26 +38,18 @@ export function lookup(dict, key) {
 
 // Doubles the size of the array, copying the contents.
 function grow(dict) {
-  console.log('growing');
-  console.log('<<<<<<<<<<');
-  printDict(dict);
-  console.log('==========');
   const src = readIV(dict, DICT_ARRAY);
   const oldSize = arraySize(src);
   const dst = mkInstance(read(classTable(CLS_ARRAY)), 2 * oldSize);
   const tally = fromSmallInteger(readIV(dict, DICT_TALLY));
   for (let i = 0; i < tally * 2; i++) {
     const value = readArray(src, i);
-    console.log('grow: copying at ' + i + ' value ' + value);
     writeArrayNew(dst, i, value);
   }
   writeIV(dict, DICT_ARRAY, dst);
-  printDict(dict);
-  console.log('>>>>>>>>>');
 }
 
 export function insert(dict, key, value) {
-  console.log('inserting', dict, key, value);
   debugDict[dict][key] = value;
   const arr = readIV(dict, DICT_ARRAY);
   const size = arraySize(arr);

@@ -1,19 +1,22 @@
 import {
-  classOf, classTable,
+  classOf, classTable, hasClass,
   BEHAVIOR_METHODS, BEHAVIOR_SUPERCLASS,
+  BLOCK_ARGC, BLOCK_ARGV, BLOCK_PC_START, BLOCK_CONTEXT,
   CTX_METHOD, CTX_LOCALS, CTX_SENDER, CTX_PC, CTX_STACK_INDEX,
   CLASS_NAME, METACLASS_THIS_CLASS,
   CLS_ARRAY, CLS_BLOCK_CLOSURE, CLS_METACLASS,
-  METHOD_LITERALS,
+  METHOD_LITERALS, METHOD_ARGC, METHOD_CLASS, METHOD_LOCALS,
+  PROCESS_CONTEXT,
   MA_CLASS_DICT,
   MA_NIL, MA_TRUE, MA_FALSE,
-  push, pop,
+  mkInstance, peek, pop, push,
   asJSString, fromSmallInteger, toSmallInteger,
   read, readArray, readIV,
-  writeArray, writeIV,
+  writeArray, writeIV, writeIVNew,
 } from './memory.mjs';
 import {lookup, printDict} from './dict.mjs';
 import {newContext} from './corelib.mjs';
+import {popContext, readPC} from './process.mjs';
 
 // Locals on contexts are an Array, in this order:
 // self, args..., locals + block args...
@@ -153,15 +156,12 @@ export function sendOp(process, ctx, count, selector, isSuper) {
       // This is a metaclass - grab its class and get *its* name.
       const theClass = readIV(cls, METACLASS_THIS_CLASS);
       const className = readIV(theClass, CLASS_NAME);
-      console.log('Searching ' + asJSString(className) + ' class');
     } else {
       // Otherwise this is a Class, ClassDescription, or Behavior.
       const className = readIV(cls, CLASS_NAME);
-      console.log('Searching ' + asJSString(className));
     }
 
     const dict = readIV(cls, BEHAVIOR_METHODS);
-    printDict(dict);
     const found = lookup(dict, selector);
     if (found && found !== MA_NIL) {
       method = found;
@@ -173,7 +173,9 @@ export function sendOp(process, ctx, count, selector, isSuper) {
   }
 
   if (!method) {
-    throw new Error('failed to look up method');
+    const className = readIV(classOf(receiver), CLASS_NAME);
+    throw new Error('failed to look up method ' + asJSString(className) +
+        ' >> #' + asJSString(selector));
   }
 
   // Now we have all the pieces: receiver, target method, the superobject and
@@ -188,7 +190,7 @@ export function sendOp(process, ctx, count, selector, isSuper) {
   const nLocals = fromSmallInteger(readIV(method, METHOD_LOCALS));
   // Create an array of 1 + argc + nLocals.
   const locals = mkInstance(read(classTable(CLS_ARRAY)), 1 + count + nLocals);
-  writeIV(locals, 0, receiver);
+  writeArray(locals, 0, receiver);
   for (let i = 0; i < count; i++) {
     const arg = readArray(ctx, ixReceiver + i + 1);
     writeArray(locals, 1 + i, arg);

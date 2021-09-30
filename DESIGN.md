@@ -333,6 +333,11 @@ the operand field at all.
     - `$62: answer TOS` Answer TOS from the current context (block or method).
     - `$63: Answer self` Shorthand for `push self` then `answer TOS`.
     - `$64: Block answer TOS` Block return, returning from the whole method.
+    - **TODO**: "answer instance variable N" is probably a good shorthand, it
+      reduces lots of trivial methods to a single opcode.
+      - Double-**TODO**: That could be even more compact by encoding the methods
+        as just a header or something, so when "calling" them, no stack
+        machinery is needed.
 
 - `$6: branches` More operations under `$6`. These use *operand* as a skip
   count.

@@ -158,6 +158,7 @@ Javascript functions."
   ^ argc = 0
     ifTrue: [self value]
     ifFalse: [self value: aValue]
+
 ! whileTrue: bodyBlock
   "NEVER CALLED: This version is ruthlessly recursive, but it should work.
   Instead, sends of whileTrue and friends should be expanded by

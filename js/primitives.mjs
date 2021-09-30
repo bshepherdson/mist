@@ -1,7 +1,19 @@
 // Primitive list.
 // $FF isn't allowed; it's reserved for expansion.
-import {answer, primitives, self} from './bytecodes.mjs';
-import {push, pop, readIV, readArray, writeIV, writeArray} from './memory.mjs';
+import {answer, primitives, readLocal, self, sendOp} from './bytecodes.mjs';
+import {defClass} from './bootstrap.mjs';
+import {
+  arraySize, classOf, MA_NEXT_CLASS_INDEX, MA_NIL, MA_TRUE, MA_FALSE,
+  CLS_CONTEXT, CLS_STRING, CLS_SYMBOL,
+  BLOCK_CONTEXT, BLOCK_ARGV, BLOCK_ARGC,
+  CTX_LOCALS, CTX_SENDER, CTX_PC, CTX_METHOD, CTX_STACK_INDEX,
+  hasClass, fromSmallInteger, toSmallInteger,
+  asJSString, mkInstance, push, pop,
+  read, readIV, readArray,
+  write, writeIV, writeArray,
+  wrapString,
+} from './memory.mjs';
+import {popContext, pushContext} from './process.mjs';
 
 //   0: basicNew
 primitives[0] = function(process, ctx) {
@@ -97,7 +109,7 @@ function mkSubclass(ctx, hasInstVars, hasClassVars) {
   classVars = classVars ? classVars.split(/ +/).length : 0;
 
   const classIndex = read(MA_NEXT_CLASS_INDEX);
-  write(classIndex + 1);
+  write(MA_NEXT_CLASS_INDEX, classIndex + 1);
   return defClass(classIndex, className, superclass, instVars, classVars);
 }
 
@@ -119,7 +131,7 @@ primitives[12] = function(process, ctx) {
 
 function runBlock(process, ctx, argc) {
   const block = self(ctx);
-  const argcWanted = fromSmallInteger(readIV(ctx, CLOSURE_ARGC));
+  const argcWanted = fromSmallInteger(readIV(ctx, BLOCK_ARGC));
   if (argc !== argcWanted) {
     throw new BlockArgumentCountMismatchError(argcWanted, argc);
   }
@@ -185,6 +197,7 @@ primitives[20] = function(process, ctx) {
     // TODO Better object output?
     console.log('Object: ' + p);
   }
+  answer(process, ctx, MA_NIL);
 };
 
 //  21: throw

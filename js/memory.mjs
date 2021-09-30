@@ -32,7 +32,7 @@ const MA_TENURE_ALLOC = 0x1008;
 const MA_ESCAPED_HEAD = 0x100a;
 // Class dictionary.
 export const MA_CLASS_DICT = 0x100c;
-const MA_NEXT_CLASS_INDEX = 0x100e;
+export const MA_NEXT_CLASS_INDEX = 0x100e;
 
 export const MASK_CLASS_INDEX = 0x3fffff;
 
@@ -186,7 +186,6 @@ export function read(addr) {
 }
 
 export function writeWord(addr, value) {
-  if (67106912 <= addr && addr <= 67106920) debugger;
   return mem[addr] = value & 0xffff;
 }
 
@@ -194,8 +193,6 @@ export function write(addr, value) {
   writeWord(addr, value >> 16);
   writeWord(addr + 1, value);
 }
-
-
 
 
 // Object header format
@@ -400,7 +397,7 @@ export function push(ctx, value) {
 export function pop(ctx) {
   const sp = fromSmallInteger(readIV(ctx, CTX_STACK_INDEX));
   if (sp <= 0) throw new Error('VM stack underflow');
-  const value = readArray(ctx, sp);
+  const value = readArray(ctx, sp - 1);
   // Always a number, safe to skip the checks.
   writeIVNew(ctx, CTX_STACK_INDEX, toSmallInteger(sp - 1));
   return value;
@@ -408,7 +405,7 @@ export function pop(ctx) {
 
 export function peek(ctx) {
   const sp = fromSmallInteger(readIV(ctx, CTX_STACK_INDEX));
-  return readArray(ctx, sp);
+  return readArray(ctx, sp - 1);
 }
 
 
