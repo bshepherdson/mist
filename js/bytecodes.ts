@@ -154,6 +154,7 @@ export function sendOp(process: ptr, ctx: ptr, count: number, selector: ptr,
   }
 
   while (cls && cls !== MA_NIL) {
+    /*
     if (classOf(cls) === read(classTable(CLS_METACLASS))) {
       // This is a metaclass - grab its class and get *its* name.
       const theClass = readIV(cls, METACLASS_THIS_CLASS);
@@ -164,9 +165,10 @@ export function sendOp(process: ptr, ctx: ptr, count: number, selector: ptr,
       const className = readIV(cls, CLASS_NAME);
       console.log('Searching ' + asJSString(className));
     }
+    */
 
     const dict = readIV(cls, BEHAVIOR_METHODS);
-    printDict(dict);
+    //printDict(dict);
     const found = lookup(dict, selector);
     if (found && found !== MA_NIL) {
       method = found;
@@ -178,8 +180,14 @@ export function sendOp(process: ptr, ctx: ptr, count: number, selector: ptr,
   }
 
   if (!method) {
-    const className = readIV(classOf(receiver), CLASS_NAME);
-    throw new Error('failed to look up method ' + asJSString(className) +
+    const receiverClass = classOf(receiver);
+    let className;
+    if (hasClass(receiverClass, CLS_METACLASS)) {
+      className = asJSString(readIV(receiver, CLASS_NAME)) + ' class';
+    } else {
+      className = asJSString(readIV(receiverClass, CLASS_NAME));
+    }
+    throw new Error('failed to look up method ' + className +
         ' >> #' + asJSString(selector));
   }
 

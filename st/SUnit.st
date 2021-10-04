@@ -104,7 +104,9 @@ TestAsserter subclass: #TestCase
 ! TestCase class
 ! testSelectors
   ^(self methods
-    select: [:each | (each selector beginsWith: 'test') and: [each numArgs = 0]])
+    select: [:each |
+      (each selector indexOfSubCollection: 'test' startingAt: 1) = 0
+        and: [each numArgs = 0]])
     collect: [:each | each selector]
 
 ! buildSuite
@@ -207,10 +209,10 @@ Object subclass: #TestResult
 ! TestResult
 ! initialize
   super initialize.
-  passed := Array new.
-  failures := Array new. "A Set in canon? Just this one, dunno why."
-  errors := Array new.
-  skipped := Array new
+  passed := OrderedCollection new.
+  failures := OrderedCollection new. "A Set in canon? Just this one, dunno why."
+  errors := OrderedCollection new.
+  skipped := OrderedCollection new
 
 ! addError: aTestCase
   ^errors add: aTestCase
@@ -303,7 +305,7 @@ Object subclass: #TestSuite
   "TODO Resources need to be cleaned up here."
 
 ! tests
-  ^ tests ifNil: [ tests := Array new ]
+  ^ tests ifNil: [ tests := OrderedCollection new ]
 !!
 
 

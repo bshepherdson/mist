@@ -12,7 +12,7 @@ import {
   CLS_COMPILED_METHOD, CLS_BLOCK_CLOSURE,
   CLS_COLLECTION, CLS_SEQUENCEABLE_COLLECTION, CLS_ARRAYED_COLLECTION,
   CLS_HASHED_COLLECTION, CLS_DICTIONARY, CLS_IDENTITY_DICTIONARY,
-  CLS_ARRAY, CLS_WORD_ARRAY, CLS_SYMBOL, CLS_STRING,
+  CLS_ASSOCIATION, CLS_ARRAY, CLS_WORD_ARRAY, CLS_SYMBOL, CLS_STRING,
   CLS_MAGNITUDE, CLS_NUMBER, CLS_INTEGER, CLS_SMALL_INTEGER,
   IV_BEHAVIOR, IV_CLASS_DESCRIPTION, IV_CLASS, IV_METACLASS, IV_METHOD,
   MA_NIL,
@@ -287,6 +287,7 @@ const hashed =
     defClass(CLS_HASHED_COLLECTION, 'HashedCollection', collection, 2);
 const dict = defClass(CLS_DICTIONARY, 'Dictionary', hashed, 0);
 const idDict = defClass(CLS_IDENTITY_DICTIONARY, 'IdentityDictionary', dict, 0);
+defClass(CLS_ASSOCIATION, 'Association', object, 2);
 
 // We need the hobo implementation of "dictionaries" in dict.mjs. They're
 // not really dictionaries, just arrays with [k1, v1, k2, v2, ...] in arbitrary

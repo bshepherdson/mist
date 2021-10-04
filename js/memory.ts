@@ -176,8 +176,8 @@ export const [
 export const IV_BLOCK = 5;
 export const [BLOCK_CONTEXT, BLOCK_PC_START, BLOCK_ARGC, BLOCK_ARGV, BLOCK_HANDLER_ACTIVE] = seq(IV_BLOCK);
 
-export const [AA_KEY, AA_VALUE, AA_LEVEL, AA_LEFT, AA_RIGHT] = seq(5);
 export const [DICT_ARRAY, DICT_TALLY] = seq(2);
+export const [ASSOC_KEY, ASSOC_VALUE] = seq(2);
 export const ASCII_TABLE = [];
 
 

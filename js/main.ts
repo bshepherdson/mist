@@ -12,7 +12,6 @@ function main() {
     const driver = new Driver(stream);
 
     const debug = new DebugDriver(new WordStream(input)).allCommands();
-    debugger;
     while (!stream.atEnd()) {
       driver.interpret();
     }

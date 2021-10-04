@@ -173,6 +173,9 @@ Error subclass: #ValueNotFound
         ifTrue: [array swap: index with: newIndex] ]
 
 
+! species
+  ^ self class
+
 ! = aDictionary
   "Two HashedCollections are equal iff
   (a) they are the same kind of thing.

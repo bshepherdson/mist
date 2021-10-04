@@ -5,7 +5,8 @@ import {defClass} from './bootstrap';
 import {BlockArgumentCountMismatchError} from './errors';
 import {
   sti, ptr,
-  arraySize, classOf, MA_NEXT_CLASS_INDEX, MA_NIL, MA_TRUE, MA_FALSE,
+  arraySize, classOf, identityHash,
+  MA_NEXT_CLASS_INDEX, MA_NIL, MA_TRUE, MA_FALSE,
   CLS_CONTEXT, CLS_STRING, CLS_SYMBOL,
   BLOCK_CONTEXT, BLOCK_ARGV, BLOCK_ARGC, BLOCK_PC_START,
   CTX_LOCALS, CTX_SENDER, CTX_PC, CTX_METHOD, CTX_STACK_INDEX,
@@ -13,6 +14,7 @@ import {
   asJSString, mkInstance, push, pop,
   read, readIV, readArray,
   write, writeIV, writeArray,
+  readWordArray, writeWordArray, wordArraySize,
   wrapString,
 } from './memory';
 import {popContext, pushContext} from './process';
@@ -30,10 +32,9 @@ primitives[1] = function(process: ptr, ctx: ptr) {
   answer(process, ctx, classOf(self(ctx)));
 };
 
-//   2: halt
+//   2: basicHash
 primitives[2] = function(process: ptr, ctx: ptr) {
-  debugger;
-  answer(process, ctx, self(ctx));
+  answer(process, ctx, identityHash(self(ctx)));
 };
 
 //   3: instVarAt:
@@ -208,6 +209,13 @@ primitives[21] = function(process: ptr, ctx: ptr) {
   throw new Error('' + readLocal(ctx, 1));
 };
 
+//  22: halt
+primitives[22] = function(process: ptr, ctx: ptr) {
+  debugger;
+  answer(process, ctx, self(ctx));
+};
+
+
 //  25: basicNew:
 primitives[25] = function(process: ptr, ctx: ptr) {
   // Self is a class, and we pass the number in arg 1 as the size.
@@ -220,7 +228,8 @@ primitives[25] = function(process: ptr, ctx: ptr) {
 primitives[26] = function(process: ptr, ctx: ptr) {
   const array = self(ctx);
   const index = fromSmallInteger(readLocal(ctx, 1));
-  answer(process, ctx, readArray(array, index));
+  // Index is a 1-based Smalltalk index.
+  answer(process, ctx, readArray(array, index - 1));
 };
 
 //  27: at:put:
@@ -228,7 +237,8 @@ primitives[27] = function(process: ptr, ctx: ptr) {
   const array = self(ctx);
   const index = fromSmallInteger(readLocal(ctx, 1));
   const value = readLocal(ctx, 2);
-  writeArray(array, index, value);
+  // Index is a 1-based Smalltalk index.
+  writeArray(array, index - 1, value);
   answer(process, ctx, array);
 };
 
@@ -305,5 +315,29 @@ primitives[41] = function(process: ptr, ctx: ptr) {
 primitives[42] = function(process: ptr, ctx: ptr) {
   const n = fromSmallInteger(self(ctx));
   answer(process, ctx, wrapString('' + n));
+};
+
+// 50: word array size
+primitives[50] = function(process: ptr, ctx: ptr) {
+  const arr = self(ctx);
+  answer(process, ctx, toSmallInteger(wordArraySize(arr)));
+};
+
+// 51: wordAt: index
+primitives[51] = function(process: ptr, ctx: ptr) {
+  const arr = self(ctx);
+  const index = fromSmallInteger(readLocal(ctx, 1));
+  // 1-based Smalltalk indices
+  answer(process, ctx, toSmallInteger(readWordArray(arr, index - 1)));
+};
+
+// 52: wordAt: index put: aWord
+primitives[52] = function(process: ptr, ctx: ptr) {
+  const arr = self(ctx);
+  const index = fromSmallInteger(readLocal(ctx, 1));
+  const value = fromSmallInteger(readLocal(ctx, 2));
+  // 1-based Smalltalk indices
+  writeWordArray(arr, index - 1, value);
+  answer(process, ctx, MA_NIL);
 };
 

@@ -406,7 +406,7 @@ func (l *STL) EnterExprLine() {
 	//
 	// Additionally, statements at the top level need to be captured as singular
 	// driver statements.
-	if !l.inMethods {
+	if !l.inMethods && l.blockDepth == 0 {
 		l.cp.startTopLevel()
 	} else if l.first {
 		l.first = false
@@ -416,7 +416,7 @@ func (l *STL) EnterExprLine() {
 }
 
 func (l *STL) LeaveExprLine() {
-	if !l.inMethods {
+	if !l.inMethods && l.blockDepth == 0 {
 		l.cp.answer() // Ends the pseudo-method.
 		l.cp.endTopLevel()
 	}
@@ -576,7 +576,7 @@ func (l *STL) LeaveConstArray() {
 func (l *STL) EnterDynArray() {
 	// Dynamic arrays are created with a series of message sends.
 	// After being created, they get DUPed repeatedly for expressions.
-	l.cp.pushGlobal("Array")
+	l.cp.pushGlobal("OrderedCollection")
 	l.cp.send(false, 0, "new")
 }
 
@@ -620,11 +620,8 @@ func (l *STL) VisitIdentifier(id *parser.Ident) {
 	spec := l.scope.lookup(id.Text)
 	if spec == nil {
 		if unicode.IsUpper([]rune(id.Text)[0]) {
-			// Assume this is a class value, and compile a SystemDictionary at: sym.
-			l.cp.pushGlobal("SystemDictionary")
-			l.cp.pushString(id.Text)
-			l.cp.send(false, 0, "asSymbol")
-			l.cp.send(false, 1, "at:")
+			// Assume this is a class value, and compile a push global literal.
+			l.cp.pushGlobal(id.Text)
 			return
 		}
 

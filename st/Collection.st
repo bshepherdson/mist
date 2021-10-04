@@ -5,6 +5,7 @@ Collection
   SequenceableCollection
     ArrayedCollection
       Array
+      OrderedCollection
 "
 
 "First, a block of the abstract methods all subclasses must provide."

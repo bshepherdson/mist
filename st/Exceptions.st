@@ -282,7 +282,7 @@ Object subclass: #ExceptionSet instanceVariableNames: 'exceptions'.
 ! ExceptionSet
 ! initialize
   super initialize.
-  exceptions := Array new
+  exceptions := OrderedCollection new
 ! , anException
   self add: anException
 ! add: anException
@@ -358,7 +358,7 @@ CannotReturn subclass: #ContextCannotReturn
 !!
 
 
-"Exception subclass: #AbstractMethod.
+Exception subclass: #AbstractMethod.
 ! AbstractMethod
 ! message
   ^ 'Send reached an abstract method - missing implementation'
@@ -367,5 +367,7 @@ CannotReturn subclass: #ContextCannotReturn
 ! Object
 ! subclassResponsibility
   self error: AbstractMethod new
-!!"
+! error: anException
+  anException signal
+!!
 

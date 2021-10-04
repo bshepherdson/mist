@@ -15,7 +15,12 @@ Javascript functions."
   ^ superclass
 
 ! methods
-  ^ self methodDictionary values
+  ^ self methodDictionary associations collect: [:asc |
+    | m |
+    m := Method new.
+    m selector: asc key.
+    m compiled: asc value.
+    m]
 
 ! selectors
   "Answers an Array of Symbols for the methods on this class."
@@ -38,6 +43,21 @@ Javascript functions."
   ^false
 !!
 
+
+Object subclass: #Method instanceVariableNames: 'selector compiled'.
+
+! Method
+! compiled: aCompiledMethod
+  compiled := aCompiledMethod
+! selector: aSymbol
+  selector := aSymbol
+! selector
+  ^ selector
+! numArgs
+  ^ compiled numArgs
+!!
+
+
 "Do nothing in #initialize by default."
 ! Object
 ! initialize
@@ -56,12 +76,17 @@ Javascript functions."
   ^ self class == aClass or: [ self class inheritsFrom: aClass ]
 ! halt
   "Triggers the debugger!"
-  <primitive: 2>
+  <primitive: 22>
 
 ! == anObject
   <primitive: 30>
 ! ~= anObject
   ^ (self = anObject) not
+
+! hash
+  ^ self basicHash
+! basicHash
+  <primitive: 2>
 
 ! instVarAt: anIndex
   <primitive: 3>
@@ -123,6 +148,13 @@ Javascript functions."
 ! Class
 ! name
   ^name
+!!
+
+! Metaclass
+! name
+  ^ thisClass name, ' class'
+! printString
+  ^ thisClass name
 !!
 
 

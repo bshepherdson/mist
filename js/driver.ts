@@ -7,6 +7,7 @@ import {
   PROCESS_CONTEXT, PROCESS_PROCESS_TABLE, PROCESS_TABLE_NEXT_PRIORITY,
   MA_NIL, MA_TRUE, MA_FALSE, MA_CLASS_DICT,
   METHOD_BYTECODE, METHOD_LITERALS, METHOD_LOCALS, METHOD_ARGC,
+  CTX_LOCALS,
   arraySize, classOf, classTable, mkInstance,
   asJSString, fromSmallInteger, toSmallInteger,
   read, readArray, readIV, readWordArray,
@@ -91,6 +92,11 @@ export class Driver {
         const bcs = readIV(method, METHOD_BYTECODE);
         const bcLen = wordArraySize(bcs);
         const ctx = newContext(method, MA_NIL, MA_NIL);
+        // The context is missing a locals field, so we create a fake one to
+        // support any block args or locals. We assume 16 slots suffices.
+        if (readIV(ctx, CTX_LOCALS) === MA_NIL) {
+          writeIV(ctx, CTX_LOCALS, mkInstance(read(classTable(CLS_ARRAY)), 16));
+        }
         const proc = fork(ctx);
 
         while (readIV(proc, PROCESS_CONTEXT) !== MA_NIL) {
@@ -166,14 +172,12 @@ export class Driver {
     // The array is a pointer array containing: cmd, class name, methods...
     const className = readArray(array, 1);
     const name = asJSString(className);
-    if (name === 'BlockClosure') {
-      console.log(debug.printValue(array));
-      debugger;
-    }
     const classDict = read(MA_CLASS_DICT);
     const classNode = lookup(classDict, className);
     //console.log('Adding methods to ' + asJSString(className));
-    if (classNode === MA_NIL) throw new Error('Unrecognized class!');
+    if (classNode === MA_NIL) {
+      throw new Error('Unrecognized class: ' + asJSString(className));
+    }
 
     // If the "classy" flag is true, we're adding things to Foo class.
     // Since that's nameless, the symbol is for the real Class, and it uses a

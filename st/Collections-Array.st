@@ -12,8 +12,6 @@
 ! Array
 ! asArray
   ^ self
-! species
-  ^ Array
 ! size
   <primitive: 28>
 
@@ -100,4 +98,120 @@
   self size > 20 ifTrue: [s := s , '. (' , (self size - 20) , ' more)'].
   ^ s , '}'
 !!
+
+
+! WordArray class
+! basicNew
+  ^ self basicNew: 0
+! basicNew: aNumber
+  <primitive: 25>
+! new: aNumber
+  ^ (self basicNew: aNumber) initialize
+!!
+
+
+! WordArray
+! size
+  <primitive: 50>
+! at: anIndex
+  <primitive: 51>
+! at: anIndex put: aWord
+  <primitive: 52>
+!!
+
+
+! SequenceableCollection
+! isSequenceable
+  ^ true
+! species
+  ^ OrderedCollection
+! do: aBlock
+  1 to: self size do: [:ix | aBlock value: (self at: ix)]
+! select: aBlock "TODO: This is better with streaming, see Pharo."
+  | dst |
+  dst := self species new: self size.
+  self do: [:each | (aBlock value: each) ifTrue: [dst add: each]].
+  ^ dst
+
+! copyFrom: start to: stop
+  | dst |
+  dst := self species new: stop - start + 1.
+  start to: stop do: [:ix | dst at: ix - start + 1 put: (self at: ix)].
+  ^ dst
+
+! indexOf: anElement
+  ^ self indexOf: anElement ifAbsent: [0]
+! indexOf: anElement ifAbsent: exceptionBlock
+  anIndex to: self size do: [:ix | (self at: ix) = anElement ifTrue: [^ix]].
+  ^ exceptionBlock value
+
+! indexOfSubCollection: aSubCollection startingAt: anIndex
+  ^ self indexOfSubCollection: aSubCollection startingAt: anIndex ifAbsent: [0]
+! indexOfSubCollection: aSubCollection startingAt: anIndex ifAbsent: exBlock
+  | subSize |
+  subSize := aSubCollection size.
+  anIndex to: self size - subSize + 1 do: [:ix |
+    (self copyFrom: ix to: ix + subSize - 1) = aSubCollection ifTrue: [^ix]].
+  ^ exBlock value
+
+!!
+
+
+ArrayedCollection subclass: #OrderedCollection
+    instanceVariableNames: 'array tally'.
+
+! OrderedCollection class
+! new: aSize
+  | oc |
+  oc := self basicNew.
+  oc privInitCapacity: aSize.
+  oc initialize.
+  ^ oc
+
+! new
+  ^ self new: 8
+!!
+
+! OrderedCollection
+! privInitCapacity: aSize
+  array := Array new: aSize
+
+! initialize
+  super initialize.
+  tally := 0
+
+! at: anIndex
+  ^ array at: anIndex
+! at: anIndex put: aValue
+  self ensureCapacity: anIndex.
+  array at: anIndex put: aValue.
+  tally := tally max: anIndex
+
+! ensureCapacity: aSize
+  array size < aSize ifTrue: [
+    | arr |
+    arr := Array new: aSize.
+    1 to: tally do: [:ix | arr at: ix put: (array at: ix)].
+    array := arr]
+
+! add: aValue
+  self at: tally + 1 put: aValue "That increases the tally."
+
+! size
+  ^ tally
+
+! capacity
+  ^ array size
+
+! printString
+  | s first |
+  s := '{'.
+  first := true.
+  self do: [:each |
+    first ifFalse: [s := s , '. '].
+    s := s , each printString.
+    first := false].
+  ^ s, '}'
+!!
+
 

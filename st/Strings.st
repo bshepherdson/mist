@@ -19,5 +19,7 @@
 ! = anObject
   "Symbols are interned, so Symbols can short-circuit with ==."
   ^ self == anObject
+! asSymbol
+  ^self
 !!
 

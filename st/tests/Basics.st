@@ -79,19 +79,14 @@ TestCase subclass: #ArithmeticBasics.
   | arr |
   arr := Array new: 5.
   1 to: 5 do: [:i | arr at: i put: i * i].
-  self assert: arr equals: {1. 4. 9. 16. 25}
+  self assert: arr equals: {1. 4. 9. 16. 25} asArray
 
 ! testTimesDo
   | arr |
-  arr := Array new: 3.
+  arr := OrderedCollection new: 3.
   3 timesDo: [arr add: 7].
-  self assert: arr equals: {nil. nil. nil. 7. 7. 7}
-
-! testTimesDoIndexed
-  | arr |
-  arr := Array new: 3.
-  3 timesDo: [:i | arr at: i put: 7].
   self assert: arr equals: {7. 7. 7}
+
 !!
 
 TestCase subclass: #LogicBasics.
@@ -139,6 +134,7 @@ TestCase subclass: #LogicBasics.
   self assert: (nil  ifNotNil: [6] ifNil: [7]) equals: 7.
   self assert: (17   ifNotNil: [6] ifNil: [7]) equals: 6
 !!
+
 
 Transcript show: (ArithmeticBasics suite , LogicBasics suite) run printString.
 99 halt.
