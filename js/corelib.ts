@@ -85,9 +85,9 @@ for (let i = 0; i < 256; i++) {
 }
 
 // Tricky to initialize these, so capturing it in a function.
-export function newContext(method: ptr, sender: ptr, locals: ptr): ptr {
+export function newContext(method: ptr, sender: ptr, locals: ptr, opt_hasPrimitive = false): ptr {
   const ctx = mkInstance(read(classTable(CLS_CONTEXT)), 19);
-  writeIV(ctx, CTX_PC, toSmallInteger(0));
+  writeIV(ctx, CTX_PC, toSmallInteger(opt_hasPrimitive ? 1 : 0));
   writeIV(ctx, CTX_STACK_INDEX, toSmallInteger(0));
   writeIV(ctx, CTX_METHOD, method);
   writeIV(ctx, CTX_LOCALS, locals);

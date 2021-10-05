@@ -11,7 +11,7 @@ import {
   BLOCK_CONTEXT, BLOCK_ARGV, BLOCK_ARGC, BLOCK_PC_START,
   CTX_LOCALS, CTX_SENDER, CTX_PC, CTX_METHOD, CTX_STACK_INDEX,
   classTable, hasClass, fromSmallInteger, toSmallInteger, isSmallInteger,
-  asJSString, mkInstance, push, pop,
+  asJSString, mkInstance, push, pop, peek,
   read, readIV, readArray,
   write, writeIV, writeArray,
   readWordArray, writeWordArray, wordArraySize,
@@ -19,108 +19,108 @@ import {
 } from './memory';
 import {popContext, pushContext} from './process';
 
-//   0: basicNew
-primitives[0] = function(process: ptr, ctx: ptr) {
-  // Self is a class, we want to create and answer a new instance of it.
-  const cls = self(ctx);
-  const p = mkInstance(cls);
-  answer(process, ctx, p);
-  return true;
-};
+// NB: Primitives execute directly on the parent's context, with the receiver
+// and arguments on the stack. They consume those values, and leave a result.
+// They MUST leave a (possibly dummy) result, since that value is expected and
+// might be DROP'd.
+
+function unary(f: (p: ptr) => ptr): Primitive {
+  return (process: ptr, ctx: ptr): boolean => {
+    push(ctx, f(pop(ctx)));
+    return true;
+  };
+}
+
+//   0: basicNew  -  TOS is a class, we want to create a new instance of it.
+primitives[0] = unary(mkInstance);
 
 //   1: class
-primitives[1] = function(process: ptr, ctx: ptr) {
-  answer(process, ctx, classOf(self(ctx)));
-  return true;
-};
+primitives[1] = unary(classOf);
 
 //   2: basicHash
-primitives[2] = function(process: ptr, ctx: ptr) {
-  answer(process, ctx, identityHash(self(ctx)));
-  return true;
-};
+primitives[2] = unary(identityHash);
 
 //   3: instVarAt:
 primitives[3] = function(process: ptr, ctx: ptr) {
-  const index = fromSmallInteger(readLocal(ctx, 1)); // 1-based
-  const value = readIV(self(ctx), index - 1); // 0-based
-  answer(process, ctx, value);
+  const index = fromSmallInteger(pop(ctx)); // 1-based
+  const value = readIV(pop(ctx), index - 1); // 0-based
+  push(ctx, value);
   return true;
 };
 
-//   4: instVarAt:put:
+//   4: instVarAt:put:   - Leaves the value on the stack.
 primitives[4] = function(process: ptr, ctx: ptr) {
-  const index = fromSmallInteger(readLocal(ctx, 1)); // 1-based
-  const value = readLocal(ctx, 2);
-  writeIV(self(ctx), index - 1, value); // 0-based index here
+  const value = pop(ctx);
+  const index = fromSmallInteger(pop(ctx)); // 1-based
+  writeIV(pop(ctx), index - 1, value); // 0-based index here
+  push(ctx, value);
   return true;
 };
 
-type ArgFn = (ctx: ptr, i: number) => ptr;
 
-function call(process: ptr, ctx: ptr, argc: number, selector: ptr, argFn: ArgFn) {
-  // Since the primitive always returns directly, we can (ab)use the sender's
-  // stack.
-  const sender = readIV(ctx, CTX_SENDER);
-  push(sender, self(ctx));
+// For perform: and friends, the stack is (receiver selector arg...).
+// Pop the right number of times to get at the selector, then pass it to
+// sendOp.
+function call(process: ptr, ctx: ptr, argc: number) {
+  const args = [];
   for (let i = 0; i < argc; i++) {
-    push(sender, argFn(ctx, i));
+    args.push(pop(ctx));
   }
-  popContext(process);
-  sendOp(process, sender, argc, selector, false);
-}
-
-function performArg(ctx: ptr, i: number): ptr {
-  return readLocal(ctx, i + 2);
+  const selector = pop(ctx);
+  for (let i = 0; i < argc; i++) {
+    push(ctx, args.pop()!);
+  }
+  sendOp(process, ctx, argc, selector, false);
 }
 
 //   5: perform:
 primitives[5] = function(process: ptr, ctx: ptr) {
-  call(process, ctx, 0, readLocal(ctx, 1), performArg);
+  call(process, ctx, 0);
   return true;
 };
 
 //   6: perform:with:
 primitives[6] = function(process: ptr, ctx: ptr) {
-  call(process, ctx, 1, readLocal(ctx, 1), performArg);
+  call(process, ctx, 1);
   return true;
 };
 
 //   7: perform:with:with:
 primitives[7] = function(process: ptr, ctx: ptr) {
-  call(process, ctx, 2, readLocal(ctx, 1), performArg);
+  call(process, ctx, 2);
   return true;
 };
 
 //   8: perform:with:with:with:
 primitives[8] = function(process: ptr, ctx: ptr) {
-  call(process, ctx, 3, readLocal(ctx, 1), performArg);
+  call(process, ctx, 3);
   return true;
 };
 
 //   9: perform:withArguments:
 primitives[9] = function(process: ptr, ctx: ptr) {
-  const argv = readLocal(ctx, 2);
-  call(process, ctx, 3, readLocal(ctx, 1), (c, i) => readArray(argv, i));
+  // This one is special. The stack is (receiver selector argv).
+  // Pop off the args array and selector, push all the args in order, and call.
+  const argv = pop(ctx);
+  const selector = pop(ctx);
+  const argc = arraySize(argv);
+  for (let i = 0; i < argc; i++) {
+    push(ctx, readArray(argv, i));
+  }
+  sendOp(process, ctx, argc, selector, false);
   return true;
 };
 
 
 function mkSubclass(ctx: ptr, hasInstVars: boolean, hasClassVars: boolean): ptr {
-  const superclass = self(ctx);
-  const className = readLocal(ctx, 1); // Pointer to a symbol.
-  let instVars = 0;
-  let classVars = 0;
+  const classVarNames = hasClassVars ? asJSString(pop(ctx)) : '';
+  const instVarNames = hasInstVars ? asJSString(pop(ctx)) : '';
 
-  let ix = 2;
-  if (hasInstVars) {
-    const vars = asJSString(readLocal(ctx, ix++));
-    instVars = vars ? vars.split(/ +/).length : 0;
-  }
-  if (hasClassVars) {
-    const vars = asJSString(readLocal(ctx, ix++));
-    classVars = vars ? vars.split(/ +/).length : 0;
-  }
+  const className = pop(ctx); // Pointer to a symbol.
+  const superclass = pop(ctx);
+
+  let instVars = instVarNames.split(/ +/).length;
+  let classVars = classVarNames.split(/ +/).length;
 
   const classIndex = read(MA_NEXT_CLASS_INDEX);
   write(MA_NEXT_CLASS_INDEX, classIndex + 1);
@@ -129,25 +129,30 @@ function mkSubclass(ctx: ptr, hasInstVars: boolean, hasClassVars: boolean): ptr 
 
 //  10: subclass:
 primitives[10] = function(process: ptr, ctx: ptr) {
-  answer(process, ctx, mkSubclass(ctx, false, false));
+  push(ctx, mkSubclass(ctx, false, false));
   return true;
 };
 
 //  11: subclass:instanceVariableNames:
 primitives[11] = function(process: ptr, ctx: ptr) {
-  answer(process, ctx, mkSubclass(ctx, true, false));
+  push(ctx, mkSubclass(ctx, true, false));
   return true;
 };
 
 //  12: subclass:instanceVariableNames:classVarNames:
 primitives[12] = function(process: ptr, ctx: ptr) {
-  answer(process, ctx, mkSubclass(ctx, true, true));
+  push(ctx, mkSubclass(ctx, true, true));
   return true;
 };
 
 
 function runBlock(process: ptr, ctx: ptr, argc: number) {
-  const block = self(ctx);
+  // Stack is (block args...)
+  const argv = new Array(argc);
+  for (let i = argc - 1; i >= 0; i--) {
+    argv[i] = pop(ctx);
+  }
+  const block = pop(ctx);
   const argcWanted = fromSmallInteger(readIV(block, BLOCK_ARGC));
   if (argc !== argcWanted) {
     throw new BlockArgumentCountMismatchError(argcWanted, argc);
@@ -158,18 +163,19 @@ function runBlock(process: ptr, ctx: ptr, argc: number) {
 
   const newCtx = mkInstance(read(classTable(CLS_CONTEXT)), 19);
   writeIV(newCtx, CTX_PC, readIV(block, BLOCK_PC_START));
-  writeIV(newCtx, CTX_SENDER, readIV(ctx, CTX_SENDER));
+  writeIV(newCtx, CTX_SENDER, ctx);
   writeIV(newCtx, CTX_METHOD, block);
   writeIV(newCtx, CTX_STACK_INDEX, toSmallInteger(0));
   writeIV(newCtx, CTX_LOCALS, locals);
 
-  const argv = fromSmallInteger(readIV(block, BLOCK_ARGV));
+  const argvIndex = fromSmallInteger(readIV(block, BLOCK_ARGV));
   for (let i = 0; i < argc; i++) {
-    writeArray(locals, argv + i, readLocal(ctx, i + 1));
+    writeArray(locals, argvIndex + i, argv[i]);
   }
 
-  popContext(process); // Pop the #value frame off the stack.
-  pushContext(process, newCtx); // And execute into the new one.
+  pushContext(process, newCtx); // Execute into the new stack frame.
+  // NB: Running a block consumes all the values off the stack; it will
+  // ultimately push the result of the block.
 }
 
 //  13: value
@@ -210,8 +216,9 @@ primitives[18] = function(process: ptr, ctx: ptr) {
 };
 
 //  20: console.log.string - logs the first argument, not self.
+//  Leaves nil on the stack.
 primitives[20] = function(process: ptr, ctx: ptr) {
-  const p = readLocal(ctx, 1);
+  const p = pop(ctx);
   const isStr = hasClass(p, CLS_STRING);
   const isSym = hasClass(p, CLS_SYMBOL);
   if (isStr || isSym) {
@@ -220,7 +227,8 @@ primitives[20] = function(process: ptr, ctx: ptr) {
     // TODO Better object output?
     console.log('Object: ' + p);
   }
-  answer(process, ctx, MA_NIL);
+  pop(ctx); // Pop the ignored receiver.
+  push(ctx, MA_NIL);
   return true;
 };
 
@@ -232,53 +240,47 @@ primitives[21] = function(process: ptr, ctx: ptr) {
 //  22: halt
 primitives[22] = function(process: ptr, ctx: ptr) {
   debugger;
-  answer(process, ctx, self(ctx));
   return true;
 };
 
 
 //  25: basicNew:
 primitives[25] = function(process: ptr, ctx: ptr) {
-  // Self is a class, and we pass the number in arg 1 as the size.
-  const cls = self(ctx);
-  const size = fromSmallInteger(readLocal(ctx, 1));
-  answer(process, ctx, mkInstance(cls, size));
+  // (class size) on the stack.
+  const size = fromSmallInteger(pop(ctx));
+  const cls = pop(ctx);
+  push(ctx, mkInstance(cls, size));
   return true;
 };
 
 //  26: at:
 primitives[26] = function(process: ptr, ctx: ptr) {
-  const array = self(ctx);
-  const index = fromSmallInteger(readLocal(ctx, 1));
+  const index = fromSmallInteger(pop(ctx));
+  const array = pop(ctx);
   // Index is a 1-based Smalltalk index.
-  answer(process, ctx, readArray(array, index - 1));
+  push(ctx, readArray(array, index - 1));
   return true;
 };
 
-//  27: at:put:
+//  27: at:put:   (leaves *value* on the stack).
 primitives[27] = function(process: ptr, ctx: ptr) {
-  const array = self(ctx);
-  const index = fromSmallInteger(readLocal(ctx, 1));
-  const value = readLocal(ctx, 2);
+  const value = pop(ctx);
+  const index = fromSmallInteger(pop(ctx));
+  const array = pop(ctx);
   // Index is a 1-based Smalltalk index.
   writeArray(array, index - 1, value);
-  answer(process, ctx, array);
+  push(ctx, value);
   return true;
 };
 
 //  28: array size
-primitives[28] = function(process: ptr, ctx: ptr) {
-  const array = self(ctx);
-  answer(process, ctx, toSmallInteger(arraySize(array)));
-  return true;
-};
-
+primitives[28] = unary((array: ptr) => toSmallInteger(arraySize(array)));
 
 //  30: ==
 primitives[30] = function(process: ptr, ctx: ptr) {
-  const a = self(ctx);
-  const b = readLocal(ctx, 1);
-  answer(process, ctx, a === b ? MA_TRUE : MA_FALSE);
+  const b = pop(ctx);
+  const a = pop(ctx);
+  push(ctx, a === b ? MA_TRUE : MA_FALSE);
   return true;
 };
 
@@ -286,9 +288,12 @@ primitives[30] = function(process: ptr, ctx: ptr) {
 type binFn<T> = (a: sti, b: sti) => T|null;
 
 function binOp<T>(fn: binFn<T>, ctx: ptr): T|null {
-  const a = fromSmallInteger(self(ctx));
-  const bRaw = readLocal(ctx, 1);
-  if (!isSmallInteger(bRaw)) return null;
+  const bRaw = pop(ctx);
+  if (!isSmallInteger(bRaw)) {
+    push(ctx, bRaw);
+    return null;
+  }
+  const a = fromSmallInteger(pop(ctx));
   const b = fromSmallInteger(bRaw);
   return fn(a, b);
 }
@@ -296,10 +301,8 @@ function binOp<T>(fn: binFn<T>, ctx: ptr): T|null {
 function numericBinOp(fn: binFn<sti>): Primitive {
   return function(process: ptr, ctx: ptr) {
     const result = binOp(fn, ctx);
-    if (result === null) {
-      return false;
-    }
-    answer(process, ctx, toSmallInteger(result));
+    if (result === null) return false;
+    push(ctx, toSmallInteger(result));
     return true;
   };
 }
@@ -308,7 +311,7 @@ function comparisonBinOp(fn: binFn<boolean>): Primitive {
   return function(process: ptr, ctx: ptr) {
     const result = binOp(fn, ctx);
     if (result === null) return false;
-    answer(process, ctx, result ? MA_TRUE : MA_FALSE);
+    push(ctx, result ? MA_TRUE : MA_FALSE);
     return true;
   };
 }
@@ -342,43 +345,32 @@ primitives[36] = comparisonBinOp((a, b) => a < b);
 primitives[37] = comparisonBinOp((a, b) => a === b);
 
 //  41: bitwise invert
-primitives[41] = function(process: ptr, ctx: ptr) {
-  const n = fromSmallInteger(self(ctx));
-  answer(process, ctx, toSmallInteger(~n));
-  return true;
-};
+primitives[41] = unary((n: ptr) => toSmallInteger(~fromSmallInteger(n)));
 
 //  42: number toString
-primitives[42] = function(process: ptr, ctx: ptr) {
-  const n = fromSmallInteger(self(ctx));
-  answer(process, ctx, wrapString('' + n));
-  return true;
-};
+primitives[42] = unary((n: ptr) => wrapString('' + fromSmallInteger(n)));
 
 // 50: word array size
-primitives[50] = function(process: ptr, ctx: ptr) {
-  const arr = self(ctx);
-  answer(process, ctx, toSmallInteger(wordArraySize(arr)));
-  return true;
-};
+primitives[50] = unary((array: ptr) => toSmallInteger(wordArraySize(array)));
 
 // 51: wordAt: index
 primitives[51] = function(process: ptr, ctx: ptr) {
-  const arr = self(ctx);
-  const index = fromSmallInteger(readLocal(ctx, 1));
+  const index = fromSmallInteger(pop(ctx));
+  const arr = pop(ctx);
   // 1-based Smalltalk indices
-  answer(process, ctx, toSmallInteger(readWordArray(arr, index - 1)));
+  push(ctx, toSmallInteger(readWordArray(arr, index - 1)));
   return true;
 };
 
-// 52: wordAt: index put: aWord
+// 52: wordAt: index put: aWord  - leaves the *value* on the stack.
 primitives[52] = function(process: ptr, ctx: ptr) {
-  const arr = self(ctx);
-  const index = fromSmallInteger(readLocal(ctx, 1));
-  const value = fromSmallInteger(readLocal(ctx, 2));
+  const rawValue = pop(ctx);
+  const value = fromSmallInteger(rawValue);
+  const index = fromSmallInteger(pop(ctx));
+  const arr = pop(ctx);
   // 1-based Smalltalk indices
   writeWordArray(arr, index - 1, value);
-  answer(process, ctx, MA_NIL);
+  push(ctx, rawValue);
   return true;
 };
 

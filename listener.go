@@ -376,7 +376,9 @@ func (l *STL) LeaveMethod() {
 }
 
 func (l *STL) EnterReturn() {
-	// Nothing to do here.
+	if !l.first {
+		l.cp.drop()
+	}
 }
 
 func (l *STL) LeaveReturn() {

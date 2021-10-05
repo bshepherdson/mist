@@ -48,7 +48,6 @@ Signaling:
   whether the receiver's evaluation completes."
   | complete returnValue |
   returnValue := self valueNoContextSwitch. "TODO: Add atomic flag to threads"
-  85 halt.
   complete ifNil: [
     complete := true.
     aBlock value ].
@@ -209,13 +208,8 @@ Warning subclass: #Deprecated.
     ifFalse: [ ^ self nextHandlerContext handleSignal: exception ].
 
   exception prevHandlerContext: self.
-  "disable self while executing the handle block"
-  "self exceptionHandlerIsActive: false.
-  value := [ Transcript show: 'ensuring ', (self exceptionHandlerBlock cull: exception) ]
-    ensure: [ 96 halt. self exceptionHandlerIsActive: true. Transcript show: 'ensured' ]."
   value := self exceptionHandlerBlock cull: exception.
   "return from self if not otherwise directed in handle block"
-  Transcript show: 'handleSignal value: ', value printString.
   self return: value
 
 ! cannotReturn: value to: aContext
@@ -225,6 +219,7 @@ Warning subclass: #Deprecated.
   "Unwind thisContext to self and return value to self's sender. Execute any
   unwinding blocks while unwinding (eg. ensure:). ASSUMES self is a sender of
   thisContext!"
+  96 halt.
   sender ifNil: [self cannotReturn: value to: sender].
   sender resume: value
 
@@ -242,20 +237,15 @@ Warning subclass: #Deprecated.
   self isDead ifTrue: [self cannotReturn: value to: self].
   context := firstUnwindContext.
   [ context isNil ] whileFalse: [
-    96 halt.
     context unwindComplete ifNil: [
       context unwindComplete: true.
       unwindBlock := context unwindBlock.
-      95 halt.
       thisContext terminateTo: context.
-      91 halt.
-      unwindBlock value
-      90 halt].
-    89 halt.
-    context := context findNextUnwindContextUpTo: self.
-    88 halt ].
+      unwindBlock value.
+      95 halt.
+      value].
+    context := context findNextUnwindContextUpTo: self].
   thisContext terminateTo: self.
-  97 halt.
   ^ value
 
 ! unwindBlock
@@ -274,14 +264,11 @@ Warning subclass: #Deprecated.
   is on my Context stack. Make previousContext my sender."
   | currentContext sendingContext |
   (self hasSender: previousContext) ifTrue: [
-    94 halt.
     currentContext := sender.
     [currentContext == previousContext] whileFalse: [
-      Transcript show: 'terminating'.
       sendingContext := currentContext sender.
       currentContext terminate.
       currentContext := sendingContext]].
-  93 halt.
   sender := previousContext
 
 ! terminate
@@ -325,6 +312,12 @@ Warning subclass: #Deprecated.
   self halt
 ! return: aValue
   handlerContext return: aValue
+! pass
+  "Yields control to the enclosing exception action for the receiver."
+  | nextHandler |
+  nextHandler := handlerContext nextHandlerContext.
+  handlerContext := nil.
+  nextHandler handleSignal: self
 !!
 
 

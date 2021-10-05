@@ -6,13 +6,13 @@ import {
   CTX_METHOD, CTX_LOCALS, CTX_SENDER, CTX_PC, CTX_STACK_INDEX,
   CLASS_NAME, METACLASS_THIS_CLASS,
   CLS_ARRAY, CLS_BLOCK_CLOSURE, CLS_METACLASS,
-  METHOD_LITERALS, METHOD_ARGC, METHOD_CLASS, METHOD_LOCALS,
+  METHOD_LITERALS, METHOD_ARGC, METHOD_CLASS, METHOD_LOCALS, METHOD_BYTECODE,
   PROCESS_CONTEXT,
   MA_CLASS_DICT,
   MA_NIL, MA_TRUE, MA_FALSE,
   mkInstance, peek, pop, push,
   asJSString, fromSmallInteger, toSmallInteger,
-  read, readArray, readIV,
+  read, readArray, readIV, readWordArray,
   writeArray, writeIV, writeIVNew,
 } from './memory';
 import {ArgumentCountMismatchError} from './errors';
@@ -128,8 +128,7 @@ function storeOp(process: ptr, ctx: ptr, count: number, operand: number) {
   }
 }
 
-export function sendOp(process: ptr, ctx: ptr, count: number, selector: ptr,
-    isSuper: boolean): ptr {
+export function sendOp(process: ptr, ctx: ptr, count: number, selector: ptr, isSuper: boolean): void {
   // The receiver is on the stack, followed by the arguments: rcvr arg1 arg2...
   // We need to create a new array containing 2 + argc + locals cells.
 
@@ -139,9 +138,6 @@ export function sendOp(process: ptr, ctx: ptr, count: number, selector: ptr,
   // So SP = 5; we want 2. That's SP - argc - 1.
   const ixReceiver = fromSmallInteger(readIV(ctx, CTX_STACK_INDEX)) - count - 1;
   const receiver = readArray(ctx, ixReceiver);
-  // We need to pop those off the stack. Conveniently, the empty-ascending new
-  // index is ixReceiver.
-  writeIV(ctx, CTX_STACK_INDEX, toSmallInteger(ixReceiver));
 
   // We need to look up the method we're wanting to call.
   let method = null;
@@ -200,6 +196,27 @@ export function sendOp(process: ptr, ctx: ptr, count: number, selector: ptr,
         expectedArgs, count);
   }
 
+  // Now there are two cases: primitive or proper call.
+  const firstBC = readWordArray(readIV(method, METHOD_BYTECODE), 0);
+  const hasPrimitive = (firstBC & 0xf000) === 0x7000;
+
+  if (hasPrimitive) {
+    // No locals array or stack frame here: we call it directly while the
+    // arguments are on the stack.
+    const prim = primitives[firstBC&0xff];
+    if (!prim) throw new Error('unknown primitive');
+
+    const success = prim(process, ctx);
+    // Primitives that fail do actually execute the Smalltalk code. It's usually
+    // a fallback implementation. Primitives that succeed have done their work,
+    // including consuming the inputs on the stack.
+    if (success) return;
+  }
+
+  // We need to pop those off the stack. Conveniently, the empty-ascending new
+  // index is ixReceiver.
+  writeIV(ctx, CTX_STACK_INDEX, toSmallInteger(ixReceiver));
+
   // Get the number of locals needed.
   const nLocals = fromSmallInteger(readIV(method, METHOD_LOCALS));
   // Create an array of 1 + argc + nLocals.
@@ -212,11 +229,10 @@ export function sendOp(process: ptr, ctx: ptr, count: number, selector: ptr,
   // Locals are already initialized to nil.
 
   // Create a context.
-  const newCtx = newContext(method, ctx, locals);
+  const newCtx = newContext(method, ctx, locals, hasPrimitive);
 
   // Our new context is ready. Push it onto the current process as the new top.
   writeIV(process, PROCESS_CONTEXT, newCtx);
-  return newCtx;
 }
 
 // Begins a block, whose bytecodes are inlined after this one.
@@ -347,14 +363,8 @@ export type Primitive = (process: ptr, ctx: ptr) => boolean;
 export const primitives: {[key: number]: Primitive} = {};
 
 function primitiveOp(process: ptr, ctx: ptr, count: number, operand: number) {
-  const prim = primitives[operand];
-  if (!prim) throw new Error('unknown primitive');
-
-  prim(process, ctx);
-  // Primitives that fail just return to the Smalltalk code, often a fallback
-  // implementation. Primitives that succeed have returned already.
-  // Either way there's nothing more to be done here; the failed flag is
-  // ignored(?)
+  // Actual primitives aren't supposed to be called!
+  throw new Error('actually tried to execute primitive ' + operand);
 }
 
 export function execute(process: ptr, ctx: ptr, bc: stw) {

@@ -213,12 +213,16 @@ Object subclass: #TestResult
   skipped := OrderedCollection new
 
 ! addError: aTestCase
+  Transcript show: 'addError ', aTestCase printString.
   ^errors add: aTestCase
 ! addFailure: aTestCase
+  Transcript show: 'addFailure ', aTestCase printString.
   ^failures add: aTestCase
 ! addPass: aTestCase
+  Transcript show: 'addPass ', aTestCase printString.
   ^passed add: aTestCase
 ! addSkip: aTestCase
+  Transcript show: 'addSkip ', aTestCase printString.
   ^skipped add: aTestCase
 
 ! runCase: aTestCase
@@ -226,7 +230,7 @@ Object subclass: #TestResult
   Transcript show: 'runCase returned'.
   self addPass: aTestCase]
     on: self class failure, self class skip, self class warning, self class error
-    do: [:ex | Transcript show: 'runCase error'. ex sunitAnnounce: aTestCase toResult: self. 98 halt]
+    do: [:ex | 98 halt. ex sunitAnnounce: aTestCase toResult: self ]
 
 ! printString
   | total |

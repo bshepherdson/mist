@@ -32,24 +32,14 @@ TestCase subclass: #CollectionsGeneralArrays.
 inside part of the event delivery. I'm not sure now what will happen if the
 error-handling block of an on:do: itself has an error. I should test that."
 
-"START HERE: Trouble with exceptions still (of course). It's correctly executing
-handlers and correctly unwinding ensure:'s but it's not returning to the right
-places after the ensures are done.
-I think the flow we want is to chase on:do: handlers until one handles this
-error, then unwind the stack through any ensure: or ifCurtailed: blocks until
-at last we return as if from on:do: with the original exception handler's return
-value.
+"START HERE: Still problems with exceptions! This current one I've got figured
+out, and it's a doozy: in MethodContext>>resume:through: there's a whileFalse:
+that calls thisContext in the body. In real Smalltalks eg. Pharo thisContext is
+the method's context, and there's no actual return, since it's being rewritten
+into a loop! In mine, whileFalse: is a real call, so thisContext is different.
+It gets rewritten, and then at the end of the whileFalse: body it returns to
+the wrong place!
+I'll have to bite the bullet and rewrite the methods to turn those into loops."
 
-Ah! I've got it I think: primitives in Pharo are *immediately executed by the
-caller*, there's no stack from for them. I should make that change and then I
-think all the stack unwinding will start working properly."
-
-Object subclass: #Playground.
-! Playground
-! trial
-  ^ [[Error new signal. 7] ensure: [Transcript show: 'ensured']] on: Error do: [8]
-!!
-
-Transcript show: Playground new trial.
-"Transcript show: CollectionsGeneralArrays suite run printString."
+Transcript show: CollectionsGeneralArrays suite run printString.
 99 halt.
