@@ -48,6 +48,7 @@ Signaling:
   whether the receiver's evaluation completes."
   | complete returnValue |
   returnValue := self valueNoContextSwitch. "TODO: Add atomic flag to threads"
+  85 halt.
   complete ifNil: [
     complete := true.
     aBlock value ].
@@ -214,6 +215,7 @@ Warning subclass: #Deprecated.
     ensure: [ 96 halt. self exceptionHandlerIsActive: true. Transcript show: 'ensured' ]."
   value := self exceptionHandlerBlock cull: exception.
   "return from self if not otherwise directed in handle block"
+  Transcript show: 'handleSignal value: ', value printString.
   self return: value
 
 ! cannotReturn: value to: aContext
@@ -240,13 +242,20 @@ Warning subclass: #Deprecated.
   self isDead ifTrue: [self cannotReturn: value to: self].
   context := firstUnwindContext.
   [ context isNil ] whileFalse: [
+    96 halt.
     context unwindComplete ifNil: [
       context unwindComplete: true.
       unwindBlock := context unwindBlock.
+      95 halt.
       thisContext terminateTo: context.
-      unwindBlock value].
-    context := context findNextUnwindContextUpTo: self].
+      91 halt.
+      unwindBlock value
+      90 halt].
+    89 halt.
+    context := context findNextUnwindContextUpTo: self.
+    88 halt ].
   thisContext terminateTo: self.
+  97 halt.
   ^ value
 
 ! unwindBlock
@@ -265,11 +274,14 @@ Warning subclass: #Deprecated.
   is on my Context stack. Make previousContext my sender."
   | currentContext sendingContext |
   (self hasSender: previousContext) ifTrue: [
+    94 halt.
     currentContext := sender.
     [currentContext == previousContext] whileFalse: [
+      Transcript show: 'terminating'.
       sendingContext := currentContext sender.
       currentContext terminate.
       currentContext := sendingContext]].
+  93 halt.
   sender := previousContext
 
 ! terminate
