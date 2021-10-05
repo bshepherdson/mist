@@ -10,9 +10,18 @@ export function printStackTrace(ctx: m.ptr) {
     for (let i = 0; i < sp; i++) {
       stack.push(printValue(m.readArray(ctx, i)));
     }
+
+    const localArr = m.readIV(ctx, m.CTX_LOCALS);
+    const nLocals = m.arraySize(localArr);
+    const locals = [];
+    for (let i = 0; i < nLocals; i++) {
+      locals.push(printValue(m.readArray(localArr, i)));
+    }
+
     console.log('stack frame', {
       method,
       pc,
+      locals,
       stack,
     });
 
@@ -22,7 +31,13 @@ export function printStackTrace(ctx: m.ptr) {
 
 (window as any)['printStackTrace'] = printStackTrace;
 
-function printMethod(methodOrBlock: m.ptr): {name: string; literals: string[]; bytecode: string[]} {
+interface StackFrame {
+  name: string;
+  literals: string[];
+  bytecode: string[];
+}
+
+function printMethod(methodOrBlock: m.ptr): StackFrame {
   let block: m.ptr|null = null;
   let method: m.ptr = methodOrBlock;
   if (m.hasClass(methodOrBlock, m.CLS_BLOCK_CLOSURE)) {
@@ -31,7 +46,7 @@ function printMethod(methodOrBlock: m.ptr): {name: string; literals: string[]; b
   }
 
   const cls = m.readIV(method, m.METHOD_CLASS);
-  const className = m.asJSString(m.readIV(cls, m.CLASS_NAME));
+  const className = m.className(cls);
   const selector = m.asJSString(m.readIV(method, m.METHOD_NAME));
   const bc = m.readIV(method, m.METHOD_BYTECODE);
   const bytecode = [];
@@ -81,7 +96,7 @@ export function printValue(p: m.ptr): string {
     case m.CLS_SYMBOL:
       return '#' + m.asJSString(p);
     default:
-      return 'a ' + m.asJSString(m.readIV(cls, m.CLASS_NAME));
+      return 'a ' + m.className(cls);
   }
   throw new Error('cant happen');
 }

@@ -15,6 +15,11 @@
 ! size
   <primitive: 28>
 
+! add: anElement
+  self shouldNotImplement
+! addAll: aCollection
+  self shouldNotImplement
+
 ! at: index ifAbsent: exceptionBlock
   "1-based Smalltalk index."
   ^ (index between: 1 and: self size)
@@ -121,16 +126,28 @@
 
 
 ! SequenceableCollection
+! species
+  ^ self class
 ! isSequenceable
   ^ true
-! species
-  ^ OrderedCollection
+! remove: anObject ifAbsent: aBlock
+  self shouldNotImplement
+
 ! do: aBlock
   1 to: self size do: [:ix | aBlock value: (self at: ix)]
+
 ! select: aBlock "TODO: This is better with streaming, see Pharo."
+  | dst count |
+  dst := self species new: self size.
+  count := 0.
+  self do: [:each | (aBlock value: each) ifTrue: [dst at: (count := count + 1) put: each]].
+  ^ dst copyFrom: 1 to: count
+
+! collect: aBlock
+  "Can't use add: for Array, so we use at:put: here."
   | dst |
   dst := self species new: self size.
-  self do: [:each | (aBlock value: each) ifTrue: [dst add: each]].
+  1 to: self size do: [:ix | dst at: ix put: (aBlock value: (self at: ix))].
   ^ dst
 
 ! copyFrom: start to: stop

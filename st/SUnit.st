@@ -9,10 +9,6 @@ There are *three* possible outcomes from each test method:
 
 Object subclass: #TestAsserter.
 
-TestAsserter subclass: #TestCase
-    instanceVariableNames: 'testSelector'.
-
-
 ! TestAsserter class
 ! classForTestResult
   ^ TestResult
@@ -67,7 +63,9 @@ TestAsserter subclass: #TestCase
   self assert: aBlock value description: aString
 
 ! should: aBlock raise: anExceptionalEvent
-  ^ self assert: (self executeShould: aBlock inScopeOf: anExceptionalEvent)
+  | result |
+  result := (self executeShould: aBlock inScopeOf: anExceptionalEvent).
+  ^ self assert: result
 ! should: aBlock raise: anExceptionalEvent description: aString
   ^ self assert: (self executeShould: aBlock inScopeOf: anExceptionalEvent)
       description: aString

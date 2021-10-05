@@ -136,6 +136,4 @@ TestCase subclass: #LogicBasics.
 !!
 
 
-Transcript show: (ArithmeticBasics suite , LogicBasics suite) run printString.
-99 halt.
 

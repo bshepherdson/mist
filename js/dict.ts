@@ -81,6 +81,7 @@ function insertAssoc(dict: ptr, asc: ptr): void {
   while (true) {
     const found = readArray(arr, index);
     if (found === MA_NIL || readIV(found, ASSOC_KEY) === key) {
+      if (found !== MA_NIL) throw new Error('Duplicated value');
       writeArray(arr, index, asc);
       if (found === MA_NIL) {
         writeIV(dict, DICT_TALLY, toSmallInteger(tally + 1));

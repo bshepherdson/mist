@@ -723,6 +723,13 @@ export function methodFor(ctx: ptr): ptr {
       readIV(readIV(methodOrBlock, BLOCK_CONTEXT), CTX_METHOD);
 }
 
+export function className(cls: ptr): string {
+  if (hasClass(cls, CLS_METACLASS)) {
+    return className(readIV(cls, METACLASS_THIS_CLASS)) + ' class';
+  }
+  return asJSString(readIV(cls, CLASS_NAME));
+}
+
 
 // Initialization
 // This sets up some key values in the special area.

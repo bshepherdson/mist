@@ -473,17 +473,26 @@ func (l *STL) recordSubclass(superBC, classBC, instVarsBC, classVarsBC uint16) {
 	instVars := map[string]int{}
 	classVars := map[string]int{}
 
+	superInstVars := 0
+	for superclass := l.classes[superclassStr]; superclass != nil; superclass = superclass.superclass {
+		superInstVars += len(superclass.members)
+	}
+	superClassVars := 0
+	for metaclass := l.classes[superclassStr+" class"]; metaclass != nil; metaclass = metaclass.superclass {
+		superClassVars += len(metaclass.members)
+	}
+
 	if instVarsBC != 0xffff {
 		instVarsStr := l.cp.method.literals[instVarsBC&0xff]
 		for i, v := range strings.Split(string(instVarsStr.(stringLit)), " ") {
-			instVars[v] = i
+			instVars[v] = i + superInstVars
 		}
 	}
 
 	if classVarsBC != 0xffff {
 		classVarsStr := l.cp.method.literals[classVarsBC&0xff]
 		for i, v := range strings.Split(string(classVarsStr.(stringLit)), " ") {
-			classVars[v] = i
+			classVars[v] = i + superClassVars
 		}
 	}
 

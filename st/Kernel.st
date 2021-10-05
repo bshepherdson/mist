@@ -20,6 +20,7 @@ Javascript functions."
     m := Method new.
     m selector: asc key.
     m compiled: asc value.
+    m theClass: self.
     m]
 
 ! selectors
@@ -44,17 +45,21 @@ Javascript functions."
 !!
 
 
-Object subclass: #Method instanceVariableNames: 'selector compiled'.
+Object subclass: #Method instanceVariableNames: 'selector compiled theClass'.
 
 ! Method
 ! compiled: aCompiledMethod
   compiled := aCompiledMethod
 ! selector: aSymbol
   selector := aSymbol
+! theClass: aClass
+  theClass := aClass
 ! selector
   ^ selector
 ! numArgs
   ^ compiled numArgs
+! theClass
+  ^ theClass
 !!
 
 
@@ -305,7 +310,8 @@ Object subclass: #Transcript.
 
 ! Transcript class
 ! show: aValue
-  self showString: aValue asString
+  self showString: aValue asString.
+  ^ aValue
 
 ! showString: aString
   <primitive: 20>
@@ -389,4 +395,6 @@ Object subclass: #Transcript.
   ^ argc
 ! selector
   ^ selector
+! owningClass
+  ^ class
 !!

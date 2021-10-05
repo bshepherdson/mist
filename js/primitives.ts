@@ -206,7 +206,7 @@ primitives[20] = function(process: ptr, ctx: ptr) {
 
 //  21: throw
 primitives[21] = function(process: ptr, ctx: ptr) {
-  throw new Error('' + readLocal(ctx, 1));
+  throw new Error('' + self(ctx));
 };
 
 //  22: halt

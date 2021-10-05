@@ -117,21 +117,43 @@ Warning subclass: #Deprecated.
 ! nextHandlerContext
   "Finds the innermost exception handling context. That is, one with on:do:."
   ^ self sender findNextHandlerContextStarting
+
+! findContextSuchThat: aBlock
+  | ctx |
+  ctx := self.
+  [ ctx isNil ] whileFalse: [
+    (aBlock value: ctx) ifTrue: [^ctx].
+    ctx := ctx sender].
+  ^ nil
+
 ! compiledCode
   ^ method
 ! sender
   "Returns the parent context, that sent the message that created this one."
   ^ sender
-! hasSender: aContext
-  ^ sender == aContext
+
+! selector
+  ^ self compiledCode selector
+
+! hasSender: context
+  | senderContext |
+  self == context ifTrue: [^false].
+  senderContext := sender.
+  [senderContext == nil] whileFalse: [
+    senderContext == context ifTrue: [^true].
+    senderContext := senderContext sender].
+  ^ false
+
 ! tempAt: index
-  "Locals are a JS Array, 0-based. The incoming index is 1-based, and self is
-  the 0th local, so we can just forward the index (eg. 1 = first arg)."
-  ^ locals rawAt: index
+  "Self is the first local, so we need to increase the index by 1."
+  ^ locals at: index + 1
 ! tempAt: index put: aValue
-  "Locals are a JS Array, 0-based. The incoming index is 1-based, and self is
-  the 0th local, so we can just forward the index (eg. 1 = first arg)."
-  ^ locals rawAt: index put: aValue
+  "Self is the first local, so we need to increase the index by 1."
+  ^ locals at: index + 1 put: aValue
+
+! receiver
+  "Receiver is the first local."
+  ^ locals at: 1
 
 ! findNextHandlerContextStarting
   "Return the next handler marked context, returning nil if there is none.
@@ -164,12 +186,6 @@ Warning subclass: #Deprecated.
 ! unwindComplete: aBoolean
   ^ self tempAt: 2 put: aBoolean
 
-! unwindComplete
-  "This is actually the first/only argument of BlockClosure>>#ensure: and
-  BlockClosure>>#ifCurtailed:, index 1 in the list:
-  [self, ensureBlock, complete]."
-  ^ self tempAt: 1
-
 ! isHandlerContext
   ^ method isExceptionHandler
 
@@ -193,9 +209,10 @@ Warning subclass: #Deprecated.
 
   exception prevHandlerContext: self.
   "disable self while executing the handle block"
-  self exceptionHandlerIsActive: false.
-  value := [ self exceptionHandlerBlock cull: exception ]
-    ensure: [ self exceptionHandlerIsActive: true ].
+  "self exceptionHandlerIsActive: false.
+  value := [ Transcript show: 'ensuring ', (self exceptionHandlerBlock cull: exception) ]
+    ensure: [ 96 halt. self exceptionHandlerIsActive: true. Transcript show: 'ensured' ]."
+  value := self exceptionHandlerBlock cull: exception.
   "return from self if not otherwise directed in handle block"
   self return: value
 
@@ -232,6 +249,10 @@ Warning subclass: #Deprecated.
   thisContext terminateTo: self.
   ^ value
 
+! unwindBlock
+  "Grabs the argument to ensure: and ifCurtailed:, index 1, the first arg."
+  ^ self tempAt: 1
+
 ! findNextUnwindContextUpTo: aContext
   | ctx |
   ctx := self.
@@ -260,14 +281,29 @@ Warning subclass: #Deprecated.
 ! Exception
 ! messageText: aDescription
   messageText := aDescription
+! receiver
+  ^ self signalerContext receiver
 ! signal
   signalContext := thisContext.
+  signaler ifNil: [signaler := self receiver].
   ^ thisContext nextHandlerContext handleSignal: self
 ! signal: aMessage
   self messageText: aMessage.
   self signal
+
+! signalerContext
+  "Find the first sender of signal(:), the first context which is neither for
+  an instance method nor class method of Exception (and subclasses).
+  This will make sure the same context is found for both `Error signal` and
+  `Error new signal`."
+  ^ signalContext findContextSuchThat: [:ctx |
+    (ctx receiver == self or: [ctx receiver == self class]) not]
+
 ! defaultAction
-  Transcript error: self description
+  self defaultActionInner
+! defaultActionInner
+  <primitive: 21>
+
 ! prevHandlerContext
   ^ handlerContext
 ! prevHandlerContext: aContext
@@ -275,6 +311,8 @@ Warning subclass: #Deprecated.
 ! resume
   "TODO"
   self halt
+! return: aValue
+  handlerContext return: aValue
 !!
 
 
@@ -354,19 +392,57 @@ CannotReturn subclass: #ContextCannotReturn
 
 ! UndefinedObject
 ! handleSignal: anError
-  <primitive: 21>
+  anError resumeUnchecked: anError defaultAction
 !!
 
 
-Exception subclass: #AbstractMethod.
-! AbstractMethod
-! message
-  ^ 'Send reached an abstract method - missing implementation'
+
+Error subclass: #SelectorError instanceVariableNames: 'selector'.
+
+! SelectorError class
+! signalFor: aSelector
+  | ex |
+  ex := self new.
+  ex selector: aSelector.
+  ^ ex signal
 !!
+
+! SelectorError
+! selector
+  ^ selector
+! selector: aSelector
+  selector := aSelector
+! messageText
+  ^ messageText ifNil: [messageText := self standardMessageText]
+! standardMessageText
+  ^ 'Selector error for ' , selector
+!!
+
+"START HERE: I think that subclasses are overlapping instance variables with
+their superclasses, that the count isn't increasing properly. I need to fix that
+in the compiler if so."
+
+
+SelectorError subclass: #SubclassResponsibility.
+! SubclassResponsibility
+! standardMessageText
+  ^ signaler class name , ' >> ' , selector , ' is abstract'
+!!
+
+SelectorError subclass: #ShouldNotImplement.
+
+
+! ShouldNotImplement
+! standardMessageText
+  ^ signaler class name, ' should not implement ', selector
+!!
+
 
 ! Object
 ! subclassResponsibility
-  self error: AbstractMethod new
+  ^ SubclassResponsibility signalFor: thisContext sender selector
+! shouldNotImplement
+  ^ ShouldNotImplement signalFor: thisContext sender selector
 ! error: anException
   anException signal
 !!
