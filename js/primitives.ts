@@ -10,7 +10,7 @@ import {
   CLS_CONTEXT, CLS_STRING, CLS_SYMBOL,
   BLOCK_CONTEXT, BLOCK_ARGV, BLOCK_ARGC, BLOCK_PC_START,
   CTX_LOCALS, CTX_SENDER, CTX_PC, CTX_METHOD, CTX_STACK_INDEX,
-  classTable, hasClass, fromSmallInteger, toSmallInteger,
+  classTable, hasClass, fromSmallInteger, toSmallInteger, isSmallInteger,
   asJSString, mkInstance, push, pop,
   read, readIV, readArray,
   write, writeIV, writeArray,
@@ -25,16 +25,19 @@ primitives[0] = function(process: ptr, ctx: ptr) {
   const cls = self(ctx);
   const p = mkInstance(cls);
   answer(process, ctx, p);
+  return true;
 };
 
 //   1: class
 primitives[1] = function(process: ptr, ctx: ptr) {
   answer(process, ctx, classOf(self(ctx)));
+  return true;
 };
 
 //   2: basicHash
 primitives[2] = function(process: ptr, ctx: ptr) {
   answer(process, ctx, identityHash(self(ctx)));
+  return true;
 };
 
 //   3: instVarAt:
@@ -42,6 +45,7 @@ primitives[3] = function(process: ptr, ctx: ptr) {
   const index = fromSmallInteger(readLocal(ctx, 1)); // 1-based
   const value = readIV(self(ctx), index - 1); // 0-based
   answer(process, ctx, value);
+  return true;
 };
 
 //   4: instVarAt:put:
@@ -49,6 +53,7 @@ primitives[4] = function(process: ptr, ctx: ptr) {
   const index = fromSmallInteger(readLocal(ctx, 1)); // 1-based
   const value = readLocal(ctx, 2);
   writeIV(self(ctx), index - 1, value); // 0-based index here
+  return true;
 };
 
 type ArgFn = (ctx: ptr, i: number) => ptr;
@@ -72,27 +77,32 @@ function performArg(ctx: ptr, i: number): ptr {
 //   5: perform:
 primitives[5] = function(process: ptr, ctx: ptr) {
   call(process, ctx, 0, readLocal(ctx, 1), performArg);
+  return true;
 };
 
 //   6: perform:with:
 primitives[6] = function(process: ptr, ctx: ptr) {
   call(process, ctx, 1, readLocal(ctx, 1), performArg);
+  return true;
 };
 
 //   7: perform:with:with:
 primitives[7] = function(process: ptr, ctx: ptr) {
   call(process, ctx, 2, readLocal(ctx, 1), performArg);
+  return true;
 };
 
 //   8: perform:with:with:with:
 primitives[8] = function(process: ptr, ctx: ptr) {
   call(process, ctx, 3, readLocal(ctx, 1), performArg);
+  return true;
 };
 
 //   9: perform:withArguments:
 primitives[9] = function(process: ptr, ctx: ptr) {
   const argv = readLocal(ctx, 2);
   call(process, ctx, 3, readLocal(ctx, 1), (c, i) => readArray(argv, i));
+  return true;
 };
 
 
@@ -120,16 +130,19 @@ function mkSubclass(ctx: ptr, hasInstVars: boolean, hasClassVars: boolean): ptr 
 //  10: subclass:
 primitives[10] = function(process: ptr, ctx: ptr) {
   answer(process, ctx, mkSubclass(ctx, false, false));
+  return true;
 };
 
 //  11: subclass:instanceVariableNames:
 primitives[11] = function(process: ptr, ctx: ptr) {
   answer(process, ctx, mkSubclass(ctx, true, false));
+  return true;
 };
 
 //  12: subclass:instanceVariableNames:classVarNames:
 primitives[12] = function(process: ptr, ctx: ptr) {
   answer(process, ctx, mkSubclass(ctx, true, true));
+  return true;
 };
 
 
@@ -162,32 +175,38 @@ function runBlock(process: ptr, ctx: ptr, argc: number) {
 //  13: value
 primitives[13] = function(process: ptr, ctx: ptr) {
   runBlock(process, ctx, 0);
+  return true;
 };
 
 //  14: valueNoContextSwitch
 primitives[14] = function(process: ptr, ctx: ptr) {
   // TODO: Atomic operations that prevent the VM switching threads.
   runBlock(process, ctx, 0);
+  return true;
 };
 
 //  15: value:
 primitives[15] = function(process: ptr, ctx: ptr) {
   runBlock(process, ctx, 1);
+  return true;
 };
 
 //  16: value:value:
 primitives[16] = function(process: ptr, ctx: ptr) {
   runBlock(process, ctx, 2);
+  return true;
 };
 
 //  17: value:value:value:
 primitives[17] = function(process: ptr, ctx: ptr) {
   runBlock(process, ctx, 3);
+  return true;
 };
 
 //  18: value:value:value:value:
 primitives[18] = function(process: ptr, ctx: ptr) {
   runBlock(process, ctx, 4);
+  return true;
 };
 
 //  20: console.log.string - logs the first argument, not self.
@@ -202,6 +221,7 @@ primitives[20] = function(process: ptr, ctx: ptr) {
     console.log('Object: ' + p);
   }
   answer(process, ctx, MA_NIL);
+  return true;
 };
 
 //  21: throw
@@ -213,6 +233,7 @@ primitives[21] = function(process: ptr, ctx: ptr) {
 primitives[22] = function(process: ptr, ctx: ptr) {
   debugger;
   answer(process, ctx, self(ctx));
+  return true;
 };
 
 
@@ -222,6 +243,7 @@ primitives[25] = function(process: ptr, ctx: ptr) {
   const cls = self(ctx);
   const size = fromSmallInteger(readLocal(ctx, 1));
   answer(process, ctx, mkInstance(cls, size));
+  return true;
 };
 
 //  26: at:
@@ -230,6 +252,7 @@ primitives[26] = function(process: ptr, ctx: ptr) {
   const index = fromSmallInteger(readLocal(ctx, 1));
   // Index is a 1-based Smalltalk index.
   answer(process, ctx, readArray(array, index - 1));
+  return true;
 };
 
 //  27: at:put:
@@ -240,12 +263,14 @@ primitives[27] = function(process: ptr, ctx: ptr) {
   // Index is a 1-based Smalltalk index.
   writeArray(array, index - 1, value);
   answer(process, ctx, array);
+  return true;
 };
 
 //  28: array size
 primitives[28] = function(process: ptr, ctx: ptr) {
   const array = self(ctx);
   answer(process, ctx, toSmallInteger(arraySize(array)));
+  return true;
 };
 
 
@@ -254,26 +279,37 @@ primitives[30] = function(process: ptr, ctx: ptr) {
   const a = self(ctx);
   const b = readLocal(ctx, 1);
   answer(process, ctx, a === b ? MA_TRUE : MA_FALSE);
+  return true;
 };
 
 //  These are on any SmallInteger:
-type binFn<T> = (a: sti, b: sti) => T;
+type binFn<T> = (a: sti, b: sti) => T|null;
 
-function binOp<T>(fn: binFn<T>, ctx: ptr): T {
+function binOp<T>(fn: binFn<T>, ctx: ptr): T|null {
   const a = fromSmallInteger(self(ctx));
-  const b = fromSmallInteger(readLocal(ctx, 1));
+  const bRaw = readLocal(ctx, 1);
+  if (!isSmallInteger(bRaw)) return null;
+  const b = fromSmallInteger(bRaw);
   return fn(a, b);
 }
 
 function numericBinOp(fn: binFn<sti>): Primitive {
   return function(process: ptr, ctx: ptr) {
-    answer(process, ctx, toSmallInteger(binOp(fn, ctx)));
+    const result = binOp(fn, ctx);
+    if (result === null) {
+      return false;
+    }
+    answer(process, ctx, toSmallInteger(result));
+    return true;
   };
 }
 
 function comparisonBinOp(fn: binFn<boolean>): Primitive {
   return function(process: ptr, ctx: ptr) {
-    answer(process, ctx, binOp(fn, ctx) ? MA_TRUE : MA_FALSE);
+    const result = binOp(fn, ctx);
+    if (result === null) return false;
+    answer(process, ctx, result ? MA_TRUE : MA_FALSE);
+    return true;
   };
 }
 
@@ -309,18 +345,21 @@ primitives[37] = comparisonBinOp((a, b) => a === b);
 primitives[41] = function(process: ptr, ctx: ptr) {
   const n = fromSmallInteger(self(ctx));
   answer(process, ctx, toSmallInteger(~n));
+  return true;
 };
 
 //  42: number toString
 primitives[42] = function(process: ptr, ctx: ptr) {
   const n = fromSmallInteger(self(ctx));
   answer(process, ctx, wrapString('' + n));
+  return true;
 };
 
 // 50: word array size
 primitives[50] = function(process: ptr, ctx: ptr) {
   const arr = self(ctx);
   answer(process, ctx, toSmallInteger(wordArraySize(arr)));
+  return true;
 };
 
 // 51: wordAt: index
@@ -329,6 +368,7 @@ primitives[51] = function(process: ptr, ctx: ptr) {
   const index = fromSmallInteger(readLocal(ctx, 1));
   // 1-based Smalltalk indices
   answer(process, ctx, toSmallInteger(readWordArray(arr, index - 1)));
+  return true;
 };
 
 // 52: wordAt: index put: aWord
@@ -339,5 +379,6 @@ primitives[52] = function(process: ptr, ctx: ptr) {
   // 1-based Smalltalk indices
   writeWordArray(arr, index - 1, value);
   answer(process, ctx, MA_NIL);
+  return true;
 };
 

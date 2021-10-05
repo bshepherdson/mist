@@ -343,7 +343,7 @@ function miscOp(process: ptr, ctx: ptr, count: number, operand: number) {
   throw new Error('unknown misc op ' + count);
 }
 
-export type Primitive = (process: ptr, ctx: ptr) => void;
+export type Primitive = (process: ptr, ctx: ptr) => boolean;
 export const primitives: {[key: number]: Primitive} = {};
 
 function primitiveOp(process: ptr, ctx: ptr, count: number, operand: number) {

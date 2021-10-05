@@ -322,6 +322,12 @@ Object subclass: #Transcript.
 "Object subclass: #Number
   instanceVariableNames: 'raw'."
 
+! Number
+! = aValue
+  "Subclasses should be handling this - if they've failed to, we come here."
+  ^ self == aValue
+!!
+
 ! SmallInteger
 ! + aNumber
   <primitive: 31>
