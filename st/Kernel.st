@@ -369,7 +369,7 @@ Object subclass: #Transcript.
   ^ super bitXor: aNumber
 ! bitInvert
   <primitive: 41>
-  ^ super bitInvert: aNumber
+  ^ super bitInvert
 ! negated
   ^0 - self
 ! min: aNumber

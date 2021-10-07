@@ -527,7 +527,7 @@ Object subclass: Parser [
     (s peekFor: $!) ifFalse: [^nil].
     self drainSpaces.
     ast := STMethodsBlock new.
-    ast class: (self parseIdentifier ifNil: [self error: 'expected class name']).
+    ast cls: (self parseIdentifier ifNil: [self error: 'expected class name']).
     self drainSpaces.
 
     (s peekFor: $!) ifFalse: [
@@ -588,6 +588,6 @@ Parser class extend [
   ]
 ]
 
-(Parser new parseFile: '../../dcpu/mist/st/Kernel.st') do: [:each |
-  Transcript print: each; cr; cr; cr].
+"(Parser new parseFile: '../../dcpu/mist/st/Kernel.st') do: [:each |
+  Transcript print: each; cr; cr; cr]."
 

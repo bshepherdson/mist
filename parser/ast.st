@@ -1,6 +1,10 @@
 "Defines the AST for my Smalltalk system."
 
-Object subclass: #AST.
+Object subclass: AST [
+  printOn: aStream in: aNamespace [
+    self printOn: aStream
+  ]
+]
 
 AST subclass: ASTValue [
   "Loads of AST nodes have a single arbitrary value."
@@ -27,12 +31,26 @@ ASTValue subclass: #STReturn.
 ASTValue subclass: #STDynamicArray.
 
 ASTValue subclass: #STLiteral.
-AST subclass: STUnarySend [
+
+AST subclass: STSend [
+  argc [self subclassResponsibility]
+
+  sendOp: selectorIndex [
+    "Returns the bytecode for this send. Sends are $2css, where c is the arg
+    count and ss is the literal number for the selector."
+    ^ (16r2000 bitOr: (self argc bitShift: 8)) bitOr: selectorIndex
+  ]
+]
+
+STSend subclass: STUnarySend [
   | inner selector |
   inner [^ inner]
   selector [^ selector]
   inner: anExpr [inner := anExpr]
   selector: anIdent [selector := anIdent]
+
+  "STSend protocol"
+  argc [^ 0]
 
   "Cascade protocol"
   receiver [^ inner]
@@ -58,6 +76,10 @@ AST subclass: STBinarySend [
   op:    x [op := x]
   right: x [right := x]
 
+  "STSend protocol"
+  argc [^ 1]
+
+  "Cascade protocol"
   receiver [^ left]
   asTail   [^STBinarySend new op: op; right: right]
 
@@ -75,19 +97,21 @@ AST subclass: STBinarySend [
 
 AST subclass: STKeywordSend [
   | receiver kwargs |
-  initialize [
-    kwargs := OrderedCollection new.
-  ]
   receiver [^receiver]
   kwargs   [^kwargs]
   receiver: x [receiver := x]
   kwargs:   x [kwargs := x]
 
-  asTail [^ STKeywordSend new kwargs: kwargs]
-
   addKeywordArg: pair [
+    kwargs ifNil: [kwargs := OrderedCollection new].
     kwargs add: pair
   ]
+
+  "STSend protocol"
+  argc [^ kwargs size]
+
+  "Cascade protocol"
+  asTail [^ STKeywordSend new kwargs: kwargs]
 
   = other [
     ^ (other isKindOf: STKeywordSend) and: [
@@ -105,10 +129,6 @@ AST subclass: STKeywordSend [
 
 AST subclass: STCascade [
   | receiver tails |
-  initialize [
-    tails := OrderedCollection new.
-  ]
-
   receiver [^ receiver]
   tails    [^ tails]
   receiver: x [receiver := x]
@@ -216,17 +236,17 @@ AST subclass: STMethod [
 ]
 
 AST subclass: STMethodsBlock [
-  | class classy methods |
+  | cls classy methods |
 
   initialize [
     classy := false.
     methods := OrderedCollection new
   ]
 
-  class   [^class]
+  cls   [^cls]
   classy  [^classy]
   methods [^methods]
-  class:   x [class := x]
+  cls:   x [cls := x]
   classy:  x [classy := x]
 
   addMethod: method [
@@ -235,13 +255,13 @@ AST subclass: STMethodsBlock [
 
   = other [
     ^ (other isKindOf: STMethodsBlock) and: [
-        class = other class and: [
+        cls = other cls and: [
           classy = other classy and: [
             methods = other methods]]]
   ]
 
   printOn: aStream [
-    aStream << '! ' << class x.
+    aStream << '! ' << cls x.
     classy ifTrue: [aStream << ' class'].
     methods do: [:each |
       aStream nl << '! ' << each signature.
@@ -252,5 +272,11 @@ AST subclass: STMethodsBlock [
 
       each body do: [:stmt | aStream nlTab << stmt]].
     aStream nl << '!!'
+  ]
+]
+
+STMethodsBlock class extend [
+  new [
+    ^super new initialize
   ]
 ]
