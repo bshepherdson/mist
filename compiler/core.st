@@ -132,7 +132,8 @@ MistMethod class extend [
 Object subclass: MistClass [
   | name index superclass instVars classVars instVarBase classVarBase |
   Classes := Dictionary new.
-  NextIndex := 31.
+  BootstrappedCount := 30.
+  NextIndex := BootstrappedCount + 1.
 
   name      [^name]
   index     [^index]
@@ -158,6 +159,10 @@ Object subclass: MistClass [
     superclass isNil ifFalse: [
       instVarBase := superclass instVarBase.
       classVarBase := superclass classVarBase]
+  ]
+
+  isBootstrapped [
+    ^ self index <= BootstrappedCount
   ]
 
   scope [

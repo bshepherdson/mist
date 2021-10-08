@@ -6,6 +6,9 @@ Stream subclass: #PositionableStream instanceVariableNames: 'index coll'.
   super initialize.
   index := 0
 
+! collection: aCollection
+  coll := aCollection
+
 ! next
   self subclassResponsibilty
 ! nextPut: aValue
@@ -50,6 +53,13 @@ PositionableStream subclass: #WriteStream.
   self shouldNotImplement
 ! nextPut: aValue
   coll at: (index := index + 1) put: aValue
+!!
+
+! WriteStream class
+! on: aCollection
+  "Creates a WriteStream aimed at the *start* of this collection, overwriting
+  its existing elements."
+  ^ self new collection: aCollection; yourself
 !!
 
 WriteStream subclass: #ReadWriteStream.

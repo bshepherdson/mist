@@ -85,7 +85,7 @@ TestCase subclass: #ArithmeticBasics.
   | arr |
   arr := OrderedCollection new: 3.
   3 timesDo: [arr add: 7].
-  self assert: arr equals: {7. 7. 7}
+  self assert: arr asArray equals: {7. 7. 7}
 
 !!
 

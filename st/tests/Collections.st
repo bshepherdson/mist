@@ -21,7 +21,7 @@ TestCase subclass: #CollectionsGeneralArrays.
 "
 
 ! testIsEmpty
-  self assert: Array new isEmpty not.
+  self assert: Array new isEmpty.
   self deny: {7. 8. 9} asArray isEmpty
 
 "! testOccurrencesOf"
@@ -41,5 +41,9 @@ It gets rewritten, and then at the end of the whileFalse: body it returns to
 the wrong place!
 I'll have to bite the bullet and rewrite the methods to turn those into loops."
 
-Transcript show: CollectionsGeneralArrays suite run printString.
+Transcript show: (
+  ArithmeticBasics suite,
+  LogicBasics suite,
+  CollectionsGeneralArrays suite
+) run printString.
 99 halt.

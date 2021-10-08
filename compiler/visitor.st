@@ -76,8 +76,8 @@ STUnarySend extend [
 
 STIdentifier extend [
   compileInto: method [
-    "Several possibilities here: reserved word, global class we know of,
-    global we don't know, inst var, arg or local."
+    "Several possibilities here: reserved word, global class in the short list,
+    other global, inst var, arg or local."
     | var |
     x = 'self'        ifTrue: [method compile: 16r0000. ^nil].
     x = 'super'       ifTrue: [method compile: 16r0000. ^nil].
@@ -93,11 +93,15 @@ STIdentifier extend [
     "If we're still here, then it need to be global."
     x first isUppercase ifFalse: [self error: 'unknown identifier: ' , x].
 
-    "Try to look it up as a class."
+    "Try to look it up as a class. Bootstrapped classes are allowed to use the
+    shorthand by class index.
+    Above that, the index is hard to predict because of creating metaclasses, so
+    we use the symbolic version below.."
     var := MistClass at: x.
-    var isNil ifFalse: [method compile: (16r0400 bitOr: var index). ^nil].
+    (var isNil not and: [var isBootstrapped]) ifTrue: [
+      method compile: (16r0400 bitOr: var index). ^nil].
 
-    "Nothing left but to try a runtime lookup."
+    "Nothing left but to try a runtime lookup by name."
     method compile: (16r0300 bitOr: (method addLiteral: x asSymbol)).
     ^ nil
   ]
