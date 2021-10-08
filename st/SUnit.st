@@ -297,7 +297,7 @@ Object subclass: #TestSuite
 
 ! run: aTestResult
   self setUp.
-  [ self tests do: [:each | each run: aResult] ]
+  [ self tests do: [:each | each run: aTestResult] ]
     ensure: [self tearDown]
 
 ! setUp

@@ -133,6 +133,9 @@
 ! remove: anObject ifAbsent: aBlock
   self shouldNotImplement
 
+! writeStream
+  ^ WriteStream on: self
+
 ! do: aBlock
   1 to: self size do: [:ix | aBlock value: (self at: ix)]
 
@@ -159,7 +162,7 @@
 ! indexOf: anElement
   ^ self indexOf: anElement ifAbsent: [0]
 ! indexOf: anElement ifAbsent: exceptionBlock
-  anIndex to: self size do: [:ix | (self at: ix) = anElement ifTrue: [^ix]].
+  1 to: self size do: [:ix | (self at: ix) = anElement ifTrue: [^ix]].
   ^ exceptionBlock value
 
 ! indexOfSubCollection: aSubCollection startingAt: anIndex

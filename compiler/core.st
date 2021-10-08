@@ -4,7 +4,7 @@ This compiles into MistMethod objects holding the bytecodes, literals, argc,
 locals count, etc."
 
 Object subclass: MistMethod [
-  | bytecode literals argc locals scope blockDepth |
+  | selector bytecode literals argc locals scope blockDepth |
   initialize [
     bytecode := OrderedCollection new.
     literals := OrderedCollection new.
@@ -13,6 +13,8 @@ Object subclass: MistMethod [
     locals := 0
   ]
 
+  selector     [^selector]
+  selector:  x [selector := x]
   scope:  x [scope := x]
   argc      [^argc]
   locals    [^locals]
@@ -41,9 +43,9 @@ Object subclass: MistMethod [
     start index into the containing method's locals. The next word gives the
     block's body length in bytecodes. We store a 0 there and come back to it."
     | localStart blockStart first |
-    localStart := argc + locals. "0-based index for argv."
+    localStart := argc + locals + 1. "0-based index for argv, + 1 for self."
     locals := locals + aBlock vars size + aBlock temps size.
-    self compile: ((16r5000 bitOr: (argc bitShift: 8)) bitOr: localStart).
+    self compile: ((16r5000 bitOr: (aBlock vars size bitShift: 8)) bitOr: localStart).
 
     "Nest into the block: add its locals and args to the Scope."
     blockDepth := blockDepth + 1.
@@ -55,8 +57,6 @@ Object subclass: MistMethod [
       scope add: (aBlock temps at: ix) x "Unwrap STIdentifier"
         var: (LocalVar new index: localStart + aBlock vars size + ix - 1)].
 
-    Transcript print: scope vars; cr.
-
     self compile: 0. "Dummy size word."
     blockStart := bytecode size. "Points at the size word, before the block."
 
@@ -66,6 +66,12 @@ Object subclass: MistMethod [
       first ifFalse: [self compileDrop].
       first := false.
       each compileInto: self].
+
+    "If the last bytecode was a return, do nothing. If it wasn't, return TOS.
+    Unless the block is empty, in which case push nil, then return TOS."
+    (aBlock body isEmpty or: [(aBlock body last isKindOf: STReturn) not]) ifTrue: [
+      aBlock body isEmpty ifTrue: [self compile: 16r0002]. "Push nil"
+      self compile: 16r6200].
 
     "Now bytecode size is the index of the last bytecode, and
     bytecode size - blockstart is the length of the block. Store that at
@@ -85,6 +91,9 @@ Object subclass: MistMethod [
   ]
 
   addLiteral: aLiteralValue [
+    "Check if it's already there, and reuse it if so."
+    literals keysAndValuesDo: [:ix :each |
+      aLiteralValue = each ifTrue: [^ix - 1]].
     literals add: aLiteralValue.
     ^ literals size - 1 "0-based indexing for literals."
   ]
@@ -101,14 +110,18 @@ Object subclass: MistMethod [
   compileDrop [
     self compile: 16r6100
   ]
+  compileDup [
+    self compile: 16r6000
+  ]
 
   printOn: aStream [
     aStream << 'MistMethod[' << argc << ' args, ' << locals << ' locals'.
     aStream nlTab << 'bytecode'.
-    aStream nlTab tab << bytecode.
-    "bytecode do: [:each | aStream space << (each printStringRadix: 16)]."
+    bytecode do: [:each |
+      aStream space.
+      each printOn: aStream paddedWith: $0 to: 4 base: 16].
     aStream nlTab << 'literals '.
-    literals do: [:each | aStream nlTab tab << each].
+    literals do: [:each | aStream nlTab tab << each]
   ]
 ]
 
@@ -119,7 +132,7 @@ MistMethod class extend [
 Object subclass: MistClass [
   | name index superclass instVars classVars instVarBase classVarBase |
   Classes := Dictionary new.
-  NextIndex := 30.
+  NextIndex := 31.
 
   name      [^name]
   index     [^index]
@@ -311,11 +324,13 @@ MistClass at: 26 named: 'SmallInteger' superclass: 'Integer'.
 (MistClass at: 27 named: 'Association' superclass: 'Object')
   addInstVar: 'key'; addInstVar: 'value'.
 
-(MistClass at: 28 named: 'Process' superclass: 'Object')
+MistClass at: 28 named: 'WordArray' superclass: 'ArrayedCollection'.
+
+(MistClass at: 29 named: 'Process' superclass: 'Object')
   addInstVar: 'context'; addInstVar: 'next'; addInstVar: 'prev';
   addInstVar: 'processTable'.
 
-(MistClass at: 29 named: 'ProcessTable' superclass: 'Object')
+(MistClass at: 30 named: 'ProcessTable' superclass: 'Object')
   addInstVar: 'ready'; addInstVar: 'blocked'; addInstVar: 'nextPriority'.
 
 "If I add more built-in classes, I need to update the NextIndex starting value."
@@ -348,13 +363,27 @@ Object subclass: MistMethodsBlock [
       methodScope add: (method temps at: ix) x
         var: (LocalVar new index: ix + args size)].
 
+    compiled selector: method signature selectorSymbol.
     compiled scope: methodScope.
+    compiled argc: args size.
+    compiled locals: method temps size. "Blocks might add to this."
+
+    method primitive isNil ifFalse: [
+      compiled compile: (16r7000 bitOr: method primitive)].
+
     first := true.
     method body do: [:each |
       first ifFalse: [compiled compileDrop].
       first := false.
       each compileInto: compiled].
-    Transcript print: compiled; cr.
+
+    "If the method body didn't contain an answer, return self."
+    "But if the entire body is a primitive, also skip it."
+    ((method body isEmpty and: [method primitive isNil]) or: [
+      method body isEmpty not and: [(method body last isKindOf: STReturn) not]])
+    ifTrue: [compiled compile: 16r6300].
+
+    methods add: compiled
   ]
 ]
 

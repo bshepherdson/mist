@@ -35,6 +35,11 @@ ASTValue subclass: #STLiteral.
 AST subclass: STSend [
   argc [self subclassResponsibility]
 
+  SuperValue := (STLiteral for: (STIdentifier for: 'super')).
+  isSuper: receiver [
+    ^ receiver = SuperValue
+  ]
+
   sendOp: selectorIndex [
     "Returns the bytecode for this send. Sends are $2css, where c is the arg
     count and ss is the literal number for the selector."
@@ -67,7 +72,7 @@ STSend subclass: STUnarySend [
   ]
 ]
 
-AST subclass: STBinarySend [
+STSend subclass: STBinarySend [
   | left op right |
   left  [^left]
   op    [^op]
@@ -95,7 +100,7 @@ AST subclass: STBinarySend [
   ]
 ]
 
-AST subclass: STKeywordSend [
+STSend subclass: STKeywordSend [
   | receiver kwargs |
   receiver [^receiver]
   kwargs   [^kwargs]
@@ -135,6 +140,7 @@ AST subclass: STCascade [
   tails:    x [tails := x]
 
   addTail: tail [
+    tails ifNil: [tails := OrderedCollection new].
     tails add: tail
   ]
 

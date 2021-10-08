@@ -21,12 +21,30 @@ Object subclass: MistCompiler [
 
   compileCode: someCode [
     | fake |
-    Transcript print: someCode; cr.
+    "Transcript print: someCode; cr."
     fake := MistMethod new.
     someCode compileInto: fake.
+    fake compile: 16r6200. "Add a dummy return TOS."
     ^ fake
+  ]
+
+  writeDriverFile: filename [
+    "Compiles the results list into 'driver' format; see DESIGN.md."
+    | out fs |
+    out := OrderedCollection new.
+    results do: [:each | each emitInto: out].
+    fs := FileStream open: filename mode: FileStream create.
+    out do: [:each | fs nextPutShort: each].
+    fs close
   ]
 ]
 
-MistCompiler new compileChunks: (Parser new parseFile: 'st/Kernel.st').
+[ | mc inputs |
+  mc := MistCompiler new.
+  "First arg is the output file."
+  inputs := Smalltalk arguments copyFrom: 2.
+  inputs do: [:each |
+    mc compileChunks: (Parser new parseFile: each)].
+  mc writeDriverFile: Smalltalk arguments first
+] value.
 

@@ -194,6 +194,7 @@ Object subclass: Parser [
     s peek = ${ ifTrue: [^ self parseDynamicArray].
     s peek = $( ifTrue: [
       s next.
+      self drainSpaces.
       p := self parseExpr.
       (s peekFor: $)) ifFalse: [self error: 'bad parenthesized expression'].
       ^ p].

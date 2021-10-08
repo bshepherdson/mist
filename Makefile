@@ -1,37 +1,28 @@
 .PHONY: all
 default: all
 
-NODEJS=node
-GO=go
+# These parser files are GNU Smalltalk files for the new, smarter parser.
+PARSER_FILES=parser/ast.st parser/parser.st compiler/core.st \
+						 compiler/visitor.st compiler/driver.st compiler/main.st
+PARSER=gst $(PARSER_FILES) -a
 
 ST_FILES=st/Kernel.st st/Exceptions.st \
 				 st/Collection.st st/Collections-Array.st st/Collections-Unordered.st \
-				 st/Strings.st st/SUnit.st
+				 st/Streams.st st/Strings.st st/SUnit.st
 ST_TESTS=st/tests/Basics.st st/tests/Collections.st
 
-mist: *.go parser/*.go
-	$(GO) build
+plain.bin: st/*.st st/tests/*.st $(PARSER_FILES)
+	$(PARSER) plain.bin $(ST_FILES)
 
-plain.bin: st/*.st mist
-	./mist $(ST_FILES)
-	mv st.bin plain.bin
-
-testing.bin: st/*.st st/tests/*.st mist
-	./mist $(ST_FILES) $(ST_TESTS)
-	mv st.bin testing.bin
+testing.bin: st/*.st st/tests/*.st $(PARSER_FILES)
+	$(PARSER) testing.bin $(ST_FILES) $(ST_TESTS)
 
 all: plain.bin
 
 test: testing.bin
 
-watch:
-	while true; do \
-		make $(WATCHMAKE); \
-		inotifywait -qre close_write .; \
-	done
-
 clean: FORCE
-	rm -f st.bin plain.bin testing.bin mist
+	rm -f plain.bin testing.bin
 
 FORCE:
 

@@ -7,14 +7,12 @@ STKeywordSend extend [
 
     "Whether special or not, a keyword send is compiled as pushing the receiver,
     then each argument, then the send with the literal value."
-    receiver compileInto: method.
+    receiver isNil ifFalse: [receiver compileInto: method].
     kwargs do: [:each | each last compileInto: method].
 
-    method compileSend: self selectorSymbol args: self argc super: self isSuper
-  ]
-
-  isSuper [
-    ^ receiver = (STIdentifier for: 'super')
+    method compileSend: self selectorSymbol
+      args: self argc
+      super: (self isSuper: receiver)
   ]
 
   selectorSymbol [
@@ -46,13 +44,13 @@ STKeywordSend extend [
 STBinarySend extend [
   compileInto: method [
     "A binary send is compiled as left, then right, then the send op."
-    left  compileInto: method.
+    left isNil ifFalse: [left  compileInto: method].
     right compileInto: method.
-    method compileSend: op x asSymbol args: 1 super: self isSuper
+    method compileSend: self selectorSymbol args: 1 super: (self isSuper: left)
   ]
 
-  isSuper [
-    ^ left = (STIdentifier for: 'super')
+  selectorSymbol [
+    ^ op x asSymbol
   ]
 
   argumentList [
@@ -63,12 +61,12 @@ STBinarySend extend [
 STUnarySend extend [
   compileInto: method [
     "A unary send is simply compiled as its receiver and then the send."
-    inner compileInto: method.
-    method compileSend: selector x asSymbol args: 0 super: self isSuper
+    inner isNil ifFalse: [inner compileInto: method].
+    method compileSend: self selectorSymbol args: 0 super: (self isSuper: inner)
   ]
 
-  isSuper [
-    ^ inner = (STIdentifier for: 'super')
+  selectorSymbol [
+    ^ selector x asSymbol
   ]
 
   argumentList [
@@ -121,7 +119,7 @@ STReturn extend [
   compileInto: method [
     "A return is compiled as a regular expression, then 'answer TOS', $6200."
     x compileInto: method.
-    method compile: 16r6200
+    method compile: (method insideBlock ifTrue: [16r6400] ifFalse: [16r6200])
   ]
 ]
 
@@ -135,11 +133,11 @@ STLiteral extend [
         method compile: (16r0600 bitOr: (x bitAnd: 16rFF)).
         ^ nil].
 
-      x = (x bitAnd: 16r7fffffff) ifTrue: [
+      (x between: -2147483648 and: 2147483647) ifTrue: [
         method compileLiteral: x.
         ^ nil].
 
-      self error: 'Cannot fit large numbers into Mist currently'].
+      self error: 'Cannot fit large numbers into Mist currently: ', x printString].
 
     x compileInto: method
   ]
@@ -159,7 +157,7 @@ STAssignments extend [
     | target |
     value compileInto: method.
     targets reverseDo: [:each |
-      method compile: 16r6300. "dup"
+      method compile: 16r6000. "dup"
       target := method lookup: each x.
       method compile: target store]
   ]
@@ -176,5 +174,55 @@ STString extend [
   compileInto: method [
     "Add this as a String literal, then compile a literal push $05xx."
     method compileLiteral: x
+  ]
+]
+
+STKeyword extend [
+  asSymbol [
+    "x is a collection of strings."
+    ^ ((x join: ':'), ':') asSymbol
+  ]
+]
+
+STDynamicArray extend [
+  compileInto: method [
+    "Creates an array, creates a writeStream for it, then compiles nextPut:s
+    into it. This generates a STCascade and calls into it, since that's exactly
+    the flow we need, DUPs and so on."
+    | cascade |
+    cascade := STCascade new.
+    cascade receiver: (STUnarySend new
+      inner: (STKeywordSend new
+        receiver: (STLiteral for: (STIdentifier for: 'Array'));
+        addKeywordArg: {STIdentifier for: 'new'. STLiteral for: x size};
+        yourself);
+      selector: (STIdentifier for: 'writeStream');
+      yourself).
+
+
+    "Then for each element, we add a nextPut: theElement ot the cascade."
+    x do: [:each |
+      cascade addTail: (STKeywordSend new
+        addKeywordArg: {STIdentifier for: 'nextPut'.  each};
+        yourself)].
+
+    "End with #contents to get the array on the stack rather than the stream."
+    cascade addTail: (STUnarySend new selector: (STIdentifier for: 'contents')).
+    cascade compileInto: method
+  ]
+]
+
+STCascade extend [
+  compileInto: method [
+    "Cascades begin with a receiver which gets pushed onto the stack, followed
+    by 0 or more message send tails. Tails have their receiver slot as nil; they
+    know how to handle that.
+    After each tail (but not the first one) the result is DROP'd.
+    Before each tail except the last, the receiver is DUP'd."
+    receiver compileInto: method.
+    tails keysAndValuesDo: [:ix :each |
+      ix > 1 ifTrue: [method compileDrop].
+      ix < tails size ifTrue: [method compileDup].
+      each compileInto: method].
   ]
 ]
