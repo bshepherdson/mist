@@ -302,7 +302,7 @@ function decodeHeader(p: ptr): header {
 // 0-based indexing.
 export function readIV(p: ptr, index: number): stl {
   const hdr = decodeHeader(p);
-  if (!hdr.iv) throw new Error('Cannot read IVs of non-IV object');
+  if (!hdr.iv) throw new Error('Cannot read IVs of non-IV object: ' + p);
   if (hdr.iv[0] <= index) throw new Error('Reading off the end of object');
 
   return read(hdr.iv[1] + 2 * index);

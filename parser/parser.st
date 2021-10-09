@@ -379,9 +379,9 @@ Object subclass: Parser [
 
   parseStatement [
     "Parses a single statement, generally just a cascade but maybe a return.
-    Includes parsing trailing whitespace, plus the optional period and space
-    after it."
+    Includes parsing trailing whitespace, but not the possible period."
     | inner |
+    "Transcript show: 'pStmt: ', (s copy nextAvailable: 20); cr."
     (s peekFor: $^) ifTrue: [
       "Handle a return: no period allowed after this."
       self drainSpaces.
@@ -391,7 +391,7 @@ Object subclass: Parser [
     ] ifFalse: [
       inner := self parseExpr.
       self drainSpaces.
-      ^ inner
+      ^ STStatement for: inner
     ]
   ]
 
@@ -438,6 +438,10 @@ Object subclass: Parser [
     self drainSpaces.
 
     stmts := self parseStatements ifNil: [self error: 'failed to parse block body'].
+    "Special case for blocks: turn a final STStatement into its inner expression alone. Then it remains on TOS to be returned normally."
+    (stmts isEmpty not and: [stmts last isKindOf: STStatement]) ifTrue: [
+        stmts at: stmts size put: stmts last x].
+
     (s peekFor: $]) ifFalse: [self error: 'failed to parse closing ]'].
     ^ STBlock new vars: vars; temps: temps; body: stmts.
   ]

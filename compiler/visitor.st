@@ -95,18 +95,10 @@ SequenceableCollection extend [
     "Handles the common case of compiling the body of a method, block, etc.
     The drop should be skipped for the first expression,
     before a conditional jump, and after a return."
-    | skipDrop |
-    skipDrop := true.
     self keysAndValuesDo: [:ix :each |
-      (skipDrop or: [ix = self size]) ifFalse: [method compileDrop].
-      skipDrop := each skipDrop.
       each compileInto: method]
   ]
 ]
-
-"START HERE: Branching logic for ifTrue:ifFalse: is nearly working, but the
-result of the true branch is getting DROP'd before it can be returned. We need
-a more robust means of handling dropping vs. not, since the current scheme is a tangled mess."
 
 STScoped extend [
   compileInto: method [
@@ -173,15 +165,21 @@ STBinarySelector extend [
   ]
 ]
 
+STStatement extend [
+  compileInto: method [
+    "A Statement is an inner expression (a cascade, assignment, or send) which
+    is part of a body, and so followed with a drop."
+    x compileInto: method.
+    method compileDrop
+  ]
+]
+
 STReturn extend [
   compileInto: method [
-    "A return is compiled as a regular expression, then 'answer TOS', $6200."
+    "A return is compiled as a regular expression, then 'answer TOS', $6200.
+    If we're inside a block, it's a block return $6400."
     x compileInto: method.
     method compile: (method insideBlock ifTrue: [16r6400] ifFalse: [16r6200])
-  ]
-
-  skipDrop [
-    ^ true
   ]
 ]
 

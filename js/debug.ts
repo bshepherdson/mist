@@ -46,8 +46,10 @@ function printMethod(methodOrBlock: m.ptr): StackFrame {
   }
 
   const cls = m.readIV(method, m.METHOD_CLASS);
-  const className = m.className(cls);
-  const selector = m.asJSString(m.readIV(method, m.METHOD_NAME));
+  const className = cls === m.MA_NIL ? '(driver)' : m.className(cls);
+  const selectorPtr = m.readIV(method, m.METHOD_NAME);
+  const selector = selectorPtr === m.MA_NIL ?
+      '(top-level)' : m.asJSString(selectorPtr);
   const bc = m.readIV(method, m.METHOD_BYTECODE);
   const bytecode = [];
   for (let i = 0; i < m.wordArraySize(bc); i++) {

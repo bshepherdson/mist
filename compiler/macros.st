@@ -59,7 +59,6 @@ MistMacro subclass: MMIfFalse [
   "expr ifFalse: literal-block"
   appliesTo: send [
     ^ send selectorSymbol = #ifFalse: and: [
-      "Transcript print: send kwargs first last x; cr."
       send kwargs first last x isBlock] "STLiteral[STBlock[...]]"
   ]
 
@@ -73,7 +72,7 @@ MistMacro subclass: MMIfFalse [
       addAll: block body;
       add: STJumpResolver new;
       yourself).
-    Transcript print: ast; cr.
+    "Transcript print: ast; cr."
     ^ ast
   ]
 ]
@@ -144,7 +143,7 @@ STKeywordSend extend [
   Macros := {
     MMIfTrue new.
     MMIfFalse new.
-    MMIfTrueIfFalse new}.
+    "MMIfTrueIfFalse new"}.
 
   macros [
     ^ Macros

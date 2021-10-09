@@ -8,12 +8,6 @@ Object subclass: AST [
   isBlock [
     ^ false
   ]
-
-  skipDrop [
-    "True for 'empty' AST pieces that don't result in values on the stack.
-    False if there's something on the stack to be dropped between lines."
-    ^ false
-  ]
 ]
 
 AST subclass: ASTValue [
@@ -37,17 +31,25 @@ ASTValue subclass: #STKeyword.
 ASTValue subclass: #STSymbol.
 ASTValue subclass: #STString.
 ASTValue subclass: #STArray.
+
+"A Statement is a wrapped around a single inner expression, but it's the unit
+of putting DROPs after things."
+ASTValue subclass: #STStatement.
 ASTValue subclass: #STReturn.
 ASTValue subclass: #STDynamicArray.
 ASTValue subclass: #STSkip.
 
 ASTValue subclass: #STLiteral.
 
-AST subclass: ASTNoDrop [
-  skipDrop [^true]
+STStatement class extend [
+  for: aValue [
+    "Special case: aValue can be nil; in that case return nil."
+    aValue ifNil: [^nil].
+    ^ super for: aValue
+  ]
 ]
 
-ASTNoDrop subclass: STJump [
+AST subclass: STJump [
   | condExpr bytecode |
   condExpr: x [condExpr := x]
   bytecode: x [bytecode := x]
@@ -73,9 +75,9 @@ STJump class extend [
   ]
 ]
 
-ASTNoDrop subclass: #STJumpResolver.
-ASTNoDrop subclass: #STJumpBackRef.
-ASTNoDrop subclass: #STJumpSwap.
+AST subclass: #STJumpResolver.
+AST subclass: #STJumpBackRef.
+AST subclass: #STJumpSwap.
 
 AST subclass: STSend [
   argc [self subclassResponsibility]
@@ -224,7 +226,7 @@ AST subclass: STAssignments [
 
 "Doesn't actually do anything, just adds temps to the scope for the duration
 of its body."
-ASTNoDrop subclass: STScoped [
+AST subclass: STScoped [
   | temps body |
   temps [^temps]
   body  [^body]
@@ -296,7 +298,6 @@ AST subclass: STMethod [
 
   printOn: aStream [
     aStream << self class name asString << '[' << signature.
-    Transcript print: primitive; cr.
     primitive isNil ifFalse: [
       aStream nlTab << '<primitive: ' << primitive asString << '>'].
     temps isEmpty ifFalse: [

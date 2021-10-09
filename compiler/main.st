@@ -24,7 +24,7 @@ Object subclass: MistCompiler [
     "Transcript print: someCode; cr."
     fake := MistMethod new.
     someCode compileInto: fake.
-    fake compile: 16r6200. "Add a dummy return TOS."
+    fake compile: 16r6300. "Add a dummy return self."
     ^ fake
   ]
 

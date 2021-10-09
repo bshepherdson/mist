@@ -385,6 +385,7 @@ Object subclass: MistMethodsBlock [
 
   for: className classy: isClassy [
     cls := MistClass at: className x.
+    cls ifNil: [self error: 'unknown class name ', className x].
     classy := isClassy.
     scope := isClassy ifTrue: [cls classyScope] ifFalse: [cls scope].
     methods := OrderedCollection new.
