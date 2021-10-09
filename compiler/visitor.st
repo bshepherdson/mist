@@ -104,6 +104,10 @@ SequenceableCollection extend [
   ]
 ]
 
+"START HERE: Branching logic for ifTrue:ifFalse: is nearly working, but the
+result of the true branch is getting DROP'd before it can be returned. We need
+a more robust means of handling dropping vs. not, since the current scheme is a tangled mess."
+
 STScoped extend [
   compileInto: method [
     "This is kind of like nesting in a block, it needs to increase the
@@ -287,7 +291,10 @@ STCascade extend [
 
 STJump extend [
   compileInto: method [
-    condExpr compileInto: method. "We wrap this expression to prevent a DROP."
+   "The conditional expression is wrapped in the STJump to prevent a DROP before
+   the check. If it's nil, this is an unconditional jump."
+    condExpr ifNotNil: [
+      condExpr compileInto: method].
     method compile: bytecode.     "Compile the jump itself."
     method pushJump.              "Bookkeeping."
   ]

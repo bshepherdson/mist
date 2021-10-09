@@ -65,6 +65,9 @@ STJump class extend [
   skipTruePushTrue:   cond [^ self privMakeSkip: 16r6C00 cond: cond]
   skipFalsePushFalse: cond [^ self privMakeSkip: 16r6D00 cond: cond]
 
+  skipForward  [^ self privMakeSkip: 16r6A00 cond: nil]
+  skipBackward [^ self privMakeSkip: 16r6B00 cond: nil]
+
   privMakeSkip: bytecode cond: condExpr [
     ^ self new bytecode: bytecode; condExpr: condExpr; yourself
   ]

@@ -78,6 +78,40 @@ MistMacro subclass: MMIfFalse [
   ]
 ]
 
+MistMacro subclass: MMIfTrueIfFalse [
+  "expr ifTrue: literal-block ifFalse: literal-block"
+  appliesTo: send [
+    ^ send selectorSymbol = #ifTrue:ifFalse: and: [
+      "Transcript print: send kwargs first last x; cr."
+      send kwargs first last x isBlock and: [
+        send kwargs second last x isBlock]] "STLiteral[STBlock[...]]"
+  ]
+
+  basicApplyTo: send [
+    "First, skip if false to after the true part. At the end of the true part,
+    unconditionally skip to the end. Swap the jump stack order, then resolve the
+    original jump, then the last one."
+    | trueBlock trueAst falseBlock falseAst |
+    trueBlock := send kwargs first last x. "STLiteral[STBlock[...]]"
+    falseBlock := send kwargs second last x. "STLiteral[STBlock[...]]"
+    trueAst := STScoped new temps: trueBlock temps.
+    trueAst body: (OrderedCollection new
+      add: (STJump skipFalsePushNil: send receiver);
+      addAll: trueBlock body;
+      add: STJump skipForward; "This is now on top of the jump stack."
+      add: STJumpSwap new;     "Swap it with the original jump."
+      add: STJumpResolver new; "And resolve that to here."
+      yourself).
+
+    falseAst := STScoped new temps: falseBlock temps.
+    falseAst body: (OrderedCollection new
+      addAll: falseBlock body;
+      add: STJumpResolver new;
+      yourself).
+    ^ {trueAst. falseAst}
+  ]
+]
+
 STSend extend [
   checkMacros [
     self macros do: [:macro |
@@ -107,7 +141,10 @@ STBinarySend extend [
 ]
 
 STKeywordSend extend [
-  Macros := {MMIfTrue new. MMIfFalse new}.
+  Macros := {
+    MMIfTrue new.
+    MMIfFalse new.
+    MMIfTrueIfFalse new}.
 
   macros [
     ^ Macros
