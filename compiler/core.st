@@ -4,10 +4,11 @@ This compiles into MistMethod objects holding the bytecodes, literals, argc,
 locals count, etc."
 
 Object subclass: MistMethod [
-  | selector bytecode literals argc locals scope blockDepth |
+  | selector bytecode literals argc locals scope blockDepth jumpStack |
   initialize [
     bytecode := OrderedCollection new.
     literals := OrderedCollection new.
+    jumpStack := OrderedCollection new.
     blockDepth := 0.
     argc := 0.
     locals := 0
@@ -15,11 +16,12 @@ Object subclass: MistMethod [
 
   selector     [^selector]
   selector:  x [selector := x]
-  scope:  x [scope := x]
   argc      [^argc]
   locals    [^locals]
+  scope     [^scope]
   argc:   n [argc := n]
   locals: n [locals := n]
+  scope:  x [scope := x]
 
   lookup: varName [
     "Returns nil if it can't be found on the scope, and a Var otherwise."
@@ -33,6 +35,47 @@ Object subclass: MistMethod [
 
   isTopLevel [
     ^ scope isNil
+  ]
+
+  pushJump [
+    "Assumes the bytecode just compiled was a jump. Pushes its index onto the
+    jumpStack."
+    jumpStack add: bytecode size
+  ]
+
+  resolveForwardJump [
+    "Resolves the jump on top of the stack so that jump jumps to the *next*
+    bytecode. The jump is measured from PC after the jump instruction.
+    jmp 0 1 2 3 4 (5)
+     x          ^
+    If we want to land on 5 after the jump, which hasn't been compiled yet,
+    that's actually the same delta as bytecode size - jump. Easy enough."
+    | index jump |
+    index := jumpStack removeLast.
+    jump := bytecode at: index.
+    bytecode at: index put: (jump bitOr: bytecode size - index)
+  ]
+
+  jumpBackwards [
+    "Resolves the jump on top of the stack so that we jump back to it.
+    Compiles the backwards jump, since they're always unconditional.
+    The jump is relative the bytecode after the compiled jump, which is
+    currently bytecode size + 2.
+    ()   a b c d     jmp (after )
+    ref  ^     size       x
+    size + 1 - ref is our target delta."
+    | index |
+    index := jumpStack removeLast.
+    self compile: (16r6B00 bitOr: bytecode size + 1 - index)
+  ]
+
+  swapJumps [
+    "Swaps the top two jumps. This enables things like the interleaving of
+    ifTrue:ifFalse:
+    v----------------v
+    StttttttttttttttS fffffffffff
+                    ^------------^"
+    jumpStack swap: jumpStack size with: jumpStack size - 1
   ]
 
   blockNest: aBlock [
@@ -60,12 +103,8 @@ Object subclass: MistMethod [
     self compile: 0. "Dummy size word."
     blockStart := bytecode size. "Points at the size word, before the block."
 
-    "Now compile the body of the block, with its drops and things."
-    first := true.
-    aBlock body do: [:each |
-      first ifFalse: [self compileDrop].
-      first := false.
-      each compileInto: self].
+    "Now compile the body of the block."
+    aBlock body compileInto: self.
 
     "If the last bytecode was a return, do nothing. If it wasn't, return TOS.
     Unless the block is empty, in which case push nil, then return TOS."
@@ -376,11 +415,7 @@ Object subclass: MistMethodsBlock [
     method primitive isNil ifFalse: [
       compiled compile: (16r7000 bitOr: method primitive)].
 
-    first := true.
-    method body do: [:each |
-      first ifFalse: [compiled compileDrop].
-      first := false.
-      each compileInto: compiled].
+    method body compileInto: compiled.
 
     "If the method body didn't contain an answer, return self."
     "But if the entire body is a primitive, also skip it."
@@ -388,6 +423,7 @@ Object subclass: MistMethodsBlock [
       method body isEmpty not and: [(method body last isKindOf: STReturn) not]])
     ifTrue: [compiled compile: 16r6300].
 
+    compiled scope: compiled scope parent.
     methods add: compiled
   ]
 ]

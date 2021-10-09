@@ -3,7 +3,8 @@ default: all
 
 # These parser files are GNU Smalltalk files for the new, smarter parser.
 PARSER_FILES=parser/ast.st parser/parser.st compiler/core.st \
-						 compiler/visitor.st compiler/driver.st compiler/main.st
+						 compiler/visitor.st compiler/macros.st compiler/driver.st \
+						 compiler/main.st
 PARSER=gst $(PARSER_FILES) -a
 
 ST_FILES=st/Kernel.st st/Exceptions.st \

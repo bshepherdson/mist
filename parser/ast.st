@@ -4,6 +4,16 @@ Object subclass: AST [
   printOn: aStream in: aNamespace [
     self printOn: aStream
   ]
+
+  isBlock [
+    ^ false
+  ]
+
+  skipDrop [
+    "True for 'empty' AST pieces that don't result in values on the stack.
+    False if there's something on the stack to be dropped between lines."
+    ^ false
+  ]
 ]
 
 AST subclass: ASTValue [
@@ -29,8 +39,40 @@ ASTValue subclass: #STString.
 ASTValue subclass: #STArray.
 ASTValue subclass: #STReturn.
 ASTValue subclass: #STDynamicArray.
+ASTValue subclass: #STSkip.
 
 ASTValue subclass: #STLiteral.
+
+AST subclass: ASTNoDrop [
+  skipDrop [^true]
+]
+
+ASTNoDrop subclass: STJump [
+  | condExpr bytecode |
+  condExpr: x [condExpr := x]
+  bytecode: x [bytecode := x]
+
+  printOn: aStream [
+    aStream << self class name asString << '[ bytecode: '.
+    bytecode printOn: aStream base: 16.
+    aStream nlTab << condExpr << ']'
+  ]
+]
+
+STJump class extend [
+  skipTruePushNil:    cond [^ self privMakeSkip: 16r6800 cond: cond]
+  skipFalsePushNil:   cond [^ self privMakeSkip: 16r6900 cond: cond]
+  skipTruePushTrue:   cond [^ self privMakeSkip: 16r6C00 cond: cond]
+  skipFalsePushFalse: cond [^ self privMakeSkip: 16r6D00 cond: cond]
+
+  privMakeSkip: bytecode cond: condExpr [
+    ^ self new bytecode: bytecode; condExpr: condExpr; yourself
+  ]
+]
+
+ASTNoDrop subclass: #STJumpResolver.
+ASTNoDrop subclass: #STJumpBackRef.
+ASTNoDrop subclass: #STJumpSwap.
 
 AST subclass: STSend [
   argc [self subclassResponsibility]
@@ -177,6 +219,24 @@ AST subclass: STAssignments [
   ]
 ]
 
+"Doesn't actually do anything, just adds temps to the scope for the duration
+of its body."
+ASTNoDrop subclass: STScoped [
+  | temps body |
+  temps [^temps]
+  body  [^body]
+  temps: x [temps := x]
+  body:  x [body := x]
+
+  printOn: aStream [
+    aStream << self class name asString << '[ |'.
+    temps do: [:each | aStream space << each].
+    aStream << ' |'.
+    body do: [:each | aStream nlTab << each].
+    aStream << ']'; cr
+  ]
+]
+
 AST subclass: STBlock [
   | vars temps body |
   vars  [^vars]
@@ -185,6 +245,10 @@ AST subclass: STBlock [
   vars:  x [vars := x]
   body:  x [body := x]
   temps: x [temps := x]
+
+  isBlock [
+    ^ true
+  ]
 
   = other [
     ^ (other isKindOf: STBlock) and: [
@@ -286,3 +350,4 @@ STMethodsBlock class extend [
     ^super new initialize
   ]
 ]
+

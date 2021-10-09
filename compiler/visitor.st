@@ -1,5 +1,21 @@
-STKeywordSend extend [
+STSend extend [
   compileInto: method [
+    "Apply macros, then call through. If the returned value is == self, call
+    through to innerCompileInto:."
+    | expanded |
+    expanded := self checkMacros.
+    self == expanded
+      ifTrue:  [self innerCompileInto: method]
+      ifFalse: [expanded compileInto: method]
+  ]
+
+  innerCompileInto: method [
+    self subclassResponsibility
+  ]
+]
+
+STKeywordSend extend [
+  innerCompileInto: method [
     "Some special cases here, to handle eg. subclass: sends at the top level.
     We can detect the top level with method isTopLevel."
     (method isTopLevel and: [kwargs first first x = 'subclass']) ifTrue: [
@@ -42,7 +58,7 @@ STKeywordSend extend [
 ]
 
 STBinarySend extend [
-  compileInto: method [
+  innerCompileInto: method [
     "A binary send is compiled as left, then right, then the send op."
     left isNil ifFalse: [left  compileInto: method].
     right compileInto: method.
@@ -59,7 +75,7 @@ STBinarySend extend [
 ]
 
 STUnarySend extend [
-  compileInto: method [
+  innerCompileInto: method [
     "A unary send is simply compiled as its receiver and then the send."
     inner isNil ifFalse: [inner compileInto: method].
     method compileSend: self selectorSymbol args: 0 super: (self isSuper: inner)
@@ -71,6 +87,40 @@ STUnarySend extend [
 
   argumentList [
     ^ Array new.
+  ]
+]
+
+SequenceableCollection extend [
+  compileInto: method [
+    "Handles the common case of compiling the body of a method, block, etc.
+    The drop should be skipped for the first expression,
+    before a conditional jump, and after a return."
+    | skipDrop |
+    skipDrop := true.
+    self keysAndValuesDo: [:ix :each |
+      (skipDrop or: [ix = self size]) ifFalse: [method compileDrop].
+      skipDrop := each skipDrop.
+      each compileInto: method]
+  ]
+]
+
+STScoped extend [
+  compileInto: method [
+    "This is kind of like nesting in a block, it needs to increase the
+    MistMethod's locals count."
+    | localStart newScope |
+    "0-based index for argv + 1 for self."
+    localStart := method argc + method locals + 1.
+    method locals: method locals + temps size.
+
+    newScope := Scope new parent: method scope.
+    1 to: temps size do: [:ix |
+      newScope add: (temps at: ix) x "Unwrap STIdentifier"
+        var: (LocalVar new index: localStart + ix - 1)].
+    method scope: newScope.
+
+    body compileInto: method.
+    method scope: newScope parent
   ]
 ]
 
@@ -124,6 +174,10 @@ STReturn extend [
     "A return is compiled as a regular expression, then 'answer TOS', $6200."
     x compileInto: method.
     method compile: (method insideBlock ifTrue: [16r6400] ifFalse: [16r6200])
+  ]
+
+  skipDrop [
+    ^ true
   ]
 ]
 
@@ -230,3 +284,30 @@ STCascade extend [
       each compileInto: method].
   ]
 ]
+
+STJump extend [
+  compileInto: method [
+    condExpr compileInto: method. "We wrap this expression to prevent a DROP."
+    method compile: bytecode.     "Compile the jump itself."
+    method pushJump.              "Bookkeeping."
+  ]
+]
+
+STJumpResolver extend [
+  compileInto: method [
+    method resolveForwardJump
+  ]
+]
+
+STJumpBackRef extend [
+  compileInto: method [
+    method pushJump
+  ]
+]
+
+STJumpSwap extend [
+  compileInto: method [
+    method swapJumps
+  ]
+]
+

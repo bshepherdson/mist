@@ -346,7 +346,7 @@ function miscOp(process: ptr, ctx: ptr, count: number, operand: number) {
     case 8: // Skip true push nil
       return maybeSkip(process, ctx, MA_TRUE, MA_NIL, operand);
     case 9: // Skip false push nil
-      return maybeSkip(process, ctx, MA_TRUE, MA_NIL, operand);
+      return maybeSkip(process, ctx, MA_FALSE, MA_NIL, operand);
     case 10: // Skip forward unconditionally.
       return skip(process, ctx, operand);
     case 11: // Skip backward unconditionally.
@@ -354,7 +354,7 @@ function miscOp(process: ptr, ctx: ptr, count: number, operand: number) {
     case 12: // Skip true push true
       return maybeSkip(process, ctx, MA_TRUE, MA_TRUE, operand);
     case 13: // Skip false push false
-      return maybeSkip(process, ctx, MA_TRUE, MA_TRUE, operand);
+      return maybeSkip(process, ctx, MA_FALSE, MA_FALSE, operand);
   }
   throw new Error('unknown misc op ' + count);
 }
