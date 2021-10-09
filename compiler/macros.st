@@ -160,7 +160,7 @@ MistMacro subclass: MMWhileBinary [
     condAst body: (OrderedCollection new
       add: STJumpBackRef new;
       addAll: condBlock body;
-      add: STJump skipFalsePushNil; "This is now on top of the jump stack."
+      add: self theJump; "This is now on top of the jump stack."
       yourself).
 
     bodyAst := STScoped new temps: bodyBlock temps.
@@ -194,6 +194,57 @@ MMWhileBinary subclass: MMWhileFalseBinary [
   ]
 ]
 
+
+MistMacro subclass: MistMacroWhileUnary [
+  "bodyBlock whileTrue"
+  appliesTo: send [
+    ^ send selectorSymbol = self expectedSelector and: [
+      send inner x isBlock]
+  ]
+
+  expectedSelector [
+    self subclassResponsibility
+  ]
+  theJump [
+    self subclassResponsibility
+  ]
+
+  basicApplyTo: send [
+    "backref bodyBlock skip-if-false swap uncond-back end"
+    | bodyBlock bodyAst |
+    bodyBlock := send inner x. "STLiteral[STBlock[...]]"
+    bodyAst := STScoped new temps: bodyBlock temps.
+    bodyAst body: (OrderedCollection new
+      add: STJumpBackRef new;
+      addAll: bodyBlock body;
+      add: self theJump;
+      add: STJumpSwap new;
+      add: STJumpBack new;
+      add: STJumpResolver new;
+      "The trailing nil is the result of the loop expression."
+      yourself).
+    ^ bodyAst
+  ]
+]
+
+MistMacroWhileUnary subclass: MMWhileTrueUnary [
+  expectedSelector [
+    ^ #whileTrue
+  ]
+  theJump [
+    ^ STJump skipFalsePushNil
+  ]
+]
+
+MistMacroWhileUnary subclass: MMWhileFalseUnary [
+  expectedSelector [
+    ^ #whileFalse
+  ]
+  theJump [
+    ^ STJump skipTruePushNil
+  ]
+]
+
 STSend extend [
   checkMacros [
     self macros do: [:macro |
@@ -207,7 +258,7 @@ STSend extend [
 ]
 
 STUnarySend extend [
-  Macros := {}.
+  Macros := {MMWhileTrueUnary new. MMWhileFalseUnary new}.
 
   macros [
     ^ Macros
