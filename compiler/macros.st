@@ -33,10 +33,10 @@ Object subclass: MistMacro [
   skipFalsePushFalse  [^ STJump for: 16r6D00]
 ]
 
-MistMacro subclass: MMIfTrue [
+MistMacro subclass: MMIf [
   "expr ifTrue: literal-block"
   appliesTo: send [
-    ^ send selectorSymbol = #ifTrue: and: [
+    ^ send selectorSymbol = self expectedSelector and: [
       "Transcript print: send kwargs first last x; cr."
       send kwargs first last x isBlock] "STLiteral[STBlock[...]]"
   ]
@@ -47,7 +47,8 @@ MistMacro subclass: MMIfTrue [
     block := send kwargs first last x. "STLiteral[STBlock[...]]"
     ast := STScoped new temps: block temps.
     ast body: (OrderedCollection new
-      add: (STJump skipFalsePushNil: send receiver);
+      add: send receiver;
+      add: self theJump;
       addAll: block body;
       add: STJumpResolver new;
       yourself).
@@ -55,25 +56,21 @@ MistMacro subclass: MMIfTrue [
   ]
 ]
 
-MistMacro subclass: MMIfFalse [
-  "expr ifFalse: literal-block"
-  appliesTo: send [
-    ^ send selectorSymbol = #ifFalse: and: [
-      send kwargs first last x isBlock] "STLiteral[STBlock[...]]"
+MMIf subclass: MMIfTrue [
+  expectedSelector [
+    ^ #ifTrue:
   ]
+  theJump [
+    ^ STJump skipFalsePushNil
+  ]
+]
 
-  basicApplyTo: send [
-    "We want to skip if true over the block's length."
-    | block ast |
-    block := send kwargs first last x. "STLiteral[STBlock[...]]"
-    ast := STScoped new temps: block temps.
-    ast body: (OrderedCollection new
-      add: (STJump skipTruePushNil: send receiver);
-      addAll: block body;
-      add: STJumpResolver new;
-      yourself).
-    "Transcript print: ast; cr."
-    ^ ast
+MMIf subclass: MMIfFalse [
+  expectedSelector [
+    ^ #ifFalse:
+  ]
+  theJump [
+    ^ STJump skipTruePushNil
   ]
 ]
 
@@ -106,7 +103,7 @@ MistMacroTwoBlocks subclass: MMIfTrueIfFalse [
     falseBlock := send kwargs second last x. "STLiteral[STBlock[...]]"
     trueAst := STScoped new temps: trueBlock temps.
     trueAst body: (OrderedCollection new
-      add: (STJump skipFalsePushNil: send receiver);
+      add: STJump skipFalsePushNil;
       addAll: trueBlock body;
       add: STJump skipForward; "This is now on top of the jump stack."
       add: STJumpSwap new;     "Swap it with the original jump."
@@ -119,7 +116,7 @@ MistMacroTwoBlocks subclass: MMIfTrueIfFalse [
       addAll: falseBlock body;
       add: STJumpResolver new;
       yourself).
-    ^ {trueAst. falseAst}
+    ^ {send receiver. trueAst. falseAst}
   ]
 ]
 
@@ -136,6 +133,64 @@ MistMacroTwoBlocks subclass: MMIfFalseIfTrue [
       addKeywordArg: send kwargs second;
       addKeywordArg: send kwargs first;
       yourself
+  ]
+]
+
+MistMacro subclass: MMWhileBinary [
+  "conditionBlock whileTrue: bodyBlock"
+  appliesTo: send [
+    ^ send selectorSymbol = self expectedSelector and: [
+      send receiver x isBlock and: [
+        send kwargs first last x isBlock]] "STLiteral[STBlock[...]]"
+  ]
+
+  expectedSelector [
+    self subclassResponsibility
+  ]
+  theJump [
+    self subclassResponsibility
+  ]
+
+  basicApplyTo: send [
+    "backref condBlock skip-if-false bodyBlock swap unconditional-back end"
+    | condBlock condAst bodyBlock bodyAst |
+    condBlock := send receiver x. "STLiteral[STBlock[...]]"
+    bodyBlock := send kwargs first last x. "STLiteral[STBlock[...]]"
+    condAst := STScoped new temps: condBlock temps.
+    condAst body: (OrderedCollection new
+      add: STJumpBackRef new;
+      addAll: condBlock body;
+      add: STJump skipFalsePushNil; "This is now on top of the jump stack."
+      yourself).
+
+    bodyAst := STScoped new temps: bodyBlock temps.
+    bodyAst body: (OrderedCollection new
+      addAll: bodyBlock body;
+      add: STDrop new; "Drop the previous expression result from the stack."
+      add: STJumpSwap new;
+      add: STJumpBack new;
+      add: STJumpResolver new;
+      "The trailing nil is the result of the loop expression."
+      yourself).
+    ^ {condAst. bodyAst}
+  ]
+]
+
+MMWhileBinary subclass: MMWhileTrueBinary [
+  expectedSelector [
+    ^ #whileTrue:
+  ]
+  theJump [
+    ^ STJump skipFalsePushNil
+  ]
+]
+
+MMWhileBinary subclass: MMWhileFalseBinary [
+  expectedSelector [
+    ^ #whileFalse:
+  ]
+  theJump [
+    ^ STJump skipTruePushNil
   ]
 ]
 
@@ -173,6 +228,8 @@ STKeywordSend extend [
     MMIfFalse new.
     MMIfTrueIfFalse new.
     MMIfFalseIfTrue new.
+    MMWhileTrueBinary new.
+    MMWhileFalseBinary new.
     }.
 
   macros [

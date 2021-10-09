@@ -62,19 +62,18 @@ AST subclass: STJump [
 ]
 
 STJump class extend [
-  skipTruePushNil:    cond [^ self privMakeSkip: 16r6800 cond: cond]
-  skipFalsePushNil:   cond [^ self privMakeSkip: 16r6900 cond: cond]
-  skipTruePushTrue:   cond [^ self privMakeSkip: 16r6C00 cond: cond]
-  skipFalsePushFalse: cond [^ self privMakeSkip: 16r6D00 cond: cond]
+  skipTruePushNil    [^ self privMakeSkip: 16r6800]
+  skipFalsePushNil   [^ self privMakeSkip: 16r6900]
+  skipTruePushTrue   [^ self privMakeSkip: 16r6C00]
+  skipFalsePushFalse [^ self privMakeSkip: 16r6D00]
+  skipForward        [^ self privMakeSkip: 16r6A00]
 
-  skipForward  [^ self privMakeSkip: 16r6A00 cond: nil]
-  skipBackward [^ self privMakeSkip: 16r6B00 cond: nil]
-
-  privMakeSkip: bytecode cond: condExpr [
-    ^ self new bytecode: bytecode; condExpr: condExpr; yourself
+  privMakeSkip: bytecode [
+    ^ self new bytecode: bytecode; yourself
   ]
 ]
 
+AST subclass: #STJumpBack.
 AST subclass: #STJumpResolver.
 AST subclass: #STJumpBackRef.
 AST subclass: #STJumpSwap.

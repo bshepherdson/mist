@@ -295,12 +295,16 @@ STCascade extend [
 
 STJump extend [
   compileInto: method [
-   "The conditional expression is wrapped in the STJump to prevent a DROP before
-   the check. If it's nil, this is an unconditional jump."
-    condExpr ifNotNil: [
-      condExpr compileInto: method].
+    "The conditional expression, if any, should come before the jump, and it'll
+    be on the stack."
     method compile: bytecode.     "Compile the jump itself."
-    method pushJump.              "Bookkeeping."
+    method pushJump               "Update the bookkeeping."
+  ]
+]
+
+STJumpBack extend [
+  compileInto: method [
+    method jumpBackwards
   ]
 ]
 
