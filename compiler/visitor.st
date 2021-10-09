@@ -106,6 +106,12 @@ STDrop extend [
   ]
 ]
 
+STDup extend [
+  compileInto: method [
+    method compile: 16r6000
+  ]
+]
+
 STScoped extend [
   compileInto: method [
     "This is kind of like nesting in a block, it needs to increase the

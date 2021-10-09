@@ -230,7 +230,7 @@ Object subclass: #TestResult
   Transcript show: 'runCase returned'.
   self addPass: aTestCase]
     on: self class failure, self class skip, self class warning, self class error
-    do: [:ex | 98 halt. ex sunitAnnounce: aTestCase toResult: self ]
+    do: [:ex | ex sunitAnnounce: aTestCase toResult: self ]
 
 ! printString
   | total |

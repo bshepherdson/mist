@@ -74,6 +74,47 @@ MMIf subclass: MMIfFalse [
   ]
 ]
 
+MistMacro subclass: MMIfNil [
+  appliesTo: send [
+    ^ send selectorSymbol = #ifNil: and: [
+      send kwargs first last x isBlock]
+  ]
+
+  basicApplyTo: send [
+    "Turning 'rcvr ifNil: [body]' into
+    (rcvr)               expr
+    dup                  expr expr
+    send isNil           expr ?nil
+    skip on *true*  -\   expr            nil nil
+    skip fwd  --\    |   expr
+    drop        | <--/   nil
+    drop        |        ()
+    body...     |        replacement-value
+    (end)     <-/        original-expr-or-replacement-value
+    "
+    | block |
+    block := send kwargs first last x. "STLiteral[STBlock[...]]"
+    ^{send receiver.           "Original expr"
+      STUnarySend new          "Dup it, and send isNil to the TOS one"
+        inner: STDup new;
+        selector: (STIdentifier for: 'isNil');
+        yourself.
+      STJump skipTruePushNil.  "Jump if it is nil"
+      STJump skipForward.      "Jump to the end if it's not."
+      STJumpSwap new.          "Swap the jumps so we can resolve the first."
+      STJumpResolver new.      "And resolve the conditional jump."
+      STDrop new.              "Drop the extra nil"
+      STDrop new.              "And the dup'd expr from earlier."
+      STScoped new             "Run the ifNil: body"
+        temps: block temps;
+        body: block body;
+        yourself.              "It leaves a value on the stack."
+      STJumpResolver new}      "Resolve to here."
+    "Either the original, non-nil value or the replacement from the block is
+    the only thing on the stack now."
+  ]
+]
+
 MistMacro subclass: MistMacroTwoBlocks [
   expectedSelector [
     self subclassResponsibility
@@ -281,6 +322,10 @@ STKeywordSend extend [
     MMIfFalseIfTrue new.
     MMWhileTrueBinary new.
     MMWhileFalseBinary new.
+    MMWhileFalseBinary new.
+    MMIfNil new.
+    "MMIfNotNil new." "TODO maybe? It's rarer and awkward because of the
+    optional block argument."
     }.
 
   macros [

@@ -219,7 +219,6 @@ Warning subclass: #Deprecated.
   "Unwind thisContext to self and return value to self's sender. Execute any
   unwinding blocks while unwinding (eg. ensure:). ASSUMES self is a sender of
   thisContext!"
-  96 halt.
   sender ifNil: [self cannotReturn: value to: sender].
   sender resume: value
 
@@ -241,9 +240,7 @@ Warning subclass: #Deprecated.
       context unwindComplete: true.
       unwindBlock := context unwindBlock.
       thisContext terminateTo: context.
-      unwindBlock value.
-      95 halt.
-      value].
+      unwindBlock value].
     context := context findNextUnwindContextUpTo: self].
   thisContext terminateTo: self.
   ^ value
