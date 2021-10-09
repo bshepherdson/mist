@@ -100,6 +100,12 @@ SequenceableCollection extend [
   ]
 ]
 
+STDrop extend [
+  compileInto: method [
+    method compileDrop
+  ]
+]
+
 STScoped extend [
   compileInto: method [
     "This is kind of like nesting in a block, it needs to increase the

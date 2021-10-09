@@ -355,3 +355,6 @@ STMethodsBlock class extend [
   ]
 ]
 
+"A free-floating DROP instruction, needed for some macros and things."
+AST subclass: #STDrop.
+

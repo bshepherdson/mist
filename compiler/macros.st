@@ -89,7 +89,9 @@ MistMacro subclass: MMIfTrueIfFalse [
   basicApplyTo: send [
     "First, skip if false to after the true part. At the end of the true part,
     unconditionally skip to the end. Swap the jump stack order, then resolve the
-    original jump, then the last one."
+    original jump, then the last one.
+    Remember the a successful skip pushes nil! So the false block begins with
+    dropping that nil pushed by the conditional skip."
     | trueBlock trueAst falseBlock falseAst |
     trueBlock := send kwargs first last x. "STLiteral[STBlock[...]]"
     falseBlock := send kwargs second last x. "STLiteral[STBlock[...]]"
@@ -104,6 +106,7 @@ MistMacro subclass: MMIfTrueIfFalse [
 
     falseAst := STScoped new temps: falseBlock temps.
     falseAst body: (OrderedCollection new
+      add: STDrop new;
       addAll: falseBlock body;
       add: STJumpResolver new;
       yourself).
@@ -143,7 +146,7 @@ STKeywordSend extend [
   Macros := {
     MMIfTrue new.
     MMIfFalse new.
-    "MMIfTrueIfFalse new"}.
+    MMIfTrueIfFalse new}.
 
   macros [
     ^ Macros
