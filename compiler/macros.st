@@ -77,13 +77,22 @@ MistMacro subclass: MMIfFalse [
   ]
 ]
 
-MistMacro subclass: MMIfTrueIfFalse [
-  "expr ifTrue: literal-block ifFalse: literal-block"
+MistMacro subclass: MistMacroTwoBlocks [
+  expectedSelector [
+    self subclassResponsibility
+  ]
+
   appliesTo: send [
-    ^ send selectorSymbol = #ifTrue:ifFalse: and: [
-      "Transcript print: send kwargs first last x; cr."
+    ^ send selectorSymbol = self expectedSelector and: [
       send kwargs first last x isBlock and: [
         send kwargs second last x isBlock]] "STLiteral[STBlock[...]]"
+  ]
+]
+
+MistMacroTwoBlocks subclass: MMIfTrueIfFalse [
+  "expr ifTrue: literal-block ifFalse: literal-block"
+  expectedSelector [
+    ^ #ifTrue:ifFalse:
   ]
 
   basicApplyTo: send [
@@ -111,6 +120,22 @@ MistMacro subclass: MMIfTrueIfFalse [
       add: STJumpResolver new;
       yourself).
     ^ {trueAst. falseAst}
+  ]
+]
+
+MistMacroTwoBlocks subclass: MMIfFalseIfTrue [
+  "expr ifFalse: literal-block ifTrue: literal-block"
+  expectedSelector [
+    ^ #ifFalse:ifTrue:
+  ]
+
+  basicApplyTo: send [
+    "Just swapping the order of the blocks."
+    ^ STKeywordSend new
+      receiver: send receiver;
+      addKeywordArg: send kwargs second;
+      addKeywordArg: send kwargs first;
+      yourself
   ]
 ]
 
@@ -146,7 +171,9 @@ STKeywordSend extend [
   Macros := {
     MMIfTrue new.
     MMIfFalse new.
-    MMIfTrueIfFalse new}.
+    MMIfTrueIfFalse new.
+    MMIfFalseIfTrue new.
+    }.
 
   macros [
     ^ Macros
