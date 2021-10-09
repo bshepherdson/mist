@@ -13,7 +13,7 @@ Some gotchas:
 
 Object subclass: MistMacro [
   applyTo: anSTSend [
-    (self appliesTo: anSTSend) ifFalse: [^anSTSend].
+    (self appliesTo: anSTSend) ifFalse: [^nil].
     ^ self basicApplyTo: anSTSend
   ]
 
@@ -51,6 +51,28 @@ MistMacro subclass: MMIfTrue [
       addAll: block body;
       add: STJumpResolver new;
       yourself).
+    ^ ast
+  ]
+]
+
+MistMacro subclass: MMIfFalse [
+  "expr ifFalse: literal-block"
+  appliesTo: send [
+    ^ send selectorSymbol = #ifFalse: and: [
+      "Transcript print: send kwargs first last x; cr."
+      send kwargs first last x isBlock] "STLiteral[STBlock[...]]"
+  ]
+
+  basicApplyTo: send [
+    "We want to skip if true over the block's length."
+    | block ast |
+    block := send kwargs first last x. "STLiteral[STBlock[...]]"
+    ast := STScoped new temps: block temps.
+    ast body: (OrderedCollection new
+      add: (STJump skipTruePushNil: send receiver);
+      addAll: block body;
+      add: STJumpResolver new;
+      yourself).
     Transcript print: ast; cr.
     ^ ast
   ]
@@ -58,7 +80,9 @@ MistMacro subclass: MMIfTrue [
 
 STSend extend [
   checkMacros [
-    ^ self macros inject: self into: [:ast :macro | macro applyTo: ast]
+    self macros do: [:macro |
+      (macro applyTo: self) ifNotNil: [:updated | ^updated]].
+    ^ self
   ]
 
   macros [
@@ -83,7 +107,7 @@ STBinarySend extend [
 ]
 
 STKeywordSend extend [
-  Macros := {MMIfTrue new}.
+  Macros := {MMIfTrue new. MMIfFalse new}.
 
   macros [
     ^ Macros
