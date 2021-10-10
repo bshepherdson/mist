@@ -144,6 +144,8 @@ export const [
     PROCESS_CONTEXT, PROCESS_NEXT, PROCESS_PREV, PROCESS_PROCESS_TABLE] =
     seq(4);
 
+export const CHARACTER_ASCII_VALUE = 0;
+
 // Contexts are stored as 24-pointer objects.
 // They are (currently?) the only Format.VARIABLE_IV object.
 // They have 5 instVars: method, locals, pc, sender, stack index.
@@ -178,7 +180,6 @@ export const [BLOCK_CONTEXT, BLOCK_PC_START, BLOCK_ARGC, BLOCK_ARGV, BLOCK_HANDL
 
 export const [DICT_ARRAY, DICT_TALLY] = seq(2);
 export const [ASSOC_KEY, ASSOC_VALUE] = seq(2);
-export const ASCII_TABLE = [];
 
 
 // Functions for accessing the memory.

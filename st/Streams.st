@@ -36,6 +36,18 @@ Stream subclass: #PositionableStream instanceVariableNames: 'index coll'.
     dst add: self next].
   ^ dst asArray
 
+! nextPutAll: aCollection
+  "The element type is assumed to be the same as the stream."
+  aCollection do: [:each | self nextPut: each]
+
+! << anObject
+  "If the input is the same class as the streamed collection (eg. Strings) then
+  do nextPutAll:. If not, delegate to anObject putOn: self.
+  Returns self for chaining."
+  anObject class == coll class
+    ifTrue:  [self nextPutAll: anObject]
+    ifFalse: [anObject putOn: self]
+
 ! skip: aDelta
   index := index + aDelta
 
@@ -43,7 +55,9 @@ Stream subclass: #PositionableStream instanceVariableNames: 'index coll'.
   ^ index >= coll size
 
 ! contents
-  ^ coll
+  "Collections like OrderedCollection that expand are fine. Arrays and Strings
+  need to be clipped and copied."
+  ^ coll size = index ifTrue: [coll] ifFalse: [coll copyFrom: 1 to: index]
 !!
 
 PositionableStream subclass: #WriteStream.
@@ -52,7 +66,15 @@ PositionableStream subclass: #WriteStream.
 ! next
   self shouldNotImplement
 ! nextPut: aValue
+  index >= coll size ifTrue: [self privGrowCollection].
   coll at: (index := index + 1) put: aValue
+
+! privGrowCollection
+  "Doubles the size of the target string."
+  | s |
+  s := String new: coll size * 2.
+  1 to: coll size do: [:ix | s at: ix put: (coll at: ix)].
+  coll := s
 !!
 
 ! WriteStream class
@@ -63,10 +85,24 @@ PositionableStream subclass: #WriteStream.
 !!
 
 WriteStream subclass: #ReadWriteStream.
+
 ! ReadWriteStream
 ! next
   ^ coll at: (index := index + 1)
+!!
+
+
+PositionableStream subclass: #ReadStream.
+
+! ReadStream
+! next
+  ^ coll at: (index := index + 1)
 ! nextPut: aValue
-  coll at: (index := index + 1) put: aValue
+  self shouldNotImplement
+!!
+
+! ReadStream class
+! on: aCollection
+  ^ self new collection: aCollection; yourself
 !!
 

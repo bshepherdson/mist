@@ -213,33 +213,28 @@ Object subclass: #TestResult
   skipped := OrderedCollection new
 
 ! addError: aTestCase
-  Transcript show: 'addError ', aTestCase printString.
   ^errors add: aTestCase
 ! addFailure: aTestCase
-  Transcript show: 'addFailure ', aTestCase printString.
   ^failures add: aTestCase
 ! addPass: aTestCase
-  Transcript show: 'addPass ', aTestCase printString.
   ^passed add: aTestCase
 ! addSkip: aTestCase
-  Transcript show: 'addSkip ', aTestCase printString.
   ^skipped add: aTestCase
 
 ! runCase: aTestCase
   [aTestCase runCase.
-  Transcript show: 'runCase returned'.
   self addPass: aTestCase]
     on: self class failure, self class skip, self class warning, self class error
     do: [:ex | ex sunitAnnounce: aTestCase toResult: self ]
 
-! printString
+! printOn: aStream
   | total |
   total := failures size + errors size + passed size + skipped size.
-  ^'Executed ', total printString, ' tests: ',
-      passed size printString, ' passed, ',
-      failures size printString, ' failed, ',
-      errors size printString, ' errors, ',
-      skipped size printString, ' skipped'
+  aStream << 'Executed ' << total << ' tests: ' <<
+      passed size << ' passed, ' <<
+      failures size << ' failed, ' <<
+      errors size << ' errors, ' <<
+      skipped size << ' skipped'
 !!
 
 ! TestResult class

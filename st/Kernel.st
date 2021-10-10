@@ -67,6 +67,8 @@ Object subclass: #Method instanceVariableNames: 'selector compiled theClass'.
 ! Object
 ! initialize
   ^ self
+! initialize: size
+  ^ self
 ! class
   <primitive: 1>
 ! yourself
@@ -87,6 +89,8 @@ Object subclass: #Method instanceVariableNames: 'selector compiled theClass'.
   <primitive: 30>
 ! ~= anObject
   ^ (self = anObject) not
+! = anObject
+  ^ self == anObject
 
 ! hash
   ^ self basicHash
@@ -123,7 +127,16 @@ Object subclass: #Method instanceVariableNames: 'selector compiled theClass'.
 
 ! printString
   "Default printString implementation is 'a ClassName'."
-  ^ 'a ', self class name
+  | s |
+  s := WriteStream on: (String new: 32).
+  self printOn: s.
+  ^ s contents
+
+! printOn: aStream
+  aStream << 'a ' << self class name
+
+! putOn: aStream
+  aStream nextPut: self
 
 ! asString
   "Default to the printString representation."
@@ -158,8 +171,8 @@ Object subclass: #Method instanceVariableNames: 'selector compiled theClass'.
 ! Metaclass
 ! name
   ^ thisClass name, ' class'
-! printString
-  ^ thisClass name
+! printOn: aStream
+  aStream << thisClass name
 !!
 
 
@@ -224,10 +237,12 @@ Object subclass: #Method instanceVariableNames: 'selector compiled theClass'.
   ^ aBlock value
 ! isNil
   ^ true
-! printString
-  ^ 'nil'
+! printOn: aStream
+  aStream << 'nil'
 ! = anObject
   ^ anObject isNil
+! asString
+  ^ 'nil'
 !!
 
 ! Object
@@ -274,6 +289,8 @@ Object subclass: #Method instanceVariableNames: 'selector compiled theClass'.
   "NEVER CALLED: and: and or: should be rewritten by the compiler."
   ^ self
 
+! printOn: aStream
+  aStream << self printString
 ! printString
   ^ 'true'
 !!
@@ -302,6 +319,8 @@ Object subclass: #Method instanceVariableNames: 'selector compiled theClass'.
 
 ! printString
   ^ 'false'
+! printOn: aStream
+  aStream << self printString
 !!
 
 
@@ -326,6 +345,12 @@ Object subclass: #Transcript.
 ! = aValue
   "Subclasses should be handling this - if they've failed to, we come here."
   ^ self == aValue
+
+! even
+  ^ (self bitAnd: 1) == 0
+! odd
+  ^ (self bitAnd: 1) == 1
+
 !!
 
 ! SmallInteger
@@ -367,9 +392,22 @@ Object subclass: #Transcript.
 ! bitXor: aNumber
   <primitive: 40>
   ^ super bitXor: aNumber
+! bitShift: aDelta
+  <primitive: 43>
+  ^ super bitShift: aDelta
 ! bitInvert
   <primitive: 41>
   ^ super bitInvert
+
+! nextPowerOf2
+  | c |
+  c := 2.
+  [self <= c] whileFalse: [c := c bitShift: 1].
+  ^ c
+
+! hash
+  ^ self
+
 ! negated
   ^0 - self
 ! min: aNumber
@@ -393,6 +431,10 @@ Object subclass: #Transcript.
 
 ! printString
   <primitive: 42>
+! printOn: aStream
+  self putOn: aStream
+! putOn: aStream
+  aStream nextPutAll: self printString
 !!
 
 
@@ -404,3 +446,15 @@ Object subclass: #Transcript.
 ! owningClass
   ^ class
 !!
+
+! Character class
+! value: anInteger
+  <primitive: 53>
+  ^ (self instVarAt: 1) at: anInteger
+!!
+
+! Character
+! asciiValue
+  ^ asciiValue
+!!
+

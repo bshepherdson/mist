@@ -211,6 +211,11 @@ STLiteral extend [
 
       self error: 'Cannot fit large numbers into Mist currently: ', x printString].
 
+    x isCharacter ifTrue: [
+      "Characters can be compiled as literals."
+      method compileLiteral: x.
+      ^ nil].
+
     x compileInto: method
   ]
 ]

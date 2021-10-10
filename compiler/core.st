@@ -360,7 +360,8 @@ MistClass at: 20 named: 'True' superclass: 'Boolean'.
 MistClass at: 21 named: 'False' superclass: 'Boolean'.
 
 MistClass at: 22 named: 'Magnitude' superclass: 'Object'.
-MistClass at: 23 named: 'Character' superclass: 'Magnitude'.
+(MistClass at: 23 named: 'Character' superclass: 'Magnitude')
+  addInstVar: 'asciiValue'.
 MistClass at: 24 named: 'Number' superclass: 'Magnitude'.
 MistClass at: 25 named: 'Integer' superclass: 'Number'.
 MistClass at: 26 named: 'SmallInteger' superclass: 'Integer'.

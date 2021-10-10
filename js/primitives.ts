@@ -7,9 +7,10 @@ import {
   sti, ptr,
   arraySize, classOf, identityHash,
   MA_NEXT_CLASS_INDEX, MA_NIL, MA_TRUE, MA_FALSE,
-  CLS_CONTEXT, CLS_STRING, CLS_SYMBOL,
+  CLS_CHARACTER, CLS_CONTEXT, CLS_STRING, CLS_SYMBOL,
   BLOCK_CONTEXT, BLOCK_ARGV, BLOCK_ARGC, BLOCK_PC_START,
   CTX_LOCALS, CTX_SENDER, CTX_PC, CTX_METHOD, CTX_STACK_INDEX,
+  CLASS_VAR1,
   classTable, hasClass, fromSmallInteger, toSmallInteger, isSmallInteger,
   asJSString, mkInstance, push, pop, peek,
   read, readIV, readArray,
@@ -350,6 +351,9 @@ primitives[41] = unary((n: ptr) => toSmallInteger(~fromSmallInteger(n)));
 //  42: number toString
 primitives[42] = unary((n: ptr) => wrapString('' + fromSmallInteger(n)));
 
+//  43: bitwise shifts
+primitives[43] = numericBinOp((a, b) => b >= 0 ? a << b : a >> -b);
+
 // 50: word array size
 primitives[50] = unary((array: ptr) => toSmallInteger(wordArraySize(array)));
 
@@ -371,6 +375,15 @@ primitives[52] = function(process: ptr, ctx: ptr) {
   // 1-based Smalltalk indices
   writeWordArray(arr, index - 1, value);
   push(ctx, rawValue);
+  return true;
+};
+
+// 53: Character class>>value: - retrieves the Character instance for a
+// particular ASCII value.
+primitives[53] = function(process: ptr, ctx: ptr) {
+  const num = fromSmallInteger(pop(ctx));
+  const asciiTable = readIV(read(classTable(CLS_CHARACTER)), CLASS_VAR1);
+  push(ctx, readArray(asciiTable, num));
   return true;
 };
 

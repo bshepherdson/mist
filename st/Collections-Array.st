@@ -7,7 +7,18 @@
   <primitive: 25>
 ! new: aNumber
   ^ (self basicNew: aNumber) initialize
+
+! with: item1
+  "Array has to override these, since it doesn't have add:"
+  ^ {item1}
+! with: item1 with: item2
+  ^ {item1. item2}
+! with: item1 with: item2 with: item3
+  ^ {item1. item2. item3}
+! with: item1 with: item2 with: item3 with: item4
+  ^ {item1. item2. item3. item4}
 !!
+
 
 ! Array
 ! asArray
@@ -28,6 +39,11 @@
 
 ! do: aBlock
   1 to: self size do: [ :idx | aBlock value: (self at: idx) ]
+
+! printOn: aStream
+  aStream nextPut: ${.
+  self putContentsOn: aStream.
+  aStream nextPut: $}
 
 ! shallowCopy
   "This isn't supposed to be overridden, but since Array is magic and just a JS
@@ -91,17 +107,6 @@
     self at: dst put: (hiSide at: j).
     dst := dst + 1.
     j := j + 1]
-
-! printString
-  "Prints the array as a {1. 2. 3} up to 20 elements, then elides the rest."
-  | s |
-  s := '{'.
-  1 to: (self size min: 20)
-    do: [:i | s := s
-                 , (i > 1 ifTrue: ['. '] ifFalse: [''])
-                 , (self at: i) printString ].
-  self size > 20 ifTrue: [s := s , '. (' , (self size - 20) , ' more)'].
-  ^ s , '}'
 !!
 
 
@@ -122,6 +127,8 @@
   <primitive: 51>
 ! at: anIndex put: aWord
   <primitive: 52>
+! putOn: aStream
+  aStream nextPutAll: self
 !!
 
 
@@ -133,11 +140,18 @@
 ! remove: anObject ifAbsent: aBlock
   self shouldNotImplement
 
+! readStream
+  ^ ReadStream on: self
+
 ! writeStream
   ^ WriteStream on: self
 
 ! do: aBlock
   1 to: self size do: [:ix | aBlock value: (self at: ix)]
+
+! keysAndValuesDo: aBinaryBlock
+  1 to: self size do: [:ix |
+    aBinaryBlock value: ix value: (self at: ix)]
 
 ! select: aBlock "TODO: This is better with streaming, see Pharo."
   | dst count |
@@ -174,6 +188,12 @@
     (self copyFrom: ix to: ix + subSize - 1) = aSubCollection ifTrue: [^ix]].
   ^ exBlock value
 
+! putContentsOn: aStream
+  "Optimization over the readStream-based version on Collection."
+  1 to: (self size min: 20)
+    do: [:i | aStream << (self at: i) << self privStreamSeparator].
+  self size > 20
+    ifTrue: [aStream nextPut: '('; << (self size - 20); << ' more)'].
 !!
 
 
@@ -222,16 +242,6 @@ ArrayedCollection subclass: #OrderedCollection
 
 ! capacity
   ^ array size
-
-! printString
-  | s first |
-  s := '{'.
-  first := true.
-  self do: [:each |
-    first ifFalse: [s := s , '. '].
-    s := s , each printString.
-    first := false].
-  ^ s, '}'
 !!
 
 

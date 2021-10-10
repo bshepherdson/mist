@@ -30,13 +30,16 @@ Error subclass: #NotFound
 
 ! NotFound class
 ! signalFor: anItem
-  ^ self new object: anItem
+  ^ self new object: anItem; signal
 !!
 
 
 
 
 ! Collection
+! errorNotFound: anItem
+  NotFound signalFor: anItem
+
 ! addAll: aCollection
   aCollection do: [ :each | self add: each ].
   ^ aCollection
@@ -49,12 +52,17 @@ Error subclass: #NotFound
 ! anySatisfy: aBlock
   self do: [:each | (aBlock value: each) ifTrue: [^ true]].
   ^ false
+
 ! asArray
   | array index |
   array := Array new: self size.
   index := 0.
   self do: [:each | array at: (index := index + 1) put: each].
   ^ array
+
+! asSet
+  ^ Set new addAll: self; yourself
+
 ! capacity
   ^ self size
 
@@ -164,6 +172,19 @@ Error subclass: #NotFound
   ^true
 !!
 
+! Collection class
+! with: item1
+  ^ self class new add: item1; yourself
+! with: item1 with: item2
+  ^ self class new add: item1; add: item2; yourself
+! with: item1 with: item2 with: item3
+  ^ self class new add: item1; add: item2; add: item3; yourself
+! with: item1 with: item2 with: item3 with: item4
+  ^ self class new add: item1; add: item2; add: item3; add: item4; yourself
+!!
+
+
+
 ! UndefinedObject
 ! isEmptyOrNil
   ^ true
@@ -218,5 +239,31 @@ Error subclass: #NotFound
   ^ self asArray sorted
 ! sorted: aSortBlockOrNil
   ^ self asArray sort: aSortBlockOrNil
+
+! readStream
+  ^ ReadStream on: self asArray
+
+! printOn: aStream
+  aStream << 'a '.
+  aStream nextPutAll: self class name.
+  aStream nextPut: $(.
+  self putContentsOn: aStream.
+  aStream nextPut: $)
+
+! privStreamSeparator
+  ^ '. '
+
+! putContentsOn: aStream
+  | elems count |
+  elems := self readStream.
+  count := 0.
+  [elems atEnd and: [count < 20]] whileFalse: [
+    count := count + 1.
+    aStream << elems next << self privStreamSeparator].
+  self size > 20
+    ifTrue: [aStream nextPut: '('; << (self size - 20); << ' more)'].
+
+! putOn: aStream
+  self do: [:each | aStream nextPut: each]
 !!
 

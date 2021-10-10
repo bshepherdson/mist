@@ -43,9 +43,13 @@ Error subclass: #ValueNotFound
   ^ assoc value: aValue
 !!
 
+
+
 ! HashedCollection class
 ! new
   ^ self new: 8
+! new: size
+  ^ self basicNew initialize: size; yourself.
 !!
 
 ! HashedCollection
@@ -57,7 +61,7 @@ Error subclass: #ValueNotFound
 
 ! initialize: size
   super initialize: size.
-  array := Array new: size.
+  array := Array new: size nextPowerOf2.
   tally := 0
 
 ! hashMask
@@ -65,19 +69,24 @@ Error subclass: #ValueNotFound
 
 ! findElementOrNil: aKey
   | index row |
-  index := aKey hash bitAnd: self hashMask.
-  row := array at: index.
+  index := (aKey hash bitAnd: self hashMask).
+  row := array at: index + 1.
   [row isNil] whileFalse: [
-    (self matchKey: aKey with: row key) ifTrue: [^ index].
+    (self matchKey: aKey with: row key) ifTrue: [^ index + 1].
     index := index + 1 bitAnd: self hashMask.
-    row := array at: index].
-  ^ index
+    row := array at: index + 1].
+  ^ index + 1
+
+! matchKey: aKey with: anotherKey
+  ^ aKey = anotherKey
 
 ! at: aKey ifAbsent: aBlockOrValue
   "The array is treated as a hash table with linear probing."
   | asc |
   asc := array at: (self findElementOrNil: aKey).
-  asc ifNil: [^ asc value].
+  asc ifNotNil: [
+    (self matchKey: aKey with: asc key)
+      ifTrue: [^ asc value]].
   ^aBlockOrValue value
 
 ! at: aKey
@@ -86,12 +95,17 @@ Error subclass: #ValueNotFound
 ! at: aKey put: aValue
   "Sets an association at the given key, replacing any previous association."
   | index row |
+  "Transcript show: aKey."
   index := self findElementOrNil: aKey.
+  "Transcript show: index."
   row := array at: index.
-  row ifNil: [ row value: aValue. ^self ].
-  row at: index put: (Association key: aKey value: aValue).
+  "Transcript show: row."
+  row ifNotNil: ["Transcript show: 'replacing'." row value: aValue. ^self ].
+  "Transcript show: 'adding'."
+  array at: index put: (Association key: aKey value: aValue).
   tally := tally + 1.
-  self growIfNeeded
+  self growIfNeeded.
+  ^ self
 
 ! associationAt: aKey
   ^ self assocationAt: aKey ifAbsent: [self errorKeyNotFound: aKey]
@@ -110,6 +124,7 @@ Error subclass: #ValueNotFound
 ! growIfNeeded
   | oldArray |
   self needsToGrow ifFalse: [^self].
+  Transcript show: 'growing'.
   oldArray := array.
   array := Array new: self size * 2.
   tally := 0.
@@ -270,12 +285,6 @@ Error subclass: #ValueNotFound
 Implemented by using elements' hashes as keys and the elements as values."
 HashedCollection subclass: #Set.
 
-! Set class
-! new: aSize
-  "Size is actually ignored here, JS takes care of things."
-  ^ self new
-!!
-
 ! Set
 ! = aSet
   self == aSet ifTrue: [^true]. "Avoids recursion."
@@ -286,7 +295,13 @@ HashedCollection subclass: #Set.
 
 ! add: newObject
   "Adds newObject to this Set, if it's not already present. Answers newObject."
-  self at: newObject hash put: newObject
+  self at: newObject put: newObject
+
+! addAll: aCollection
+  "HashedCollection addAll: does the wrong thing."
+  aCollection do: [:each | self add: each].
+  ^ aCollection
+
 ! collect: aBlock
   | newSet |
   newSet := self species new: self size.
@@ -305,7 +320,8 @@ HashedCollection subclass: #Set.
   self values do: aBlock
 
 ! includes: anObject
-  ^ (self at: anObject hash) isNotNil
+  self at: anObject ifAbsent: [^false].
+  ^ true
 
 ! intersection: aCollection
   | xsec |
@@ -316,5 +332,11 @@ HashedCollection subclass: #Set.
 ! isHealthy
   self associationsDo: [:each | each key = each value hash ifFalse: [^false]].
   ^ true
+
+! putOn: aStream
+  aStream << self class name.
+  aStream nextPut: $(.
+  self putContentsOn: aStream.
+  aStream nextPut: $)
 !!
 
