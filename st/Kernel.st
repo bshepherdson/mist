@@ -440,6 +440,19 @@ Object subclass: #Transcript.
   [index <= end] whileTrue:
       [aBlock value: index.
       index := index + 1]
+! to: end by: delta do: aBlock
+  | index |
+  index := self.
+  delta < 0
+    ifTrue: [
+      [index >= end] whileTrue:
+          [aBlock value: index.
+          index := index + delta]]
+    ifFalse: [
+      [index <= end] whileTrue:
+          [aBlock value: index.
+          index := index + delta]]
+
 ! timesRepeat: aBlock
   | index |
   index := self.

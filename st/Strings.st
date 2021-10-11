@@ -14,12 +14,6 @@
 
 ! asString
   ^self
-! , aString
-  | s |
-  s := String new: self size + aString size.
-  1 to: self size do: [:i | s at: i put: (self at: i)].
-  1 to: aString size do: [:i | s at: i + self size put: (aString at: i)].
-  ^ s
 ! printString
   ^ '''' , self , ''''
 ! putOn: aStream

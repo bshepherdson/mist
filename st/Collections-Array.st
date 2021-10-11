@@ -37,14 +37,6 @@
     ifTrue:  [self basicAt: index]
     ifFalse: exceptionBlock
 
-! do: aBlock
-  1 to: self size do: [ :idx | aBlock value: (self at: idx) ]
-
-! do: aBlock separatedBy: sepBlock
-  self isEmpty ifTrue: [^self].
-  aBlock value: self first.
-  2 to: self size do: [:idx | sepBlock value. aBlock value: (self at: idx)]
-
 ! shouldBePrintedAsLiteral
   ^ self class == Array and: [
     self allSatisfy: [:each | each shouldBePrintedAsLiteral]]
@@ -131,6 +123,8 @@
     j := j + 1]
 
 ! replaceFrom: lo to: hi with: src
+  hi - lo + 1 = src size
+    ifFalse: [self error: 'size of replacement does not match'].
   self replaceFrom: lo to: hi with: src startingAt: 1
 
 ! replaceFrom: lo to: hi with: src startingAt: start
@@ -185,8 +179,30 @@
 ! writeStream
   ^ WriteStream on: self
 
+! , aSequenceableCollection
+  | dst |
+  dst := self species new: self size + aSequenceableCollection size.
+  (WriteStream on: dst)
+    nextPutAll: self;
+    nextPutAll: aSequenceableCollection.
+  ^ dst
+
 ! do: aBlock
   1 to: self size do: [:ix | aBlock value: (self at: ix)]
+
+! do: aBlock separatedBy: sepBlock
+  self isEmpty ifTrue: [^self].
+  aBlock value: self first.
+  2 to: self size do: [:idx | sepBlock value. aBlock value: (self at: idx)]
+
+! reverseDo: aBlock
+  self size to: 1 by: -1 do: [:ix | aBlock value: (self at: ix)]
+
+! with: aSequenceableCollection do: aBinaryBlock
+  self size = aSequenceableCollection size ifFalse:
+    [self error: 'lengths must match for with:do:'].
+  1 to: self size do: [:ix |
+    aBinaryBlock value: (self at: ix) value: (aSequenceableCollection at: ix)]
 
 ! keysAndValuesDo: aBinaryBlock
   1 to: self size do: [:ix |
@@ -226,6 +242,50 @@
   anIndex to: self size - subSize + 1 do: [:ix |
     (self copyFrom: ix to: ix + subSize - 1) = aSubCollection ifTrue: [^ix]].
   ^ exBlock value
+
+! copyReplaceAll: oldSubCollection with: newSubCollection
+  | s ix next |
+  s := WriteStream on: self species new.
+  ix := 1.
+  [(next := self indexOfSubCollection: oldSubCollection startingAt: ix) = 0]
+    whileFalse: [
+      "First, copy the shared portion."
+      ix to: next - 1 do: [:i | s nextPut: (self at: i)].
+      "Then copy newSubCollection into place."
+      s nextPutAll: newSubCollection.
+      "Then ix should be advanced to next + oldSubCollection size."
+      ix := next + oldSubCollection size].
+  "At the tail end, copy the rest from ix to the end of self."
+  ix to: self size do: [:i | s nextPut: (self at: i)].
+  ^ s contents
+
+! copyReplaceFrom: start to: stop with: aCollection
+  "If stop < start, with stop = start - 1, this is an insertion at start
+  without replacing anything. The code is actually the same for these two
+  cases, since the prefix is 1 to start - 1, suffix stop + 1 to self size."
+  | s |
+  s := WriteStream on: (self species new: self size).
+  "First the portion before the replacement."
+  1 to: start - 1 do: [:ix | s nextPut: (self at: ix)].
+  "Then the replacement collection."
+  s nextPutAll: aCollection.
+  "Then the suffix."
+  stop + 1 to: self size do: [:ix | s nextPut: (self at: ix)].
+  ^ s contents
+
+! copyWith: anElement
+  "TODO: Lazy and inefficient; optimize this if it's being used much."
+  ^ self copyReplaceFrom: self size + 1 to: self size with: {anElement}
+
+! findFirst: aBlock
+  1 to: self size do: [:ix |
+    (aBlock value: (self at: ix)) ifTrue: [^ ix]].
+  ^ 0
+
+! findLast: aBlock
+  self size to: 1 by: -1 do: [:ix |
+    (aBlock value: (self at: ix)) ifTrue: [^ ix]].
+  ^ 0
 
 ! putContentsOn: aStream
   "Optimization over the readStream-based version on Collection."

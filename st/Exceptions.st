@@ -420,11 +420,6 @@ Error subclass: #SelectorError instanceVariableNames: 'selector'.
   ^ 'Selector error for ' , selector
 !!
 
-"START HERE: I think that subclasses are overlapping instance variables with
-their superclasses, that the count isn't increasing properly. I need to fix that
-in the compiler if so."
-
-
 SelectorError subclass: #SubclassResponsibility.
 ! SubclassResponsibility
 ! standardMessageText
@@ -447,5 +442,10 @@ SelectorError subclass: #ShouldNotImplement.
   ^ ShouldNotImplement signalFor: thisContext sender selector
 ! error: anException
   anException signal
+!!
+
+! String
+! signal
+  ^ Error signal: self
 !!
 

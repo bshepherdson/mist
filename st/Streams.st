@@ -75,9 +75,9 @@ PositionableStream subclass: #WriteStream.
   coll at: (index := index + 1) put: aValue
 
 ! privGrowCollection
-  "Doubles the size of the target string."
+  "Doubles the size of the target collection."
   | s |
-  s := String new: coll size * 2.
+  s := coll species new: (coll size * 2 max: 16). "Handles empty ones."
   1 to: coll size do: [:ix | s at: ix put: (coll at: ix)].
   coll := s
 !!

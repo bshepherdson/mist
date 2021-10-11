@@ -259,7 +259,7 @@ interface header {
 }
 
 function decodeHeader(p: ptr): header {
-  let size = readWord(p) >> 8;
+  let size = readWord(p) >>> 8;
   const fmt = format(p);
   switch (fmt) {
     case Format.ZERO:
@@ -285,7 +285,7 @@ function decodeHeader(p: ptr): header {
     case Format.WORDS_EVEN:
       const ret: [number, ptr] = [2*size, p + 4];
       if (size === 255) {
-        ret[0] = read(p + 4);
+        ret[0] = read(p - 2) * 2;
       }
       if (fmt === Format.WORDS_ODD) {
         ret[0]--; // Odd means the last slot isn't filled.
