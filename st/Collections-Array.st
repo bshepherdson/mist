@@ -34,7 +34,7 @@
 ! at: index ifAbsent: exceptionBlock
   "1-based Smalltalk index."
   ^ (index between: 1 and: self size)
-    ifTrue:  [self at: index]
+    ifTrue:  [self basicAt: index]
     ifFalse: exceptionBlock
 
 ! do: aBlock
@@ -90,6 +90,7 @@
   ^ self mergeSort: 1 to: self size
 ! sorted
   ^ self copy sort
+
 ! mergeSort: lo to: hi
   | mid |
   "Only one value: done."
@@ -128,6 +129,13 @@
     self at: dst put: (hiSide at: j).
     dst := dst + 1.
     j := j + 1]
+
+! replaceFrom: lo to: hi with: src
+  self replaceFrom: lo to: hi with: src startingAt: 1
+
+! replaceFrom: lo to: hi with: src startingAt: start
+  0 to: hi - lo do: [:ix |
+    self at: lo + ix put: (src at: start + ix)]
 !!
 
 
@@ -162,6 +170,14 @@
   ^ true
 ! remove: anObject ifAbsent: aBlock
   self shouldNotImplement
+
+! at: anIndex
+  ^ self at: anIndex ifAbsent: [self errorNotFound: anIndex]
+
+! first
+  ^ self at: 1
+! last
+  ^ self at: self size
 
 ! readStream
   ^ ReadStream on: self
@@ -218,54 +234,97 @@
     aStream nextPutAll: self privStreamSeparator].
   self size > 20
     ifTrue: [aStream nextPut: '('; << (self size - 20); << ' more)'].
+
+! atAll: aKeyCollection put: anObject
+  aKeyCollection do: [:key | self at: key put: anObject]
+! atAllPut: anObject
+  1 to: self size do: [:ix | self at: ix put: anObject]
 !!
 
 
 ArrayedCollection subclass: #OrderedCollection
-    instanceVariableNames: 'array tally'.
+    instanceVariableNames: 'array startIndex finalIndex'.
 
 ! OrderedCollection class
 ! new: aSize
   | oc |
   oc := self basicNew.
-  oc privInitCapacity: aSize.
-  oc initialize.
+  oc initialize: aSize.
   ^ oc
 
 ! new
-  ^ self new: 8
+  ^ self new: 10
 !!
 
 ! OrderedCollection
-! privInitCapacity: aSize
-  array := Array new: aSize
+! initialize: aSize
+  array := Array new: (aSize max: 10).
+  startIndex := 3.
+  finalIndex := 2
 
-! initialize
-  super initialize.
-  tally := 0
+! privAdjustIndex: anIndex
+  "Turns an external index into an internal array index."
+  ^ anIndex + startIndex - 1
 
-! at: anIndex
-  ^ array at: anIndex
+! at: anIndex ifAbsent: aBlock
+  ^ (anIndex between: 1 and: self size)
+    ifTrue: [array at: (self privAdjustIndex: anIndex)]
+    ifFalse: aBlock
+
 ! at: anIndex put: aValue
-  self ensureCapacity: anIndex.
-  array at: anIndex put: aValue.
-  tally := tally max: anIndex
+  | ix |
+  ix := self privAdjustIndex: anIndex.
+  "Transcript show: {anIndex. ix.} printString."
+  self ensureCapacity: ix.
+  array at: ix put: aValue.
+  finalIndex := finalIndex max: ix
 
-! ensureCapacity: aSize
-  array size < aSize ifTrue: [
+! ensureCapacity: targetIndex
+  array size < targetIndex ifTrue: [
     | arr |
-    arr := Array new: aSize.
-    1 to: tally do: [:ix | arr at: ix put: (array at: ix)].
+    "The array grows to at least 10 longer than the requested total, and
+    to at least double its original size, whichever is larger."
+    arr := Array new: (
+      targetIndex + startIndex + 10 max: 2 * array size).
+    startIndex to: finalIndex do: [:ix |
+      arr at: ix put: (array at: ix)].
     array := arr]
 
 ! add: aValue
-  self at: tally + 1 put: aValue "That increases the tally."
+  self at: self size + 1 put: aValue
+
+! remove: anObject ifAbsent: aBlock
+  | ix |
+  ix := startIndex.
+  [ ix <= finalIndex ] whileTrue: [
+    anObject = (array at: ix)
+      ifTrue: [
+        self removeIndex: ix.
+        ^ anObject]
+      ifFalse: [ix := ix + 1]].
+  ^ aBlock value
+
+! removeIndex: internalIndex
+  "INTERNAL: Use removeAt: instead."
+  array replaceFrom: internalIndex to: finalIndex - 1
+    with: array startingAt: internalIndex + 1.
+  array at: finalIndex put: nil.
+  finalIndex := finalIndex - 1
+
+! removeAt: anIndex
+  | ix removed |
+  ix := self privAdjustIndex: anIndex.
+  removed := array at: ix.
+  self removeIndex: ix.
+  ^ removed
 
 ! size
-  ^ tally
+  ^ finalIndex - startIndex + 1
 
 ! capacity
   ^ array size
 !!
 
+
+"TODO: SortedCollection and asSortedCollection"
 

@@ -10,7 +10,8 @@ PARSER=gst $(PARSER_FILES) -a
 ST_FILES=st/Kernel.st st/Exceptions.st \
 				 st/Collection.st st/Collections-Array.st st/Collections-Unordered.st \
 				 st/Streams.st st/Strings.st st/SUnit.st
-ST_TESTS=st/tests/Basics.st st/tests/Collections.st
+ST_TESTS=st/tests/Basics.st st/tests/Collections.st st/tests/Dictionaries.st \
+				 st/tests/Sequenceable.st
 
 plain.bin: st/*.st st/tests/*.st $(PARSER_FILES)
 	$(PARSER) plain.bin $(ST_FILES)

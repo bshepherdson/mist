@@ -102,7 +102,7 @@ table way, using linear probing.
   ^ self at: aKey ifAbsent: [self errorKeyNotFound: aKey]
 
 ! associationAt: aKey
-  ^ self assocationAt: aKey ifAbsent: [self errorKeyNotFound: aKey]
+  ^ self associationAt: aKey ifAbsent: [self errorKeyNotFound: aKey]
 
 ! associationAt: aKey ifAbsentPut: aBlock
   | index assoc |
@@ -146,32 +146,6 @@ table way, using linear probing.
   tally := 0.
   oldArray do: [:each | each ifNotNil: [self addAssociation: each]]
 
-! values
-  "Returns an Array of the values."
-  | vals index |
-  vals := Array new: tally.
-  index := 0.
-  self associationsDo: [:asc |
-    vals at: (index := index + 1) put: asc value].
-  ^ vals
-
-! keys
-  "Returns a Smalltalk Array of the values."
-  | vals index |
-  vals := Array new: tally.
-  index := 0.
-  self associationsDo: [:asc |
-    vals at: (index := index + 1) put: asc key].
-  ^ vals
-
-! associations
-  | vals index |
-  vals := Array new: tally.
-  index := 0.
-  self associationsDo: [:asc |
-    vals at: (index := index + 1) put: asc].
-  ^ vals
-
 ! associationsDo: aBlock
   array do: [:each | each ifNotNil: [aBlock value: each]]
 
@@ -184,11 +158,13 @@ table way, using linear probing.
   "This means different things in different subclasses."
   self subclassResponsibility
 
-! removeKey: aKey
+! removeKey: aKey ifAbsent: aBlock
   | assoc |
-  assoc := self removeAssociationAt: aKey
-    ifAbsent: [ self errorKeyNotFound: aKey ].
+  assoc := self removeAssociationAt: aKey ifAbsent: aBlock.
   ^ assoc value
+
+! removeKey: aKey
+  ^ self removeKey: aKey ifAbsent: [self errorKeyNotFound: aKey]
 
 ! removeAssociationAt: aKey ifAbsent: aBlock
   "Removes a key, or calls the block if it's not there.
@@ -201,6 +177,7 @@ table way, using linear probing.
   array at: index put: nil.
   self fixCollisionsFrom: index.
   ^ row
+
 
 ! fixCollisionsFrom: start
   "The element at start has been removed and replaced by nil. We need to adjust
@@ -258,25 +235,11 @@ table way, using linear probing.
       ifAbsent: [^ false]) value = anAssoc value
 
 ! includesKey: aKey
-  ^ (self at: aKey) isNotNil
-
-! keyAtValue: aValue
-  ^ self keyAtValue: aValue ifAbsent: [ self errorValueNotFound: aValue ]
-! keyAtValue: aValue ifAbsent: aBlock
-  self associationsDo: [ :assoc | assoc value = aValue ifTrue: [^ assoc key]].
-  ^ aBlock value
-
-! keysAndValuesDo: aBlock
-  ^ self assocationsDo: [ :assoc |
-    aBlock value: assoc key value: assoc value]
-
-! keysDo: aBlock
-  "super keys is the set of hashes; we want to grab the Associations stored as
-  values, and grab their keys."
-  ^ self values do: [:assoc | aBlock value: assoc key]
+  self at: aKey ifAbsent: [^false].
+  ^ true
 
 ! valuesDo: aBlock
-  ^ self associationsDo: [:each | aBlock value: each value]
+  self do: aBlock
 !!
 
 ! Object
@@ -303,9 +266,69 @@ table way, using linear probing.
 ! at: aKey ifAbsent: aBlock
   ^ (self associationAt: aKey ifAbsent: [^ aBlock value]) value
 ! at: aKey put: aValue
-  self assocationAt: aKey ifAbsentPut: [Association key: aKey value: aValue]
+  self associationAt: aKey ifAbsentPut: [Association key: aKey value: aValue]
 ! remove: aValue
   self shouldNotImplement
+
+! keys
+  "Returns a Set of the keys."
+  | vals |
+  vals := Set new: tally.
+  self associationsDo: [:asc |
+    vals add: asc key].
+  ^ vals
+
+! values
+  "Returns a Set of the values."
+  | vals |
+  vals := Set new: tally.
+  self associationsDo: [:asc |
+    vals add: asc value].
+  ^ vals
+
+! associations
+  "Returns an Array of the associations."
+  | vals index |
+  vals := Array new: tally.
+  index := 0.
+  self associationsDo: [:asc |
+    vals at: (index := index + 1) put: asc].
+  ^ vals
+
+! keyAtValue: aValue
+  ^ self keyAtValue: aValue ifAbsent: [ self errorValueNotFound: aValue ]
+! keyAtValue: aValue ifAbsent: aBlock
+  self associationsDo: [ :assoc | assoc value = aValue ifTrue: [^ assoc key]].
+  ^ aBlock value
+
+! keysAndValuesDo: aBlock
+  ^ self associationsDo: [ :assoc |
+    aBlock value: assoc key value: assoc value]
+
+! keysDo: aBlock
+  "super keys is the set of hashes; we want to grab the Associations stored as
+  values, and grab their keys."
+  ^ self associationsDo: [:assoc | aBlock value: assoc key]
+
+! valuesDo: aBlock
+  ^ self associationsDo: [:each | aBlock value: each value]
+
+! do: aBlock
+  ^ self valuesDo: aBlock
+
+! select: aBlock
+  | d |
+  d := self copyEmpty.
+  self associationsDo: [:each |
+    (aBlock value: each value) ifTrue: [d add: each copy]].
+  ^ d
+
+! collect: aBlock
+  | d |
+  d := self copyEmpty.
+  self associationsDo: [:each |
+    d at: each key put: (aBlock value: each value)].
+  ^ d
 !!
 
 "A Set is a HashedCollection without values, just membership.
@@ -423,11 +446,14 @@ HashedCollection subclass: #Bag.
   self removeKey: aValue.
   ^ aValue
 
-! removeKey: aKey
+! removeKey: aKey ifAbsent: aBlock
   | assoc |
-  assoc := self associationAt: aKey ifAbsent: [self errorKeyNotFound: aKey].
+  assoc := self associationAt: aKey ifAbsent: aBlock.
   assoc value = 1 ifTrue: [^ self removeAssociationAt: aKey ifAbsent: []].
   assoc value: assoc value - 1
+
+! removeKey: aKey
+  ^ self removeKey: aKey ifAbsent: [self errorKeyNotFound: aKey].
 
 ! do: aBlock
   array do: [:each |
@@ -442,4 +468,9 @@ HashedCollection subclass: #Bag.
   ^ true
 !!
 
+
+! IdentityDictionary
+! matchKey: aKey with: anotherKey
+  ^ aKey == anotherKey
+!!
 

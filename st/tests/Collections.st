@@ -281,12 +281,274 @@ TestCase subclass: #CollectionsGeneralBags.
 !!
 
 
-Transcript show: (
-  ArithmeticBasics suite,
-  LogicBasics suite,
-  CollectionsGeneralArrays suite,
-  CollectionsGeneralSets suite,
-  CollectionsGeneralBags suite
-) run printString.
+TestCase subclass: #CollectionsGeneralOrderedCollection.
 
-99 halt.
+! CollectionsGeneralOrderedCollection
+! testAdd
+  | oc |
+  oc := OrderedCollection new: 5.
+  1 to: 20 do: [:ix | oc add: ix].
+
+  self assert: oc size equals: 20.
+  self assert: (oc at: 1) equals: 1.
+  self assert: (oc at: 6) equals: 6.
+  self assert: (oc at: 2) equals: 2.
+  self assert: (oc at: 20) equals: 20
+! testAddAll
+  self assert: (OrderedCollection new addAll: {7. 8. 9}; yourself)
+    equals: {7. 8. 9} asOrderedCollection
+! testRemove
+  | oc |
+  oc := OrderedCollection new addAll: {4. 5. 6. 7. 8}; yourself.
+  self assert: oc size equals: 5.
+  self assert: (oc at: 2) equals: 5.
+  oc remove: 5.
+  self assert: oc size equals: 4.
+  self assert: (oc at: 1) equals: 4.
+  self assert: (oc at: 2) equals: 6.
+  self assert: oc equals: {4. 6. 7. 8} asOrderedCollection
+
+! testRemoveAll
+  self assert: ((OrderedCollection new
+        addAll: {4. 5. 6. 7. 8. 9. 10};
+        yourself)
+      removeAll: {7. 8. 9};
+      yourself)
+    equals: {4. 5. 6. 10} asOrderedCollection.
+
+! testIncludes
+  | oc |
+  oc := {7. 8. 9} asOrderedCollection.
+  self assert: (oc includes: 7).
+  self assert: (oc includes: 8).
+  self assert: (oc includes: 9).
+  self deny: (oc includes: nil).
+  self deny: (oc includes: 12)
+
+! testIsEmpty
+  self assert: OrderedCollection new isEmpty.
+  self deny: {7. 8. 9} asOrderedCollection isEmpty
+
+! testOccurrencesOf
+  | oc |
+  oc := {1. 2. 3. 4. 5. 6. 7. 8. 9. 7. 5. 5. 5. 4. 2} asOrderedCollection.
+  self assert: (oc occurrencesOf: 0) equals: 0.
+  self assert: (oc occurrencesOf: 1) equals: 1.
+  self assert: (oc occurrencesOf: 2) equals: 2.
+  self assert: (oc occurrencesOf: 3) equals: 1.
+  self assert: (oc occurrencesOf: 4) equals: 2.
+  self assert: (oc occurrencesOf: 5) equals: 4.
+  self assert: (oc occurrencesOf: 6) equals: 1.
+  self assert: (oc occurrencesOf: 7) equals: 2.
+  self assert: (oc occurrencesOf: 8) equals: 1.
+  self assert: (oc occurrencesOf: 9) equals: 1
+
+! testDo
+  | count total arr |
+  total := count := 0.
+  arr := Array new: 5.
+  {1. 3. 5. 7. 9} asOrderedCollection do: [:each |
+    total := total + each.
+    count := count + 1.
+    arr at: count put: each * 2].
+
+  self assert: count equals: 5.
+  self assert: total equals: 25.
+  self assert: arr equals: {2. 6. 10. 14. 18}
+
+! testSelect
+  | oc |
+  oc := {1. 2. 3. 4. 5. 6} asOrderedCollection select: [:each | each even].
+  self assert: oc class equals: OrderedCollection.
+  self assert: oc equals: {2. 4. 6} asOrderedCollection
+
+! testReject
+  | oc |
+  oc := {1. 2. 3. 4. 5. 6} asOrderedCollection reject: [:each | each even].
+  self assert: oc class equals: OrderedCollection.
+  self assert: oc equals: {1. 3. 5} asOrderedCollection
+
+! testCollect
+  self assert: ({1. 2. 3. 4. 5} asOrderedCollection collect: [:each | each * 2])
+    equals: {2. 4. 6. 8. 10} asOrderedCollection
+
+! testDetectIfNone
+  self assert: ({1. 3. 5. 7} asOrderedCollection detect: [:x | x > 4] ifNone: [0]) equals: 5.
+  self assert: ({1. 3. 5. 7} asOrderedCollection detect: [:x | x > 9] ifNone: [0]) equals: 0.
+
+! testDetect
+  self assert: ({1. 3. 5. 7} asOrderedCollection detect: [:x | x > 4])
+    equals: 5.
+  self should: [{1. 3. 5. 7} asOrderedCollection detect: [:x | x > 9]]
+    raise: NotFound.
+
+! testInjectInto
+  self assert: ({1. 3. 5. 7. 9} asOrderedCollection
+      inject: 100 into: [:sum :x | sum - x])
+    equals: 75
+
+! testNew
+  | oc |
+  oc := OrderedCollection new.
+  self assert: oc equals: {} asOrderedCollection.
+  self assert: oc size equals: 0.
+  self assert: oc isEmpty.
+  self assert: oc capacity > 0.
+
+
+  oc := OrderedCollection new: 20.
+  self assert: oc capacity equals: 20.
+  self assert: oc size equals: 0.
+  self assert: oc isEmpty.
+
+! testWiths
+  self assert: (OrderedCollection with: 7)
+    equals: {7} asOrderedCollection.
+  self assert: (OrderedCollection with: 7 with: 8)
+    equals: {7. 8} asOrderedCollection.
+  self assert: (OrderedCollection with: 7 with: 8 with: 9)
+    equals: {7. 8. 9} asOrderedCollection.
+  self assert: (OrderedCollection with: 7 with: 8 with: 9 with: 10)
+    equals: {7. 8. 9. 10} asOrderedCollection
+!!
+
+
+TestCase subclass: #CollectionsGeneralDictionary.
+
+! CollectionsGeneralDictionary
+! testAdd
+  self assert: ((Dictionary new: 5)
+      add: (Association key: 1 value: 7);
+      add: (Association key: 2 value: 8);
+      add: (Association key: 3 value: 7);
+      yourself)
+    equals: (Dictionary new addAll: {7. 8. 7}; yourself).
+! testAddAll
+  self assert: (Dictionary new addAll: {7. 8. 9. 7}; yourself)
+    equals: (Dictionary new
+      at: 1 put: 7;
+      at: 2 put: 8;
+      at: 3 put: 9;
+      at: 4 put: 7;
+      yourself).
+! testRemove
+  self should: [Dictionary new remove: 7] raise: ShouldNotImplement.
+! testRemoveAll
+  self should: [Dictionary new removeAll: {7. 8. 9}]
+    raise: ShouldNotImplement.
+
+! testIncludes
+  | d |
+  d := Dictionary new addAll: {7. 8. 9. 8. 6. 7}; yourself.
+  self assert: (d includes: 7).
+  self assert: (d includes: 8).
+  self assert: (d includes: 9).
+  self deny: (d includes: nil).
+  self deny: (d includes: 12)
+
+! testIsEmpty
+  self assert: Dictionary new isEmpty.
+  self deny: (Dictionary new addAll: {7. 8. 9}; yourself) isEmpty
+
+! testOccurrencesOf
+  | d |
+  d := Dictionary new
+    addAll: {1. 2. 3. 4. 5. 6. 7. 8. 9. 7. 5. 5. 5. 4. 2};
+    yourself.
+  self assert: (d occurrencesOf: 0) equals: 0.
+  self assert: (d occurrencesOf: 1) equals: 1.
+  self assert: (d occurrencesOf: 2) equals: 2.
+  self assert: (d occurrencesOf: 3) equals: 1.
+  self assert: (d occurrencesOf: 4) equals: 2.
+  self assert: (d occurrencesOf: 5) equals: 4.
+  self assert: (d occurrencesOf: 6) equals: 1.
+  self assert: (d occurrencesOf: 7) equals: 2.
+  self assert: (d occurrencesOf: 8) equals: 1.
+  self assert: (d occurrencesOf: 9) equals: 1
+
+! testDo
+  | count total arr |
+  total := count := 0.
+  arr := Array new: 5.
+  (Dictionary new addAll: {1. 3. 5. 3. 9}; yourself) do: [:each |
+    total := total + each.
+    count := count + 1.
+    arr at: count put: each * 2].
+
+  self assert: count equals: 5.
+  self assert: total equals: 21.
+  self assert: arr equals: {2. 6. 10. 6. 18}
+
+! testSelect
+  | d |
+  d := (Dictionary new addAll: {1. 2. 3. 4. 3. 2}; yourself)
+    select: [:each | each even].
+  self assert: d class equals: Dictionary.
+  self assert: d
+    equals: (Dictionary new
+      at: 2 put: 2;
+      at: 4 put: 4;
+      at: 6 put: 2;
+      yourself)
+
+! testReject
+  | d |
+  d := (Dictionary new
+    addAll: {1. 2. 3. 4. 2. 5. 4. 1};
+    yourself) reject: [:each | each even].
+  self assert: d class equals: Dictionary.
+  self assert: d equals: (Dictionary new
+    at: 1 put: 1;
+    at: 3 put: 3;
+    at: 6 put: 5;
+    at: 8 put: 1;
+    yourself)
+
+! testCollect
+  self assert: (Dictionary new
+      addAll: {1. 2. 3. 4. 5. 3. 5. 6};
+      collect: [:each | each * 2])
+    equals: (Dictionary new addAll: {2. 4. 6. 8. 10. 6. 10. 12}; yourself)
+
+! testDetectIfNone
+  | d matches |
+  d := Dictionary new addAll: {1. 1. 3. 5. 6. 5. 7}; yourself.
+  matches := d values select: [:x | x > 4].
+  self assert: (matches includes: (d detect: [:x | x > 4] ifNone: [0])).
+  self assert: (d detect: [:x | x > 9] ifNone: [0]) equals: 0.
+
+! testDetect
+  | d matches |
+  d := Dictionary new addAll: {1. 1. 3. 5. 6. 5. 7}; yourself.
+  matches := d values select: [:x | x > 4].
+  self assert: (matches includes: (d detect: [:x | x > 4])).
+  self should: [d detect: [:x | x > 9]] raise: NotFound.
+
+! testInjectInto
+  self assert: (Dictionary new
+      addAll: {1. 3. 5. 3. 9};
+      inject: 100 into: [:sum :x | sum - x])
+    equals: 79
+
+! testWiths
+  self assert: (Dictionary
+      with: (Association key: 1 value: 7))
+    equals: (Dictionary new addAll: {7}; yourself).
+  self assert: (Dictionary
+      with: (Association key: 1 value: 7)
+      with: (Association key: 2 value: 8))
+    equals: (Dictionary new addAll: {7. 8}; yourself).
+  self assert: (Dictionary
+      with: (Association key: 1 value: 7)
+      with: (Association key: 2 value: 8)
+      with: (Association key: 3 value: 9))
+    equals: (Dictionary new addAll: {7. 8. 9}; yourself).
+  self assert: (Dictionary
+      with: (Association key: 1 value: 7)
+      with: (Association key: 2 value: 8)
+      with: (Association key: 3 value: 9)
+      with: (Association key: 4 value: 10))
+    equals: (Dictionary new addAll: {7. 8. 9. 10}; yourself).
+!!
+
+

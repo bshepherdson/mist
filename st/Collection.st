@@ -64,6 +64,8 @@ Error subclass: #NotFound
   ^ Set new addAll: self; yourself
 ! asBag
   ^ Bag new addAll: self; yourself
+! asOrderedCollection
+  ^ OrderedCollection new addAll: self; yourself
 
 ! capacity
   ^ self size
@@ -161,9 +163,6 @@ Error subclass: #NotFound
 
 ! isSequenceable
   ^ false
-
-! first
-  ^ self at: 1
 
 ! = aCollection
   self == aCollection ifTrue: [^true].

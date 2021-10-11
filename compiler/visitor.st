@@ -236,6 +236,7 @@ STAssignments extend [
     targets reverseDo: [:each |
       method compile: 16r6000. "dup"
       target := method lookup: each x.
+      target ifNil: [self error: 'unknown store location: ', each x].
       method compile: target store]
   ]
 ]
