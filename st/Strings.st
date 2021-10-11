@@ -9,6 +9,9 @@
 ! at: anIndex put: aCharacter
   super at: anIndex put: aCharacter asciiValue
 
+! isLiteral
+  ^ true
+
 ! asString
   ^self
 ! , aString

@@ -40,10 +40,31 @@
 ! do: aBlock
   1 to: self size do: [ :idx | aBlock value: (self at: idx) ]
 
+! do: aBlock separatedBy: sepBlock
+  self isEmpty ifTrue: [^self].
+  aBlock value: self first.
+  2 to: self size do: [:idx | sepBlock value. aBlock value: (self at: idx)]
+
+! shouldBePrintedAsLiteral
+  ^ self class == Array and: [
+    self allSatisfy: [:each | each shouldBePrintedAsLiteral]]
+
+! isLiteral
+  ^ self class == Array and: [
+    self allSatisfy: [:each | each isLiteral]]
+
 ! printOn: aStream
+  self shouldBePrintedAsLiteral ifTrue: [
+    self printAsLiteralFormOn: aStream. ^self].
+
   aStream nextPut: ${.
   self putContentsOn: aStream.
   aStream nextPut: $}
+
+! printAsLiteralFormOn: aStream
+  aStream nextPut: $#; nextPut: $(.
+  self putContentsOn: aStream.
+  aStream nextPut: $)
 
 ! shallowCopy
   "This isn't supposed to be overridden, but since Array is magic and just a JS
@@ -129,6 +150,8 @@
   <primitive: 52>
 ! putOn: aStream
   aStream nextPutAll: self
+! isLiteral
+  ^ self class == WordArray
 !!
 
 
@@ -190,8 +213,9 @@
 
 ! putContentsOn: aStream
   "Optimization over the readStream-based version on Collection."
-  1 to: (self size min: 20)
-    do: [:i | aStream << (self at: i) << self privStreamSeparator].
+  1 to: (self size min: 20) do: [:i |
+    aStream print: (self at: i).
+    aStream nextPutAll: self privStreamSeparator].
   self size > 20
     ifTrue: [aStream nextPut: '('; << (self size - 20); << ' more)'].
 !!

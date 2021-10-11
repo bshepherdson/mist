@@ -81,10 +81,10 @@ TestCase subclass: #ArithmeticBasics.
   1 to: 5 do: [:i | arr at: i put: i * i].
   self assert: arr equals: {1. 4. 9. 16. 25} asArray
 
-! testTimesDo
+! testTimesRepeat
   | arr |
   arr := OrderedCollection new: 3.
-  3 timesDo: [arr add: 7].
+  3 timesRepeat: [arr add: 7].
   self assert: arr asArray equals: {7. 7. 7}
 
 !!

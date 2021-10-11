@@ -62,6 +62,8 @@ Error subclass: #NotFound
 
 ! asSet
   ^ Set new addAll: self; yourself
+! asBag
+  ^ Bag new addAll: self; yourself
 
 ! capacity
   ^ self size
@@ -174,13 +176,13 @@ Error subclass: #NotFound
 
 ! Collection class
 ! with: item1
-  ^ self class new add: item1; yourself
+  ^ self new add: item1; yourself
 ! with: item1 with: item2
-  ^ self class new add: item1; add: item2; yourself
+  ^ self new add: item1; add: item2; yourself
 ! with: item1 with: item2 with: item3
-  ^ self class new add: item1; add: item2; add: item3; yourself
+  ^ self new add: item1; add: item2; add: item3; yourself
 ! with: item1 with: item2 with: item3 with: item4
-  ^ self class new add: item1; add: item2; add: item3; add: item4; yourself
+  ^ self new add: item1; add: item2; add: item3; add: item4; yourself
 !!
 
 

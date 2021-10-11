@@ -5,7 +5,7 @@ import {defClass} from './bootstrap';
 import {BlockArgumentCountMismatchError} from './errors';
 import {
   sti, ptr,
-  arraySize, classOf, identityHash,
+  arraySize, behaviorToInstVars, classOf, identityHash,
   MA_NEXT_CLASS_INDEX, MA_NIL, MA_TRUE, MA_FALSE,
   CLS_CHARACTER, CLS_CONTEXT, CLS_STRING, CLS_SYMBOL,
   BLOCK_CONTEXT, BLOCK_ARGV, BLOCK_ARGC, BLOCK_PC_START,
@@ -39,7 +39,7 @@ primitives[0] = unary(mkInstance);
 primitives[1] = unary(classOf);
 
 //   2: basicHash
-primitives[2] = unary(identityHash);
+primitives[2] = unary((p) => toSmallInteger(identityHash(p)));
 
 //   3: instVarAt:
 primitives[3] = function(process: ptr, ctx: ptr) {
@@ -276,6 +276,11 @@ primitives[27] = function(process: ptr, ctx: ptr) {
 
 //  28: array size
 primitives[28] = unary((array: ptr) => toSmallInteger(arraySize(array)));
+
+//  29: instance size - currently just the instance variables count for
+//  regular classes.
+primitives[29] = unary((cls: ptr) =>
+    toSmallInteger(behaviorToInstVars(cls)));
 
 //  30: ==
 primitives[30] = function(process: ptr, ctx: ptr) {

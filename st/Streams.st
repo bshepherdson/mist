@@ -1,6 +1,11 @@
 Object subclass: #Stream.
 Stream subclass: #PositionableStream instanceVariableNames: 'index coll'.
 
+! Stream
+! print: anObject
+  anObject printOn: self
+!!
+
 ! PositionableStream
 ! initialize
   super initialize.

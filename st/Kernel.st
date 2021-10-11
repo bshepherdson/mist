@@ -42,6 +42,9 @@ Javascript functions."
           [aSuperclass == aClass ifTrue: [^true].
           aSuperclass := aSuperclass superclass].
   ^false
+
+! instSize
+  <primitive: 29>
 !!
 
 
@@ -89,9 +92,9 @@ Object subclass: #Method instanceVariableNames: 'selector compiled theClass'.
   <primitive: 30>
 ! ~= anObject
   ^ (self = anObject) not
+
 ! = anObject
   ^ self == anObject
-
 ! hash
   ^ self basicHash
 ! basicHash
@@ -142,12 +145,18 @@ Object subclass: #Method instanceVariableNames: 'selector compiled theClass'.
   "Default to the printString representation."
   ^self printString
 
+! isLiteral
+  ^ false
+! shouldBePrintedAsLiteral
+  ^ self isLiteral
+
 ! copy
   "Copies this object. Implemented as a primitive for speed."
   ^self shallowCopy postCopy
 ! shallowCopy
   "Shallow copy of this object, duplicating its instance variables. SHOULD NOT
-  be overridden. Override postCopy if you need custom copying behavior."
+  be overridden. Override postCopy if you need custom copying behavior.
+  TODO: Rewrite as a primitive for speed."
   | class newObject index |
   class := self class.
   "TODO: Variable-size classes (eg. arrays) need special handling here."
@@ -157,6 +166,7 @@ Object subclass: #Method instanceVariableNames: 'selector compiled theClass'.
       [newObject instVarAt: index put: (self instVarAt: index).
       index := index - 1].
   ^ newObject
+
 ! postCopy
   "Does nothing by default."
   ^ self
@@ -239,10 +249,14 @@ Object subclass: #Method instanceVariableNames: 'selector compiled theClass'.
   ^ true
 ! printOn: aStream
   aStream << 'nil'
+! printString
+  ^ 'nil'
 ! = anObject
   ^ anObject isNil
 ! asString
   ^ 'nil'
+! isLiteral
+  ^ true
 !!
 
 ! Object
@@ -265,6 +279,8 @@ Object subclass: #Method instanceVariableNames: 'selector compiled theClass'.
 ! Boolean
 ! ifFalse: falseBlock ifTrue: trueBlock
   ^ self ifTrue: trueBlock ifFalse: falseBlock
+! isLiteral
+  ^ true
 !!
 
 ! True class
@@ -350,7 +366,11 @@ Object subclass: #Transcript.
   ^ (self bitAnd: 1) == 0
 ! odd
   ^ (self bitAnd: 1) == 1
+!!
 
+! Integer
+! isLiteral
+  ^ true
 !!
 
 ! SmallInteger
@@ -420,7 +440,7 @@ Object subclass: #Transcript.
   [index <= end] whileTrue:
       [aBlock value: index.
       index := index + 1]
-! timesDo: aBlock
+! timesRepeat: aBlock
   | index |
   index := self.
   [index > 0] whileTrue:
@@ -456,5 +476,9 @@ Object subclass: #Transcript.
 ! Character
 ! asciiValue
   ^ asciiValue
+! isLiteral
+  ^ true
+! shouldBePrintedAsLiteral
+  ^ asciiValue between: 33 and: 255
 !!
 

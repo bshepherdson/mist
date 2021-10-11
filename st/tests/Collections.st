@@ -95,102 +95,198 @@ TestCase subclass: #CollectionsGeneralSets.
 
 ! CollectionsGeneralSets
 ! testAdd
-  self assert: ((Set new: 5) add: 7; add: 8; add: 7) equals: {7. 8} asSet.
-"! testAddAll
-  self assert: (Set new addAll: {7. 8. 9. 7}) equals: {7. 8. 9} asSet.
+  self assert: ((Set new: 5) add: 7; add: 8; add: 7; yourself)
+    equals: {7. 8} asSet.
+! testAddAll
+  self assert: (Set new addAll: {7. 8. 9. 7}; yourself) equals: {7. 8. 9} asSet.
 ! testRemove
-  self assert: ({7. 8. 9} asSet remove: 7) equals: {8. 9} asSet.
+  self assert: ({7. 8. 9} asSet remove: 7; yourself) equals: {8. 9} asSet.
 ! testRemoveAll
-  self assert: ({5. 6. 7. 8. 9} asSet removeAll: {7. 8. 9})
+  self assert: ({5. 6. 7. 8. 9} asSet removeAll: {7. 8. 9}; yourself)
     equals: {5. 6} asSet.
-
 ! testIncludes
-  | arr |
-  arr := {7. 8. 9} asArray.
-  self assert: (arr includes: 7).
-  self assert: (arr includes: 8).
-  self assert: (arr includes: 9).
-  self deny: (arr includes: nil).
-  self deny: (arr includes: 12)
+  | set |
+  set := {7. 8. 9} asSet.
+  self assert: (set includes: 7).
+  self assert: (set includes: 8).
+  self assert: (set includes: 9).
+  self deny: (set includes: nil).
+  self deny: (set includes: 12)
 
 ! testIsEmpty
-  self assert: Array new isEmpty.
-  self deny: {7. 8. 9} isEmpty
+  self assert: Set new isEmpty.
+  self deny: {7. 8. 9} asSet isEmpty
 
 ! testOccurrencesOf
-  | arr |
-  arr := {1. 2. 3. 4. 5. 6. 7. 8. 9. 7. 5. 5. 5. 4. 2}.
-  self assert: (arr occurrencesOf: 0) equals: 0.
-  self assert: (arr occurrencesOf: 1) equals: 1.
-  self assert: (arr occurrencesOf: 2) equals: 2.
-  self assert: (arr occurrencesOf: 3) equals: 1.
-  self assert: (arr occurrencesOf: 4) equals: 2.
-  self assert: (arr occurrencesOf: 5) equals: 4.
-  self assert: (arr occurrencesOf: 6) equals: 1.
-  self assert: (arr occurrencesOf: 7) equals: 2.
-  self assert: (arr occurrencesOf: 8) equals: 1.
-  self assert: (arr occurrencesOf: 9) equals: 1
+  | set |
+  set := {1. 2. 3. 4. 5. 6. 7. 8. 9. 7. 5. 5. 5. 4. 2} asSet.
+  self assert: (set occurrencesOf: 0) equals: 0.
+  self assert: (set occurrencesOf: 1) equals: 1.
+  self assert: (set occurrencesOf: 2) equals: 1.
+  self assert: (set occurrencesOf: 3) equals: 1.
+  self assert: (set occurrencesOf: 4) equals: 1.
+  self assert: (set occurrencesOf: 5) equals: 1.
+  self assert: (set occurrencesOf: 6) equals: 1.
+  self assert: (set occurrencesOf: 7) equals: 1.
+  self assert: (set occurrencesOf: 8) equals: 1.
+  self assert: (set occurrencesOf: 9) equals: 1
 
 ! testDo
-  | count total arr |
+  | count total set |
   total := count := 0.
-  arr := Array new: 5.
-  {1. 3. 5. 7. 9} do: [:each |
+  set := Set new: 5.
+  {1. 3. 5. 7. 9} asSet do: [:each |
     total := total + each.
     count := count + 1.
-    arr at: count put: each * 2].
+    set add: each * 2].
 
   self assert: count equals: 5.
   self assert: total equals: 25.
-  self assert: arr equals: {2. 6. 10. 14. 18}
+  self assert: set equals: {2. 6. 10. 14. 18} asSet
 
 ! testSelect
-  | arr |
-  arr := {1. 2. 3. 4. 5. 6} select: [:each | each even].
-  self assert: arr class equals: Array.
-  self assert: arr equals: {2. 4. 6}
+  | set |
+  set := {1. 2. 3. 4. 5. 6} asSet select: [:each | each even].
+  self assert: set class equals: Set.
+  self assert: set equals: {2. 4. 6} asSet
 
 ! testReject
-  | arr |
-  arr := {1. 2. 3. 4. 5. 6} reject: [:each | each even].
-  self assert: arr class equals: Array.
-  self assert: arr equals: {1. 3. 5}
+  | set |
+  set := {1. 2. 3. 4. 5. 6} asSet reject: [:each | each even].
+  self assert: set class equals: Set.
+  self assert: set equals: {1. 3. 5} asSet
 
 ! testCollect
-  self assert: ({1. 2. 3. 4. 5} collect: [:each | each * 2])
-    equals: {2. 4. 6. 8. 10}
+  self assert: ({1. 2. 3. 4. 5} asSet collect: [:each | each * 2])
+    equals: {2. 4. 6. 8. 10} asSet
 
 ! testDetectIfNone
-  self assert: ({1. 3. 5. 7} detect: [:x | x > 4] ifNone: [0]) equals: 5.
-  self assert: ({1. 3. 5. 7} detect: [:x | x > 9] ifNone: [0]) equals: 0.
+  self assert: ({5. 7} asSet includes: (
+    {1. 3. 5. 7} asSet detect: [:x | x > 4] ifNone: [0])).
+  self assert: ({1. 3. 5. 7} asSet detect: [:x | x > 9] ifNone: [0])
+    equals: 0.
 
 ! testDetect
-  self assert: ({1. 3. 5. 7} detect: [:x | x > 4]) equals: 5.
-  self should: [{1. 3. 5. 7} detect: [:x | x > 9]] raise: NotFound.
+  self assert: ({5. 7} asSet includes: (
+    {1. 3. 5. 7} asSet detect: [:x | x > 4])).
+  self should: [{1. 3. 5. 7} asSet detect: [:x | x > 9]]
+    raise: NotFound.
 
 ! testInjectInto
-  self assert: ({1. 3. 5. 7. 9} inject: 100 into: [:sum :x | sum - x])
+  self assert: ({1. 3. 5. 7. 9} asSet inject: 100 into: [:sum :x | sum - x])
     equals: 75
 
-! testNew
-  self assert: Array new equals: {}.
-  self assert: (Array new: 3) equals: {nil. nil. nil}.
-
 ! testWiths
-  self assert: (Array with: 7) equals: {7}.
-  self assert: (Array with: 7 with: 8) equals: {7. 8}.
-  self assert: (Array with: 7 with: 8 with: 9) equals: {7. 8. 9}.
-  self assert: (Array with: 7 with: 8 with: 9 with: 10) equals: {7. 8. 9. 10}
-"
+  self assert: (Set with: 7) equals: {7} asSet.
+  self assert: (Set with: 7 with: 8) equals: {7. 8} asSet.
+  self assert: (Set with: 7 with: 8 with: 9) equals: {7. 8. 9} asSet.
+  self assert: (Set with: 7 with: 8 with: 9 with: 10)
+    equals: {7. 8. 9. 10} asSet
 !!
 
+TestCase subclass: #CollectionsGeneralBags.
+
+! CollectionsGeneralBags
+! testAdd
+  self assert: ((Bag new: 5) add: 7; add: 8; add: 7; yourself)
+    equals: {7. 8. 7} asBag.
+! testAddAll
+  self assert: (Bag new addAll: {7. 8. 9. 7}; yourself)
+    equals: {7. 7. 8. 9} asBag.
+! testRemove
+  self assert: ({7. 8. 9} asBag remove: 7; yourself)
+    equals: {8. 9} asBag.
+! testRemoveAll
+  self assert: ({5. 6. 7. 8. 9} asBag removeAll: {7. 8. 9}; yourself)
+    equals: {5. 6} asBag.
+
+! testIncludes
+  | bag |
+  bag := {7. 8. 9. 8. 6. 7} asBag.
+  self assert: (bag includes: 7).
+  self assert: (bag includes: 8).
+  self assert: (bag includes: 9).
+  self deny: (bag includes: nil).
+  self deny: (bag includes: 12)
+
+! testIsEmpty
+  self assert: Bag new isEmpty.
+  self deny: {7. 8. 9} asBag isEmpty
+
+! testOccurrencesOf
+  | bag |
+  bag := {1. 2. 3. 4. 5. 6. 7. 8. 9. 7. 5. 5. 5. 4. 2} asBag.
+  self assert: (bag occurrencesOf: 0) equals: 0.
+  self assert: (bag occurrencesOf: 1) equals: 1.
+  self assert: (bag occurrencesOf: 2) equals: 2.
+  self assert: (bag occurrencesOf: 3) equals: 1.
+  self assert: (bag occurrencesOf: 4) equals: 2.
+  self assert: (bag occurrencesOf: 5) equals: 4.
+  self assert: (bag occurrencesOf: 6) equals: 1.
+  self assert: (bag occurrencesOf: 7) equals: 2.
+  self assert: (bag occurrencesOf: 8) equals: 1.
+  self assert: (bag occurrencesOf: 9) equals: 1
+
+! testDo
+  | count total bag |
+  total := count := 0.
+  bag := Bag new: 5.
+  {1. 3. 5. 3. 9} asBag do: [:each |
+    total := total + each.
+    count := count + 1.
+    bag add: each * 2].
+
+  self assert: count equals: 5.
+  self assert: total equals: 21.
+  self assert: bag equals: {2. 6. 10. 6. 18} asBag
+
+! testSelect
+  | bag |
+  bag := {1. 2. 3. 4. 3. 2} asBag select: [:each | each even].
+  self assert: bag class equals: Bag.
+  self assert: bag equals: {2. 4. 2} asBag
+
+! testReject
+  | bag |
+  bag := {1. 2. 3. 4. 2. 5. 4. 1} asBag reject: [:each | each even].
+  self assert: bag class equals: Bag.
+  self assert: bag equals: {1. 3. 5. 1} asBag
+
+! testCollect
+  self assert: ({1. 2. 3. 4. 5. 3. 5. 6} asBag collect: [:each | each * 2])
+    equals: {2. 4. 6. 8. 10. 6. 10. 12} asBag
+
+! testDetectIfNone
+  self assert: ({5. 7. 5. 6} asBag includes: (
+    {1. 1. 3. 5. 6. 5. 7} asBag detect: [:x | x > 4] ifNone: [0])).
+  self assert: ({1. 3. 5. 7} asBag detect: [:x | x > 9] ifNone: [0])
+    equals: 0.
+
+! testDetect
+  self assert: ({5. 7. 5. 6} asBag includes: (
+    {1. 3. 5. 6. 5. 7} asBag detect: [:x | x > 4])).
+  self should: [{1. 3. 5. 7} asBag detect: [:x | x > 9]]
+    raise: NotFound.
+
+! testInjectInto
+  self assert: ({1. 3. 5. 3. 9} asBag inject: 100 into: [:sum :x | sum - x])
+    equals: 79
+
+! testWiths
+  self assert: (Bag with: 7) equals: {7} asBag.
+  self assert: (Bag with: 7 with: 8) equals: {7. 8} asBag.
+  self assert: (Bag with: 7 with: 8 with: 9) equals: {7. 8. 9} asBag.
+  self assert: (Bag with: 7 with: 8 with: 7 with: 10)
+    equals: {7. 8. 7. 10} asBag
+!!
 
 
 Transcript show: (
   ArithmeticBasics suite,
   LogicBasics suite,
   CollectionsGeneralArrays suite,
-  CollectionsGeneralSets suite
+  CollectionsGeneralSets suite,
+  CollectionsGeneralBags suite
 ) run printString.
 
 99 halt.

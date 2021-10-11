@@ -33,6 +33,9 @@ Error subclass: #ValueNotFound
   ^ key = anAssoc key
 ! < anAssoc
   ^ key < anAssoc key
+
+! printOn: aStream
+  aStream print: key; nextPutAll: ' -> '; print: value
 !!
 
 ! Association class
@@ -44,6 +47,16 @@ Error subclass: #ValueNotFound
 !!
 
 
+"HashedCollection is abstract; it relies on its three subclasses to
+implement a few key details. HashedCollection stores Associations in a hash
+table way, using linear probing.
+- The table is always a power-of-2 size, enabling bit-masking over division.
+- The table is allowed to get up to 2/3rds full before expanding.
+
+- Dictionary stores pairs of arbitrary keys and values.
+- Set stores arbitrary values as both the key and value sides.
+- Bag stores arbitrary values as keys, with a count as the value.
+"
 
 ! HashedCollection class
 ! new
@@ -78,43 +91,47 @@ Error subclass: #ValueNotFound
   ^ index + 1
 
 ! matchKey: aKey with: anotherKey
+  "Defines the matching of keys, post-hashing. This is extracted out so
+  IdentityDictionary can override it to be based on ==."
   ^ aKey = anotherKey
 
 ! at: aKey ifAbsent: aBlockOrValue
-  "The array is treated as a hash table with linear probing."
-  | asc |
-  asc := array at: (self findElementOrNil: aKey).
-  asc ifNotNil: [
-    (self matchKey: aKey with: asc key)
-      ifTrue: [^ asc value]].
-  ^aBlockOrValue value
+  (self associationAt: aKey ifAbsent: [^aBlockOrValue value]) value
 
 ! at: aKey
   ^ self at: aKey ifAbsent: [self errorKeyNotFound: aKey]
 
-! at: aKey put: aValue
-  "Sets an association at the given key, replacing any previous association."
-  | index row |
-  "Transcript show: aKey."
-  index := self findElementOrNil: aKey.
-  "Transcript show: index."
-  row := array at: index.
-  "Transcript show: row."
-  row ifNotNil: ["Transcript show: 'replacing'." row value: aValue. ^self ].
-  "Transcript show: 'adding'."
-  array at: index put: (Association key: aKey value: aValue).
-  tally := tally + 1.
-  self growIfNeeded.
-  ^ self
-
 ! associationAt: aKey
   ^ self assocationAt: aKey ifAbsent: [self errorKeyNotFound: aKey]
+
+! associationAt: aKey ifAbsentPut: aBlock
+  | index assoc |
+  index := self findElementOrNil: aKey.
+  assoc := array at: index.
+  assoc ifNil: [
+    tally := tally + 1.
+    assoc := aBlock value.
+    (assoc isKindOf: Association)
+      ifFalse: [self error: (Error signal: 'need Association')].
+    array at: index put: assoc.
+    self growIfNeeded].
+  ^ assoc
 
 ! associationAt: aKey ifAbsent: aBlockOrValue
   | asc |
   asc := array at: (self findElementOrNil: aKey).
-  asc ifNil: [^ asc].
+  asc ifNotNil: [^ asc].
   ^aBlockOrValue value
+
+! addAssociation: anAssoc
+  | assoc |
+  assoc := self associationAt: anAssoc key ifAbsentPut: [anAssoc].
+  assoc value: anAssoc value
+
+! at: aKey put: aValue
+  | assoc |
+  assoc := self associationAt: aKey ifAbsentPut: [Association key: aKey value: aValue].
+  assoc value: aValue
 
 ! errorKeyNotFound: aKey
   (KeyNotFound new key: aKey) signal
@@ -124,34 +141,35 @@ Error subclass: #ValueNotFound
 ! growIfNeeded
   | oldArray |
   self needsToGrow ifFalse: [^self].
-  Transcript show: 'growing'.
   oldArray := array.
-  array := Array new: self size * 2.
+  array := Array new: array size * 2.
   tally := 0.
-  array do: [:each | each isNotNil: [self add: each]]
+  oldArray do: [:each | each ifNotNil: [self addAssociation: each]]
 
 ! values
-  "Returns a Smalltalk Array of the values."
+  "Returns an Array of the values."
   | vals index |
   vals := Array new: tally.
-  index := 1.
+  index := 0.
   self associationsDo: [:asc |
-    vals at: index put: asc value. index := index + 1].
+    vals at: (index := index + 1) put: asc value].
   ^ vals
 
 ! keys
   "Returns a Smalltalk Array of the values."
   | vals index |
   vals := Array new: tally.
-  index := 1.
-  self associationsDo: [:asc | vals at: index put: asc key. index := index + 1].
+  index := 0.
+  self associationsDo: [:asc |
+    vals at: (index := index + 1) put: asc key].
   ^ vals
 
 ! associations
   | vals index |
   vals := Array new: tally.
-  index := 1.
-  self associationsDo: [:asc | vals at: index put: asc. index := index + 1].
+  index := 0.
+  self associationsDo: [:asc |
+    vals at: (index := index + 1) put: asc].
   ^ vals
 
 ! associationsDo: aBlock
@@ -162,26 +180,35 @@ Error subclass: #ValueNotFound
 ! capacity
   ^ array size
 
+! remove: something
+  "This means different things in different subclasses."
+  self subclassResponsibility
+
 ! removeKey: aKey
-  ^ self removeKey: aKey ifAbsent: [ self errorKeyNotFound: aKey ]
-! removeKey: aKey ifAbsent: aBlock
+  | assoc |
+  assoc := self removeAssociationAt: aKey
+    ifAbsent: [ self errorKeyNotFound: aKey ].
+  ^ assoc value
+
+! removeAssociationAt: aKey ifAbsent: aBlock
   "Removes a key, or calls the block if it's not there.
   Two cases: Found in the array, and not found."
   | index row |
   index := self findElementOrNil: aKey.
   row := array at: index.
-  row ifNil: [^ aBlock value ].
+  row ifNil: [^ aBlock value].
   tally := tally - 1.
   array at: index put: nil.
   self fixCollisionsFrom: index.
-  ^ row value
+  ^ row
 
 ! fixCollisionsFrom: start
   "The element at start has been removed and replaced by nil. We need to adjust
   any later elements that spilled down due to collisions."
   | element index |
-  index := start.
-  [ (element := array at: (index := index bitAnd: self hashMask)) isNil ]
+  index := start - 1. "0-based index"
+  [ index := index + 1 bitAnd: self hashMask.
+    (element := array at: index + 1) isNil ]
     whileFalse: [
       | newIndex |
       (newIndex := self findElementOrNil: element key) = index
@@ -204,53 +231,41 @@ Error subclass: #ValueNotFound
       ifFalse: [ ^ false ]].
   ^ true
 
-! add: anAssoc
-  self at: anAssoc key put: anAssoc value
+! add: something
+  "This means different things in different subclasses. They should call
+  addAssociation: with the Association they want to store."
+  self subclassResponsibility
 
 ! addAll: aKeyedCollection
   aKeyedCollection == self ifFalse: [
     aKeyedCollection keysAndValuesDo: [ :key :value |
-      self at: key put: value]].
+      self addAssociation: (Association key: key value: value)]].
   ^ aKeyedCollection
 
-! at: aKey ifAbsentPut: aValue
-  ^ self at: aKey ifAbsent: [self at: aKey put: aValue]
-
-! collect: aBlock
-  "Evaluate aBlock with each value as the argument. Collect the results into a
-  new collection with the same keys. Answer the new collection."
-  | col |
-  col := self species new.
-  self assocationsDo: [ :each |
-    col at: each key put: (aBlock value: each value) ].
-  ^ col
-
 ! do: aBlock
-  ^ self valuesDo: aBlock
+  self subclassResponsibility
 
 ! fillFrom: aCollection with: aBlock
   aCollection keysAndValuesDo: [ :key :value |
     self at: key put: (aBlock value: value) ]
 
 ! includes: anObject
-  self do: [ :each | anObject = each ifTrue: [ ^ true ]].
+  self valuesDo: [ :each | anObject = each ifTrue: [^ true]].
   ^ false
 
 ! includesAssociation: anAssoc
   ^ (self associationAt: anAssoc key
-      ifAbsent: [ ^ false ]) value = anAssoc value
+      ifAbsent: [^ false]) value = anAssoc value
 
 ! includesKey: aKey
-  ^ (super at: aKey) isNotNil
-
-! isDictionary
-  ^ true
+  ^ (self at: aKey) isNotNil
 
 ! keyAtValue: aValue
   ^ self keyAtValue: aValue ifAbsent: [ self errorValueNotFound: aValue ]
 ! keyAtValue: aValue ifAbsent: aBlock
-  self associationsDo: [ :assoc | assoc value = aValue ifTrue: [ ^ assoc key ]].
+  self associationsDo: [ :assoc | assoc value = aValue ifTrue: [^ assoc key]].
   ^ aBlock value
+
 ! keysAndValuesDo: aBlock
   ^ self assocationsDo: [ :assoc |
     aBlock value: assoc key value: assoc value]
@@ -258,27 +273,39 @@ Error subclass: #ValueNotFound
 ! keysDo: aBlock
   "super keys is the set of hashes; we want to grab the Associations stored as
   values, and grab their keys."
-  ^ super values do: [ :assoc | aBlock value: assoc key ]
-
-! remove: anObject
-  self shouldNotImplement
-! remove: anObject ifAbsent: aBlock
-  self shouldNotImplement
-
-! select: aBlock
-  | col |
-  col := self copyEmpty.
-  self associationsDo: [ :each |
-    (aBlock value: each value) ifTrue: [ col add: each copy ]].
-  ^ col
+  ^ self values do: [:assoc | aBlock value: assoc key]
 
 ! valuesDo: aBlock
-  ^ self associationsDo: [ :each | aBlock value: each value ]
+  ^ self associationsDo: [:each | aBlock value: each value]
 !!
 
 ! Object
 ! isDictionary
   ^ false
+! isSet
+  ^ false
+! isBag
+  ^ false
+!!
+
+
+"Abstract methods on HashedCollection: add: at:ifAbsent: at:put: remove:"
+
+"A Dictionary stores arbitrary keys and values."
+"HashedCollection subclass: #Dictionary."
+
+! Dictionary
+! isDictionary
+  ^ true
+! add: anAssociation
+  self addAssociation: anAssociation.
+  ^ anAssociation
+! at: aKey ifAbsent: aBlock
+  ^ (self associationAt: aKey ifAbsent: [^ aBlock value]) value
+! at: aKey put: aValue
+  self assocationAt: aKey ifAbsentPut: [Association key: aKey value: aValue]
+! remove: aValue
+  self shouldNotImplement
 !!
 
 "A Set is a HashedCollection without values, just membership.
@@ -286,6 +313,9 @@ Implemented by using elements' hashes as keys and the elements as values."
 HashedCollection subclass: #Set.
 
 ! Set
+! isSet
+  ^ true
+
 ! = aSet
   self == aSet ifTrue: [^true]. "Avoids recursion."
   (aSet isKindOf: Set) ifFalse: [^false].
@@ -295,18 +325,22 @@ HashedCollection subclass: #Set.
 
 ! add: newObject
   "Adds newObject to this Set, if it's not already present. Answers newObject."
-  self at: newObject put: newObject
+  self addAssociation: (Association key: newObject value: newObject).
+  ^ newObject
 
 ! addAll: aCollection
   "HashedCollection addAll: does the wrong thing."
   aCollection do: [:each | self add: each].
   ^ aCollection
 
-! collect: aBlock
-  | newSet |
-  newSet := self species new: self size.
-  self values do: [:each | newSet add: (aBlock value: each)].
-  ^ newSet
+! remove: aValue
+  ^ super removeKey: aValue
+! remove: aValue ifAbsent: aBlock
+  ^ super removeKey: aValue ifAbsent: aBlock
+
+! occurrencesOf: aValue
+  ^ (self includes: aValue) ifTrue: [1] ifFalse: [0]
+
 ! difference: aCollection
   "Answer the set theoretic difference between two collections. This one is
   specialized since no intermediate Set is necessary. The result is a new set
@@ -317,7 +351,8 @@ HashedCollection subclass: #Set.
   ^ set
 
 ! do: aBlock
-  self values do: aBlock
+  array do: [:each |
+    each ifNotNil: [aBlock value: each value]]
 
 ! includes: anObject
   self at: anObject ifAbsent: [^false].
@@ -330,7 +365,7 @@ HashedCollection subclass: #Set.
   ^ xsec
 
 ! isHealthy
-  self associationsDo: [:each | each key = each value hash ifFalse: [^false]].
+  self associationsDo: [:each | each key = each value ifFalse: [^false]].
   ^ true
 
 ! putOn: aStream
@@ -339,4 +374,72 @@ HashedCollection subclass: #Set.
   self putContentsOn: aStream.
   aStream nextPut: $)
 !!
+
+HashedCollection subclass: #Bag.
+
+! Bag
+! isBag
+  ^ true
+
+! size
+  | total |
+  total := 0.
+  self valuesDo: [:count | total := total + count].
+  ^ total
+
+! add: newObject
+  "Adds newObject to this Set, if it's not already present. Answers newObject."
+  ^ self add: newObject withOccurrences: 1
+
+! add: newObject withOccurrences: aCount
+  | assoc |
+  assoc := self associationAt: newObject
+    ifAbsentPut: [Association key: newObject value: 0].
+  assoc value: assoc value + aCount
+
+! addAll: aCollection
+  (aCollection isKindOf: Bag) ifTrue: [
+    aCollection associationsDo: [:asc |
+      self add: asc key withOccurrences: asc value].
+    ^ aCollection].
+
+  aCollection do: [:each | self add: each].
+  ^ aCollection
+
+! at: aKey
+  self shouldNotImplement
+! at: aKey put: aValue
+  self shouldNotImplement
+
+! = aBag
+  self == aBag ifTrue: [^true]. "Avoids recursion."
+  (aBag isKindOf: Bag) ifFalse: [^false].
+  self size = aBag size ifFalse: [^false].
+  self associationsDo: [:each |
+    (aBag occurrencesOf: each key) = each value ifFalse: [^false]].
+  ^ true
+
+! remove: aValue
+  self removeKey: aValue.
+  ^ aValue
+
+! removeKey: aKey
+  | assoc |
+  assoc := self associationAt: aKey ifAbsent: [self errorKeyNotFound: aKey].
+  assoc value = 1 ifTrue: [^ self removeAssociationAt: aKey ifAbsent: []].
+  assoc value: assoc value - 1
+
+! do: aBlock
+  array do: [:each |
+    each ifNotNil: [
+      each value timesRepeat: [aBlock value: each key]]]
+
+! occurrencesOf: aValue
+  ^ (self associationAt: aValue ifAbsent: [^0]) value
+
+! includes: anObject
+  self associationAt: anObject ifAbsent: [^false].
+  ^ true
+!!
+
 
