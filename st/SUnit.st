@@ -103,7 +103,7 @@ TestAsserter subclass: #TestCase
 ! testSelectors
   ^(self methods
     select: [:each |
-      (each selector indexOfSubCollection: 'test' startingAt: 1) = 0
+      (each selector indexOfSubCollection: 'test' startingAt: 1) = 1
         and: [each numArgs = 0]])
     collect: [:each | each selector]
 

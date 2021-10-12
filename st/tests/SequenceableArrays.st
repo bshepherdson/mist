@@ -1,6 +1,6 @@
-TestCase subclass: #SequenceableCollectionTests.
+TestCase subclass: #SequenceableCollectionArrays.
 
-! SequenceableCollectionTests
+! SequenceableCollectionArrays
 ! testAtAll
   self assert: ({9. 8. 7. 6. 5. 4} atAll: {2. 3. 4} put: 0)
     equals: {9. 0. 0. 0. 5. 4}.
@@ -184,17 +184,3 @@ TestCase subclass: #SequenceableCollectionTests.
     raise: Error.
 !!
 
-
-Transcript show: (
-  ArithmeticBasics suite,
-  LogicBasics suite,
-  CollectionsGeneralArrays suite,
-  CollectionsGeneralSets suite,
-  CollectionsGeneralBags suite,
-  CollectionsGeneralDictionary suite,
-  CollectionsGeneralOrderedCollection suite,
-  DictionariesTests suite,
-  SequenceableCollectionTests suite
-) run printString.
-
-99 halt.

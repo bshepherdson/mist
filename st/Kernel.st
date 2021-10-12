@@ -493,5 +493,7 @@ Object subclass: #Transcript.
   ^ true
 ! shouldBePrintedAsLiteral
   ^ asciiValue between: 33 and: 255
+! printOn: aStream
+  aStream nextPut: $$; nextPut: self
 !!
 
