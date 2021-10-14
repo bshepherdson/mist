@@ -697,3 +697,132 @@ Link subclass: #LinkNode instanceVariableNames: 'value'.
 !!
 
 
+TestCase subclass: #CollectionsGeneralInterval.
+
+! CollectionsGeneralInterval
+! testBannedThings
+  self should: [(Interval from: 1 to: 8) add: 12]
+    raise: ShouldNotImplement.
+  self should: [(Interval from: 1 to: 8 by: 2) add: 12]
+    raise: ShouldNotImplement.
+  self should: [(Interval from: 1 to: 8 by: 2) at: 12 put: 9]
+    raise: ShouldNotImplement.
+
+! testAddAll
+  self should: [(Interval from: 1 to: 8 by: 2) addAll: {6. 3. 2}]
+    raise: ShouldNotImplement.
+
+! testRemove
+  self should: [(Interval from: 1 to: 8) remove: 6] raise: ShouldNotImplement.
+
+! testRemoveAll
+  self should: [(Interval from: 1 to: 8) removeAll: {6. 7. 8}]
+    raise: ShouldNotImplement.
+
+! testIncludes
+  | iv |
+  iv := Interval from: 1 to: 12 by: 2.
+  self assert: (iv includes: 5).
+  self assert: (iv includes: 7).
+  self assert: (iv includes: 9).
+  self deny: (iv includes: nil).
+  self deny: (iv includes: 6).
+  self deny: (iv includes: 12)
+
+! testIsEmpty
+  self assert: (Interval from: 1 to: 0) isEmpty.
+  self deny: {7. 8. 9} asOrderedCollection isEmpty
+
+! testOccurrencesOf
+  | iv |
+  iv := Interval from: 20 to: 0 by: -2.
+  self assert: (iv occurrencesOf:  0) equals: 1.
+  self assert: (iv occurrencesOf:  2) equals: 1.
+  self assert: (iv occurrencesOf:  4) equals: 1.
+  self assert: (iv occurrencesOf:  6) equals: 1.
+  self assert: (iv occurrencesOf:  8) equals: 1.
+  self assert: (iv occurrencesOf: 10) equals: 1.
+  self assert: (iv occurrencesOf: 12) equals: 1.
+  self assert: (iv occurrencesOf: 14) equals: 1.
+  self assert: (iv occurrencesOf: 16) equals: 1.
+  self assert: (iv occurrencesOf: 18) equals: 1.
+  self assert: (iv occurrencesOf: 13) equals: 0.
+  self assert: (iv occurrencesOf: 15) equals: 0.
+  self assert: (iv occurrencesOf: 17) equals: 0.
+  self assert: (iv occurrencesOf: 19) equals: 0
+
+! testDo
+  | count total arr |
+  total := count := 0.
+  arr := Array new: 5.
+  (Interval from: 1 to: 9 by: 2) do: [:each |
+    total := total + each.
+    count := count + 1.
+    arr at: count put: each * 2].
+
+  self assert: count equals: 5.
+  self assert: total equals: 25.
+  self assert: arr equals: {2. 6. 10. 14. 18}
+
+! testSelect
+  | iv |
+  iv := (Interval from: 1 to: 6) select: [:each | each even].
+  self assert: iv class equals: OrderedCollection.
+  self assert: iv equals: {2. 4. 6} asOrderedCollection
+
+! testReject
+  | iv |
+  iv := (Interval from: 1 to: 6) reject: [:each | each even].
+  self assert: iv class equals: OrderedCollection.
+  self assert: iv equals: {1. 3. 5} asOrderedCollection
+
+! testCollect
+  self assert: ((Interval from: 1 to: 5) collect: [:each | each * 2])
+    equals: {2. 4. 6. 8. 10} asOrderedCollection
+
+! testDetectIfNone
+  self assert: ((Interval from: 1 to: 7 by: 2) detect: [:x | x > 4] ifNone: [0])
+    equals: 5.
+  self assert: ((Interval from: 1 to: 7 by: 2) detect: [:x | x > 9] ifNone: [0])
+    equals: 0.
+
+! testDetect
+  self assert: ((Interval from: 1 to: 7 by: 2) detect: [:x | x > 4])
+    equals: 5.
+  self should: [(Interval from: 1 to: 7 by: 2) detect: [:x | x > 9]]
+    raise: NotFound.
+
+! testInjectInto
+  self assert: ((Interval from: 1 to: 9 by: 2)
+      inject: 100 into: [:sum :x | sum - x])
+    equals: 75
+
+! testSizeAndCapacity
+  | iv |
+  iv := Interval from: 1 to: 9 by: 2.
+  self assert: iv size equals: 5.
+  self assert: iv isEmpty not.
+  self assert: iv capacity equals: 5.
+
+  iv := Interval from: 3 to: 2. "Should be empty."
+  self assert: iv size equals: 0.
+  self assert: iv isEmpty.
+  self assert: iv capacity equals: 0.
+
+  iv := Interval from: 3 to: 3. "Should be just 3."
+  self assert: iv size equals: 1.
+  self assert: iv isEmpty not.
+  self assert: iv capacity equals: 1.
+
+! testWiths
+  self should: [Interval with: 7]
+    raise: ShouldNotImplement.
+  self should: [Interval with: 7 with: 8]
+    raise: ShouldNotImplement.
+  self should: [Interval with: 7 with: 8 with: 9]
+    raise: ShouldNotImplement.
+  self should: [Interval with: 7 with: 8 with: 9 with: 10]
+    raise: ShouldNotImplement.
+!!
+
+

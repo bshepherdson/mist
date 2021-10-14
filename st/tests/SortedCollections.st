@@ -37,6 +37,7 @@ Transcript show: (
   CollectionsGeneralDictionary suite,
   CollectionsGeneralOrderedCollection suite,
   CollectionsGeneralLinkedList suite,
+  CollectionsGeneralInterval suite,
   DictionariesTests suite,
   SequenceableCollectionArrays suite,
   SequenceableCollectionOCs suite,

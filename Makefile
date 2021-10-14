@@ -9,7 +9,8 @@ PARSER=gst $(PARSER_FILES) -a
 
 ST_FILES=st/Kernel.st st/Exceptions.st \
 				 st/Collection.st st/Collections-Array.st st/Collections-Unordered.st \
-				 st/Streams.st st/Strings.st st/Collections-LinkedList.st st/SUnit.st
+				 st/Streams.st st/Strings.st st/Collections-LinkedList.st \
+				 st/Collections-Interval.st st/SUnit.st
 ST_TESTS=st/tests/Basics.st st/tests/Collections.st st/tests/Dictionaries.st \
 				 st/tests/SequenceableArrays.st st/tests/SequenceableOCs.st \
 				 st/tests/OrderedCollections.st st/tests/SortedCollections.st
