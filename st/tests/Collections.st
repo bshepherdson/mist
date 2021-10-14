@@ -552,3 +552,148 @@ TestCase subclass: #CollectionsGeneralDictionary.
 !!
 
 
+TestCase subclass: #CollectionsGeneralLinkedList.
+
+Link subclass: #LinkNode instanceVariableNames: 'value'.
+
+! LinkNode class
+! for: aValue
+  ^ LinkNode new value: aValue; yourself
+!!
+
+! LinkNode
+! value
+  ^ value
+! value: aValue
+  value := aValue
+! = aLinkNode
+  self class == aLinkNode class ifFalse: [^false].
+  ^ value = aLinkNode value
+
+! printOn: aStream
+  aStream << 'LinkNode(' << value << ')'
+!!
+
+! CollectionsGeneralLinkedList
+
+! listOf: aCollection
+  | lst |
+  lst := LinkedList new.
+  aCollection do: [:each | lst add: (LinkNode for: each)].
+  ^ lst
+
+! linkify: aCollection
+  ^ aCollection collect: [:each | LinkNode for: each]
+
+! testAdd
+  | lst |
+  lst := LinkedList new.
+  1 to: 20 do: [:ix | lst add: (LinkNode for: ix)].
+
+  self assert: lst size equals: 20.
+  self assert: (lst at: 1)  equals: (LinkNode for: 1).
+  self assert: (lst at: 6)  equals: (LinkNode for: 6).
+  self assert: (lst at: 2)  equals: (LinkNode for: 2).
+  self assert: (lst at: 20) equals: (LinkNode for: 20)
+! testAddAll
+  self assert: (LinkedList new addAll: (self linkify: {7. 8. 9}); yourself)
+    equals: (self listOf: {7. 8. 9}).
+
+! testIncludes
+  | lst |
+  lst := self listOf: {7. 8. 9}.
+  self assert: (lst includes: (LinkNode for: 7)).
+  self assert: (lst includes: (LinkNode for: 8)).
+  self assert: (lst includes: (LinkNode for: 9)).
+  self deny: (lst includes: (LinkNode for: nil)).
+  self deny: (lst includes: (LinkNode for: 12))
+
+! testIsEmpty
+  self assert: LinkedList new isEmpty.
+  self deny: (self listOf: {7. 8. 9}) isEmpty
+
+! testOccurrencesOf
+  | lst |
+  lst := self listOf: {1. 2. 3. 4. 5. 6. 7. 8. 9. 7. 5. 5. 5. 4. 2}.
+  self assert: (lst occurrencesOf: (LinkNode for: 0)) equals: 0.
+  self assert: (lst occurrencesOf: (LinkNode for: 1)) equals: 1.
+  self assert: (lst occurrencesOf: (LinkNode for: 2)) equals: 2.
+  self assert: (lst occurrencesOf: (LinkNode for: 3)) equals: 1.
+  self assert: (lst occurrencesOf: (LinkNode for: 4)) equals: 2.
+  self assert: (lst occurrencesOf: (LinkNode for: 5)) equals: 4.
+  self assert: (lst occurrencesOf: (LinkNode for: 6)) equals: 1.
+  self assert: (lst occurrencesOf: (LinkNode for: 7)) equals: 2.
+  self assert: (lst occurrencesOf: (LinkNode for: 8)) equals: 1.
+  self assert: (lst occurrencesOf: (LinkNode for: 9)) equals: 1
+
+! testDo
+  | count total arr |
+  total := count := 0.
+  arr := Array new: 5.
+  (self listOf: {1. 3. 5. 7. 9}) do: [:each |
+    total := total + each value.
+    count := count + 1.
+    arr at: count put: each value * 2].
+
+  self assert: count equals: 5.
+  self assert: total equals: 25.
+  self assert: arr equals: {2. 6. 10. 14. 18}
+
+! testSelect
+  | lst |
+  lst := (self listOf: {1. 2. 3. 4. 5. 6}) select: [:each | each value even].
+  self assert: lst class equals: LinkedList.
+  self assert: lst equals: (self listOf: {2. 4. 6})
+
+! testReject
+  | lst |
+  lst := (self listOf: {1. 2. 3. 4. 5. 6}) reject: [:each | each value even].
+  self assert: lst class equals: LinkedList.
+  self assert: lst equals: (self listOf: {1. 3. 5})
+
+! testCollect
+  self assert: ((self listOf: {1. 2. 3. 4. 5})
+      collect: [:each | LinkNode for: each value * 2])
+    equals: (self listOf: {2. 4. 6. 8. 10})
+
+! testDetectIfNone
+  self assert: ((self listOf: {1. 3. 5. 7})
+      detect: [:x | x value > 4] ifNone: [0])
+    equals: (LinkNode for: 5).
+  self assert: ((self listOf: {1. 3. 5. 7})
+      detect: [:x | x value > 9] ifNone: [0])
+    equals: 0.
+
+! testDetect
+  self assert: ((self listOf: {1. 3. 5. 7}) detect: [:x | x value > 4])
+    equals: (LinkNode for: 5).
+  self should: [(self listOf: {1. 3. 5. 7}) detect: [:x | x value > 9]]
+    raise: NotFound.
+
+! testInjectInto
+  self assert: ((self listOf: {1. 3. 5. 7. 9})
+      inject: 100 into: [:sum :x | sum - x value])
+    equals: 75
+
+! testNew
+  | lst |
+  lst := LinkedList new.
+  self assert: lst asArray equals: {}.
+  self assert: lst size equals: 0.
+  self assert: lst isEmpty.
+  self assert: lst capacity = 0.
+
+! testWiths
+  self assert: (LinkedList with: (LinkNode for: 7))
+    equals: (self listOf: {7}).
+  self assert: (LinkedList with: (LinkNode for: 7) with: (LinkNode for: 8))
+    equals: (self listOf: {7. 8}).
+  self assert: (LinkedList with: (LinkNode for: 7) with: (LinkNode for: 8)
+      with: (LinkNode for: 9))
+    equals: (self listOf: {7. 8. 9}).
+  self assert: (LinkedList with: (LinkNode for: 7) with: (LinkNode for: 8)
+      with: (LinkNode for: 9) with: (LinkNode for: 10))
+    equals: (self listOf: {7. 8. 9. 10})
+!!
+
+

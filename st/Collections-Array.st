@@ -45,6 +45,20 @@
   ^ self class == Array and: [
     self allSatisfy: [:each | each isLiteral]]
 
+! select: aBlock "TODO: This is better with streaming, see Pharo."
+  | dst count |
+  dst := self species new: self size.
+  count := 0.
+  self do: [:each | (aBlock value: each) ifTrue: [dst at: (count := count + 1) put: each]].
+  ^ dst copyFrom: 1 to: count
+
+! collect: aBlock
+  "Can't use add: for Array, so we use at:put: here."
+  | dst |
+  dst := self species new: self size.
+  1 to: self size do: [:ix | dst at: ix put: (aBlock value: (self at: ix))].
+  ^ dst
+
 ! printOn: aStream
   self shouldBePrintedAsLiteral ifTrue: [
     self printAsLiteralFormOn: aStream. ^self].
@@ -86,6 +100,9 @@
 
 
 ! SequenceableCollection
+! initialize: aSize
+  self initialize
+
 ! species
   ^ self class
 ! isSequenceable
@@ -141,20 +158,6 @@
   1 to: self size do: [:ix |
     aBinaryBlock value: ix value: (self at: ix)]
 
-! select: aBlock "TODO: This is better with streaming, see Pharo."
-  | dst count |
-  dst := self species new: self size.
-  count := 0.
-  self do: [:each | (aBlock value: each) ifTrue: [dst at: (count := count + 1) put: each]].
-  ^ dst copyFrom: 1 to: count
-
-! collect: aBlock
-  "Can't use add: for Array, so we use at:put: here."
-  | dst |
-  dst := self species new: self size.
-  1 to: self size do: [:ix | dst at: ix put: (aBlock value: (self at: ix))].
-  ^ dst
-
 ! copyFrom: start to: stop
   | dst |
   dst := self species new: stop - start + 1.
@@ -188,27 +191,27 @@
 
 ! sort
   "Actually does a sort on the Array, using Smalltalk <."
-  ^ self mergeSort: 1 to: self size
+  ^ self mergeSort: 1 to: self size on: [:a :b | a < b]
 
 ! sorted
   ^ self copy sort
 
-! mergeSort: lo to: hi
+! mergeSort: lo to: hi on: aBlock
   | mid |
   "Only one value: done."
-  lo = hi ifTrue: [^nil].
+  lo >= hi ifTrue: [^nil].
   "Two values: swap into order."
   lo + 1 = hi
-      ifTrue: [(self at: lo) > (self at: hi)
+      ifTrue: [(aBlock value: (self at: hi) value: (self at: lo))
           ifTrue: [self swap: lo with: hi].
                   ^self].
   "More values: divide and sub-sort, then merge."
-  mid := (hi + lo / 2) floor.
-  self mergeSort: lo to: mid.
-  self mergeSort: mid + 1 to: hi.
-  self merge: lo thru: mid to: hi
+  mid := hi + lo // 2.
+  self mergeSort: lo to: mid on: aBlock.
+  self mergeSort: mid + 1 to: hi on: aBlock.
+  self merge: lo thru: mid to: hi on: aBlock
 
-! merge: lo thru: mid to: hi
+! merge: lo thru: mid to: hi on: aBlock
   | loSide hiSide i j dst |
   loSide := self copyFrom: lo to: mid.
   hiSide := self copyFrom: mid + 1 to: hi.
@@ -219,7 +222,9 @@
     whileTrue: [|x l h|
       l := loSide at: i.
       h := hiSide at: j.
-      x := l <= h ifTrue: [i := i + 1. l] ifFalse: [j := j + 1. h].
+      x := (aBlock value: l value: h)
+        ifTrue: [i := i + 1. l]
+        ifFalse: [j := j + 1. h].
       self at: dst put: x.
       dst := dst + 1].
 
@@ -317,6 +322,7 @@ ArrayedCollection subclass: #OrderedCollection
 
 ! OrderedCollection
 ! initialize: aSize
+  super initialize: aSize.
   array := Array new: (aSize max: 10).
   startIndex := 3.
   finalIndex := 2
@@ -333,18 +339,19 @@ ArrayedCollection subclass: #OrderedCollection
 ! at: anIndex put: aValue
   | ix |
   ix := self privAdjustIndex: anIndex.
-  "Transcript show: {anIndex. ix.} printString."
   self ensureCapacity: ix.
   array at: ix put: aValue.
   finalIndex := finalIndex max: ix
 
+! privNextSize: minimum
+  "The new size is at least 10 longer than the requested total, and to at least
+  double its original size, whichever is larger."
+  ^ minimum + startIndex + 10 max: 2 * array size
+
 ! ensureCapacity: targetIndex
   array size < targetIndex ifTrue: [
     | arr |
-    "The array grows to at least 10 longer than the requested total, and
-    to at least double its original size, whichever is larger."
-    arr := Array new: (
-      targetIndex + startIndex + 10 max: 2 * array size).
+    arr := Array new: (self privNextSize: targetIndex).
     startIndex to: finalIndex do: [:ix |
       arr at: ix put: (array at: ix)].
     array := arr]
@@ -377,6 +384,93 @@ ArrayedCollection subclass: #OrderedCollection
   self removeIndex: ix.
   ^ removed
 
+! after: anObject
+  | ix |
+  ix := self indexOf: anObject ifAbsent: [self errorNotFound: anObject].
+  ^ self at: ix + 1
+
+! before: anObject
+  | ix |
+  ix := self indexOf: anObject ifAbsent: [self errorNotFound: anObject].
+  ^ self at: ix - 1
+
+! add: newObject after: oldObject
+  | index |
+  index := self indexOf: oldObject ifAbsent: [self errorNotFound: oldObject].
+  index + 1 to: self size do: [:ix |
+    self at: ix + 1 put: (self at: ix)].
+  self at: index + 1 put: newObject.
+  ^ newObject
+
+! add: newObject before: oldObject
+  | index |
+  index := self indexOf: oldObject ifAbsent: [self errorNotFound: oldObject].
+  index = 1 ifTrue: [^ self addFirst: newObject].
+  self size to: index by: -1 do: [:ix |
+    self at: ix + 1 put: (self at: ix)].
+  self at: index put: newObject.
+  ^ newObject
+
+! addFirst: anObject
+  | dst |
+  startIndex > 1 ifTrue: [
+    startIndex := startIndex - 1.
+    array at: startIndex put: anObject.
+    ^ anObject].
+
+  dst := Array new: self capacity + 8.
+  dst at: 4 put: anObject.
+  dst replaceFrom: 5 to: self size + 4 with: self startingAt: 1.
+  array := dst.
+  finalIndex := self size + 4.
+  startIndex := 4.
+  ^ anObject
+
+! addAllFirst: aSequenceableCollection
+  "If there's room for the collection before startIndex, just addFirst: them
+  all in reverse order. If not, this is a lot more efficient as a concat of the
+  two lists into a new inner array."
+  | newArray touch |
+  startIndex > aSequenceableCollection size ifTrue: [
+    aSequenceableCollection reverseDo: [:each | self addFirst: each].
+    ^ aSequenceableCollection].
+
+  newArray := Array new: self capacity + aSequenceableCollection size.
+  "This is the first index of the original self."
+  touch := startIndex + aSequenceableCollection size.
+  newArray replaceFrom: startIndex
+    to: touch - 1
+    with: aSequenceableCollection.
+  newArray replaceFrom: touch
+    to: touch + self size - 1
+    with: array
+    startingAt: startIndex.
+
+  "StartIndex doesn't change."
+  finalIndex := finalIndex + aSequenceableCollection size.
+  array := newArray.
+  ^ aSequenceableCollection
+
+! addAllLast: aSequenceableCollection
+  ^ self addAll: aSequenceableCollection
+
+! removeFirst
+  | oldObject |
+  self isEmpty ifTrue: [self errorNotFound: 1].
+  oldObject := array at: startIndex.
+  array at: startIndex put: nil. "Drop the reference for GC!"
+  startIndex := startIndex + 1.
+  ^ oldObject
+
+! removeLast
+  | oldObject |
+  self isEmpty ifTrue: [self errorNotFound: 1].
+  oldObject := array at: finalIndex.
+  array at: finalIndex put: nil. "Drop the reference for GC!"
+  finalIndex := finalIndex - 1.
+  ^ oldObject
+
+
 ! size
   ^ finalIndex - startIndex + 1
 
@@ -385,5 +479,105 @@ ArrayedCollection subclass: #OrderedCollection
 !!
 
 
-"TODO: SortedCollection and asSortedCollection"
+
+OrderedCollection subclass: #SortedCollection
+  instanceVariableNames: 'sortBlock'.
+
+! SortedCollection class
+! sortBlock: aBinaryBlock
+  ^ SortedCollection new sortBlock: aBinaryBlock; yourself
+!!
+
+! SortedCollection
+"Ban all the index-specific writes."
+! at: anIndex put: aValue
+  self shouldNotImplement
+! addFirst: anObject
+  self shouldNotImplement
+! addLast: anObject
+  self shouldNotImplement
+! addAllFirst: aSequenceableCollection
+  self shouldNotImplement
+! addAllLast: aSequenceableCollection
+  self shouldNotImplement
+
+! initialize
+  super initialize.
+  sortBlock := [:a :b | a <= b]
+
+! sortBlock
+  ^ sortBlock
+
+! sortBlock: aBinaryBlock
+  sortBlock := aBinaryBlock.
+  array mergeSort: startIndex to: finalIndex on: sortBlock
+
+! privIndexFor: anObject
+  "Returns the INTERNAL index for the given object, based on our sortBlock."
+  "TODO: This can be a binary search for much better efficiency of lookup!"
+  startIndex to: finalIndex do: [:ix |
+    "Our target index is the leftmost one which sorts reversed."
+    (sortBlock value: anObject value: (array at: ix)) ifTrue: [^ix]].
+  "If we didn't return yet, it goes at the end."
+  ^ finalIndex + 1
+
+! add: anObject
+  | ix |
+  ix := self privIndexFor: anObject.
+  (ix = startIndex and: [startIndex > 1]) ifTrue: [
+    "Special case: it goes at the beginning, and there's room."
+    array at: (startIndex := startIndex - 1) put: anObject.
+    ^ anObject].
+  (ix > finalIndex and: [finalIndex < self capacity]) ifTrue: [
+    "Special case: it goes at the end, and there's room."
+    array at: (finalIndex := finalIndex + 1) put: anObject.
+    ^ anObject].
+
+  self size = self capacity ifTrue: [
+    "Special case: capacity currently filled, so we have to copy anyway.
+    It's more efficient to do this in chunks."
+    | newArray |
+    newArray := Array new: (self privNextSize: self size + 1).
+    "Copy the prefix, then suffix."
+    newArray replaceFrom: 4 to: ix + 2 "+ 3 - 1" with: array startingAt: startIndex.
+    newArray at: ix + 3 put: anObject.
+    newArray replaceFrom: ix + 4 to: self size + 3 with: array startingAt: ix.
+    array := newArray.
+    startIndex := 4.
+    finalIndex := self size + 4.
+    ^ anObject].
+
+  "If there's only room at one end, copy that way. If there's room at either
+  end, copy the shorter way."
+  (startIndex = 1 or: [ix - startIndex > (finalIndex - ix)]) ifTrue: [
+    self privMakeSpaceUpwardFrom: ix.
+    array at: ix put: anObject.
+    ^ anObject].
+
+  self privMakeSpaceDownwardFrom: ix.
+  array at: ix - 1 put: anObject.
+  ^ anObject
+
+! privMakeSpaceDownwardFrom: index
+  "index here is where the new item goes, so it's actually not being moved."
+  array replaceFrom: startIndex - 1 to: index - 2 with: array startingAt: startIndex.
+  startIndex := startIndex - 1
+
+! privMakeSpaceUpwardFrom: index
+  finalIndex to: index by: -1 do: [:ix |
+    array at: ix + 1 put: (array at: ix)].
+  finalIndex := finalIndex + 1
+
+! asSortedCollection
+  ^ self
+! asSortedCollection: aBinaryBlock
+  sortBlock == aBinaryBlock ifTrue: [^ self].
+  ^ self species new sortBlock: aBinaryBlock; addAll: self; yourself
+
+! sort
+  ^ self "Nothing to do; it's already sorted in-place."
+
+! sorted
+  ^ self copy
+!!
 

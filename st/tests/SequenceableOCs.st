@@ -206,18 +206,3 @@ TestCase subclass: #SequenceableCollectionOCs.
     raise: Error.
 !!
 
-
-Transcript show: (
-  ArithmeticBasics suite,
-  LogicBasics suite,
-  CollectionsGeneralArrays suite,
-  CollectionsGeneralSets suite,
-  CollectionsGeneralBags suite,
-  CollectionsGeneralDictionary suite,
-  CollectionsGeneralOrderedCollection suite,
-  DictionariesTests suite,
-  SequenceableCollectionArrays suite,
-  SequenceableCollectionOCs suite
-) run printString.
-
-99 halt.

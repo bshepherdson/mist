@@ -145,6 +145,8 @@ Object subclass: #Method instanceVariableNames: 'selector compiled theClass'.
   "Default to the printString representation."
   ^self printString
 
+! isCharacter
+  ^ false
 ! isLiteral
   ^ false
 ! shouldBePrintedAsLiteral
@@ -357,6 +359,16 @@ Object subclass: #Transcript.
 "Object subclass: #Number
   instanceVariableNames: 'raw'."
 
+! Magnitude
+! <= aNumber
+  ^ (aNumber < self) not
+! > aNumber
+  ^ aNumber < self
+! >= aNumber
+  ^ (self < aNumber) not
+!!
+
+
 ! Number
 ! = aValue
   "Subclasses should be handling this - if they've failed to, we come here."
@@ -491,6 +503,11 @@ Object subclass: #Transcript.
   ^ asciiValue
 ! isLiteral
   ^ true
+! isCharacter
+  ^ true
+! < aCharacter
+  aCharacter class == Character ifTrue: [^ asciiValue < aCharacter asciiValue].
+  ^ aCharacter >= self
 ! shouldBePrintedAsLiteral
   ^ asciiValue between: 33 and: 255
 ! printOn: aStream

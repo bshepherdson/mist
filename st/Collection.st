@@ -66,6 +66,11 @@ Error subclass: #NotFound
   ^ Bag new addAll: self; yourself
 ! asOrderedCollection
   ^ OrderedCollection new addAll: self; yourself
+! asSortedCollection
+  ^ SortedCollection new addAll: self; yourself
+! asSortedCollection: aBinaryBlock
+  ^ (SortedCollection sortBlock: aBinaryBlock) addAll: self; yourself
+
 
 ! capacity
   ^ self size

@@ -6,7 +6,7 @@ import {insert, mkDict} from './dict';
 import {
   ptr, Format,
   CLS_BOOLEAN, CLS_TRUE, CLS_FALSE,
-  CLS_CONTEXT, CLS_BLOCK_CLOSURE,
+  CLS_CONTEXT, CLS_BLOCK_CLOSURE, CLS_MAGNITUDE,
   CLS_ARRAY, CLS_CHARACTER, CLS_PROCESS, CLS_PROCESS_TABLE, CLS_OBJECT,
   CTX_PC, CTX_STACK_INDEX, CTX_METHOD, CTX_LOCALS, CTX_SENDER,
   MA_TRUE, MA_FALSE, MA_CLASS_DICT, MA_NIL,
@@ -61,7 +61,8 @@ const false_ = defClass(CLS_FALSE, 'False', bool, 0);
 mkInstance(true_, undefined, (_) => MA_TRUE);
 mkInstance(false_, undefined, (_) => MA_FALSE);
 
-const chr = defClass(CLS_CHARACTER, 'Character', object, 1, 1);
+const chr = defClass(CLS_CHARACTER, 'Character',
+    read(classTable(CLS_MAGNITUDE)), 1, 1);
 const charTable = mkInstance(read(classTable(CLS_ARRAY)), 256);
 writeIV(chr, CLASS_VAR1, charTable);
 
