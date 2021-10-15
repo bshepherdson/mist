@@ -24,25 +24,3 @@ TestCase subclass: #SortedCollectionTests.
   self assert: sc asArray equals: {9. 7. 5. 4. 3. 1}.
 !!
 
-"START HERE: More tests for SortedCollections?
-If not, LinkedList and Interval."
-
-
-Transcript show: (
-  ArithmeticBasics suite,
-  LogicBasics suite,
-  CollectionsGeneralArrays suite,
-  CollectionsGeneralSets suite,
-  CollectionsGeneralBags suite,
-  CollectionsGeneralDictionary suite,
-  CollectionsGeneralOrderedCollection suite,
-  CollectionsGeneralLinkedList suite,
-  CollectionsGeneralInterval suite,
-  DictionariesTests suite,
-  SequenceableCollectionArrays suite,
-  SequenceableCollectionOCs suite,
-  OrderedCollectionTests suite,
-  SortedCollectionTests suite
-) run printString.
-
-99 halt.

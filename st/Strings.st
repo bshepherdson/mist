@@ -14,8 +14,14 @@
 
 ! asString
   ^self
+! printOn: aStream
+  aStream nextPut: $'.
+  self putOn: aStream.
+  aStream nextPut: $'
+
 ! printString
   ^ '''' , self , ''''
+
 ! putOn: aStream
   aStream nextPutAll: self
 !!

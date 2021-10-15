@@ -378,11 +378,46 @@ Object subclass: #Transcript.
   ^ (self bitAnd: 1) == 0
 ! odd
   ^ (self bitAnd: 1) == 1
+
+! sign
+  ^ self < 0 ifTrue: [-1] ifFalse: [1]
+
+! abs
+  ^ self < 0 ifTrue: [self negated] ifFalse: [self]
+
+! negated
+  ^0 - self
+! min: aNumber
+  ^ self < aNumber ifTrue: [self] ifFalse: [aNumber]
+! max: aNumber
+  ^ self < aNumber ifTrue: [aNumber] ifFalse: [self]
+! between: lo and: hi
+  ^ self >= lo and: [self <= hi]
+
+"Superclass numbers - if we've gotten here then convert everything to fractions,
+they're the most flexible."
+! + aNumber
+  ^ self asFraction + aNumber asFraction
+! - aNumber
+  ^ self asFraction - aNumber asFraction
+! * aNumber
+  ^ self asFraction * aNumber asFraction
+! / aNumber
+  ^ self asFraction / aNumber asFraction
+! < aNumber
+  ^ self asFraction < aNumber asFraction
 !!
 
 ! Integer
 ! isLiteral
   ^ true
+
+"! / aNumber
+  ^ (aNumber isKindOf: Fraction)
+    ifTrue: [Fraction numerator: self * aNumber denominator
+        denominator: aNumber numerator]
+    ifFalse: [Fraction numerator: self denominator: aNumber]
+"
 !!
 
 ! SmallInteger
@@ -440,12 +475,6 @@ Object subclass: #Transcript.
 ! hash
   ^ self
 
-! negated
-  ^0 - self
-! min: aNumber
-  ^ self < aNumber ifTrue: [self] ifFalse: [aNumber]
-! max: aNumber
-  ^ self < aNumber ifTrue: [aNumber] ifFalse: [self]
 ! to: end do: aBlock
   | index |
   index := self.
@@ -471,9 +500,6 @@ Object subclass: #Transcript.
   [index > 0] whileTrue:
       [aBlock cull: index.
       index := index - 1]
-! between: lo and: hi
-  ^ self >= lo and: [self <= hi]
-
 ! printString
   <primitive: 42>
 ! printOn: aStream
