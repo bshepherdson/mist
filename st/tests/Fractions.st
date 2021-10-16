@@ -96,7 +96,21 @@ TestCase subclass: #FractionsTests.
 !!
 
 
-Transcript show: (
+
+
+Object subclass: #GCStressor instanceVariableNames: 'suite'.
+
+! GCStressor
+! suite: aTestSuite
+  suite := aTestSuite
+
+! runGCTimes: anInteger
+  anInteger timesRepeat: [
+    Transcript show: suite run printString]
+!!
+
+
+GCStressor new suite: (
   ArithmeticBasics suite,
   LogicBasics suite,
   CollectionsGeneralArrays suite,
@@ -112,6 +126,6 @@ Transcript show: (
   OrderedCollectionTests suite,
   SortedCollectionTests suite,
   FractionsTests suite
-) run printString.
+); runGCTimes: 1.
 
 99 halt.

@@ -79,35 +79,41 @@ export function readPC(ctx: ptr): stw {
 
 // Given a pointer to the current process, execute a single step of its
 // bytecode. This is the fundamental VM operation.
-export function tick(process: ptr) {
-  const ctx = readIV(process, PROCESS_CONTEXT);
-  const bc = readPC(ctx);
+export function tick() {
+  vm.ctx = readIV(vm.runningProcess, PROCESS_CONTEXT);
+
+  // DEBUG: This isn't needed.
+  //const pc = fromSmallInteger(readIV(vm.ctx, CTX_PC));
+  const bc = readPC(vm.ctx);
+  //console.log('PC ' + pc + ':  ' + bc.toString(16));
   // Executes a single bytecode!
-  execute(process, ctx, bc);
+  execute(bc);
 }
 
 // Given the ST pointer to a new context, makes it the top of this process.
 // ASSUMES the new context's sender is already set properly!
-export function pushContext(process: ptr, newContext: ptr) {
-  writeIV(process, PROCESS_CONTEXT, newContext);
+export function pushContext(newContext: ptr) {
+  writeIV(vm.runningProcess, PROCESS_CONTEXT, newContext);
+  vm.ctx = newContext;
 }
 
 // Pops a context off this process, making the sender of the old one the new
 // one for the process. If the sender is nil, this thread is expired and we can
 // remove this process from the process table.
-export function popContext(process: ptr, opt_ctx?: ptr): boolean {
-  const oldCtx = readIV(process, PROCESS_CONTEXT);
+export function popContext(opt_ctx?: ptr): boolean {
+  const oldCtx = readIV(vm.runningProcess, PROCESS_CONTEXT);
   const sender = opt_ctx || readIV(oldCtx, CTX_SENDER);
   if (sender != MA_NIL) {
-    writeIV(process, PROCESS_CONTEXT, sender);
+    vm.ctx = sender;
+    writeIV(vm.runningProcess, PROCESS_CONTEXT, sender);
     return true;
   }
 
   // If we're still here, this process needs removing from the table.
   // This is why processes form a doubly-linked list!
-  writeIV(process, PROCESS_CONTEXT, MA_NIL);
-  const prev = readIV(process, PROCESS_PREV);
-  const next = readIV(process, PROCESS_NEXT);
+  writeIV(vm.runningProcess, PROCESS_CONTEXT, MA_NIL);
+  const prev = readIV(vm.runningProcess, PROCESS_PREV);
+  const next = readIV(vm.runningProcess, PROCESS_NEXT);
   if (prev != MA_NIL) {
     writeIV(prev, PROCESS_NEXT, next);
   }
@@ -118,13 +124,14 @@ export function popContext(process: ptr, opt_ctx?: ptr): boolean {
   // If either of those is nil, both should be, since the list is circular.
   // Either way, it's correct to make next the head of the process table's ready
   // list.
-  const pt = readIV(process, PROCESS_PROCESS_TABLE);
+  const pt = readIV(vm.runningProcess, PROCESS_PROCESS_TABLE);
   // Only replace the READY process if it was me!
   // This is because the driver hand-rolls threads.
-  if (readIV(pt, PROCESS_TABLE_READY) === process) {
+  if (readIV(pt, PROCESS_TABLE_READY) === vm.runningProcess) {
     // This process is dying, so if it was the last one in the circular list,
     // just store nil.
-    writeIV(pt, PROCESS_TABLE_READY, process === next ? MA_NIL : next);
+    vm.runningProcess = vm.runningProcess === next ? MA_NIL : next;
+    writeIV(pt, PROCESS_TABLE_READY, vm.runningProcess);
   }
   return false;
 }

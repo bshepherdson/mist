@@ -24,6 +24,7 @@
 export const vm = {
   processTable: 0,
   runningProcess: 0,
+  ctx: 0,
   allocationPointer: 0,
   nextIdentityHash: 0,
   nextClass: 0,

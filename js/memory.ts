@@ -89,6 +89,7 @@ export const CLS_CLASS = nextClass();
 export const CLS_METACLASS = nextClass();
 export const CLS_UNDEFINED_OBJECT = nextClass();
 
+// Class index: 7
 export const CLS_COLLECTION = nextClass();
 export const CLS_SEQUENCEABLE_COLLECTION = nextClass();
 export const CLS_ARRAYED_COLLECTION = nextClass();
@@ -99,14 +100,17 @@ export const CLS_HASHED_COLLECTION = nextClass();
 export const CLS_DICTIONARY = nextClass();
 export const CLS_IDENTITY_DICTIONARY = nextClass();
 
+// Class index 16:
 export const CLS_CONTEXT = nextClass();
 export const CLS_COMPILED_METHOD = nextClass();
 export const CLS_BLOCK_CLOSURE = nextClass();
 
+// Class index 19:
 export const CLS_BOOLEAN = nextClass();
 export const CLS_TRUE = nextClass();
 export const CLS_FALSE = nextClass();
 
+// Class index 22:
 export const CLS_MAGNITUDE = nextClass();
 export const CLS_CHARACTER = nextClass();
 export const CLS_NUMBER = nextClass();
@@ -114,6 +118,7 @@ export const CLS_INTEGER = nextClass();
 export const CLS_SMALL_INTEGER = nextClass();
 export const CLS_ASSOCIATION = nextClass();
 
+// Class index 28:
 export const CLS_WORD_ARRAY = nextClass();
 export const CLS_PROCESS = nextClass();
 export const CLS_PROCESS_TABLE = nextClass();
@@ -250,47 +255,62 @@ export enum Format {
 //   iv: [count, ptr to first]  count in pointers
 //   pa: [count, ptr to first]  count in pointers
 //   wa: [count, ptr to first]  count in words
+//   start: the absolute starting pointer, which might be before p.
+//   length: the length in words from start to the end.
 // }
 // but these values will be missing if they're not relevant.
 interface header {
   pa?: [number, ptr];
   wa?: [number, ptr];
   iv?: [number, ptr];
+  start: ptr;
+  length: number;
 }
 
 function decodeHeader(p: ptr): header {
   let size = readWord(p) >>> 8;
+  let varSize: number;
   const fmt = format(p);
   switch (fmt) {
     case Format.ZERO:
-      return {};
+      return {start: p, length: 4};
     case Format.VARIABLE_IV:
-      const varSize = read(p - 2);
+      varSize = read(p - 2);
       return {
         iv: [size, p + 4],
         pa: [varSize, p + 4 + 2 * size],
+        start: p - 4,
+        length: (size + varSize) * 2 + 8,
       };
     case Format.VARIABLE:
+      varSize = size === 255 ? read(p - 2) : size;
       return {
-        pa: [
-          size === 255 ? read(p - 2) : size,
-          p + 4,
-        ],
+        pa: [varSize, p + 4],
+        start: size === 255 ? p - 4 : p,
+        length: varSize * 2 + (size === 255 ? 8 : 4),
       };
     case Format.FIXED_IV:
+      const ivs = size === 255 ? read(p + 4) : size;
       return {
-        iv: [size === 255 ? read(p + 4) : size, p + 4],
+        iv: [ivs, p + 4],
+        start: size === 255 ? p - 4 : p,
+        length: ivs * 2 + (size === 255 ? 8 : 4),
       };
     case Format.WORDS_ODD:
     case Format.WORDS_EVEN:
+      let start = p;
+      let length = size*2 + 4;
       const ret: [number, ptr] = [2*size, p + 4];
       if (size === 255) {
         ret[0] = read(p - 2) * 2;
+        length = ret[0] + 8;
+        start -= 4;
       }
       if (fmt === Format.WORDS_ODD) {
         ret[0]--; // Odd means the last slot isn't filled.
+        length--;
       }
-      return {wa: ret};
+      return {wa: ret, start, length};
     default:
       throw new Error('Don\'t know how to decode header format ' + fmt);
   }
@@ -417,9 +437,14 @@ export function pop(ctx: ptr): stl {
   return value;
 }
 
-export function peek(ctx: ptr): stl {
+export function peek(ctx: ptr, nesting = 0): stl {
   const sp = fromSmallInteger(readIV(ctx, CTX_STACK_INDEX));
-  return readArray(ctx, sp - 1);
+  return readArray(ctx, sp - 1 - (2*nesting));
+}
+
+export function adjustSP(ctx: ptr, deltaSlots: number) {
+  const sp = fromSmallInteger(readIV(ctx, CTX_STACK_INDEX));
+  writeIVNew(ctx, CTX_STACK_INDEX, toSmallInteger(sp - 2*deltaSlots));
 }
 
 
@@ -431,7 +456,8 @@ export function peek(ctx: ptr): stl {
 export function alloc(size: number): ptr {
   const p = (vm.allocationPointer - size) & ~1;
   if (p < MEM_EDEN_BASE) {
-    throw new Error('Minor GC needed but not implemented!');
+    minorGC();
+    return alloc(size); // Recursively alloc after the GC.
   }
   vm.allocationPointer = p;
   return p;
@@ -611,13 +637,25 @@ export function checkOldToNew(p: ptr, target: ptr) {
   const isOld = p < MEM_EDEN_BASE;
   const isNew = target >= MEM_EDEN_BASE;
   if (isOld && isNew) {
-    // We store these records as Associations, which are 2-element arrays.
-    const link = mkInstance(read(classTable(CLS_ASSOCIATION)), 2);
+    // We store these records as Associations, which have 2 IVs.
+    const link = mkInstance(read(classTable(CLS_ASSOCIATION)));
     const head = read(MA_ESCAPED_HEAD);
-    writeArrayNew(link, 0, p);
-    writeArrayNew(link, 1, head);
+    writeIV(link, ASSOC_KEY, p);
+    writeIV(link, ASSOC_VALUE, head);
     write(MA_ESCAPED_HEAD, link);
   }
+}
+
+// Copies an object from src to dst. Returns the total length in words copied,
+// and a possibly-adjusted destination pointer. This allows for copying objects
+// with extra length words.
+function copyObject(src: ptr, dst: ptr): [ptr, number] {
+  const hdr = decodeHeader(src);
+  for (let i = 0; i < hdr.length; i++) {
+    writeWord(dst + i, readWord(hdr.start + i));
+  }
+
+  return [src === hdr.start ? dst : dst + 4, hdr.length];
 }
 
 // Given a pointer to a variable-sized object, return the length of its variable
@@ -625,7 +663,7 @@ export function checkOldToNew(p: ptr, target: ptr) {
 export function arraySize(p: ptr): number {
   const hdr = decodeHeader(p);
   if (hdr.pa) return hdr.pa[0];
-  if (Object.keys(hdr).length === 0) return 0; // Special case: 0-length array
+  if (!hdr.wa && !hdr.iv) return 0; // Special case: 0-length array
   throw new Error('Cannot take the array size of a non-array object');
 }
 
@@ -731,6 +769,11 @@ export function className(cls: ptr): string {
   return asJSString(readIV(cls, CLASS_NAME));
 }
 
+export function edenFreeSpaceRatio(): number {
+  return (vm.allocationPointer - MEM_EDEN_BASE) /
+      (MEM_EDEN_TOP - MEM_EDEN_BASE);
+}
+
 
 // Initialization
 // This sets up some key values in the special area.
@@ -744,4 +787,206 @@ write(MA_NEXT_CLASS_INDEX, nextClass_);
 write(MA_ESCAPED_HEAD, MA_NIL);
 
 vm.allocationPointer = MEM_EDEN_TOP;
+
+
+
+// GC system!
+
+// The space is divided into four unequal regions: Tenured, G1, G2 and Eden.
+// Currently the scheme divides the available memory into 4MW chunks, and to
+// make Tenured, G1 and G2 each 4MW. The rest of the space (eg. 42MW in a 64MW
+// address space) is Eden.
+//
+// - Tenured is permanent, never collected. (For now, eventually it could be
+//   subject to mark-and-sweep for a long-running ST image.)
+// - G1 and G2 are the old gen and new gen, whose roles swap during major
+//   collections.
+// - Eden is the new space where objects are allocated. It grows downward, which
+//   is handy for checking whether we've overrun because we have a pointer to
+//   the head of an object to compare directly against the minimum.
+//
+// Minor collections happen when we want to allocate something but there's not
+// enough room in the Eden for it.
+//
+// - Shelve the in-progress allocation by saving registers.
+// - Scan the GC roots (see below) for pointers into Eden. All reachable Eden
+//   values get copied into new gen (one of G1 and G2).
+// - Deep scan of the linked list of pointers-of-interest. These are pointers
+//   from old spaces (non-Eden) into Eden. They point **at the source in old
+//   space**, so it can be updated proprly.
+//   - If the source pointer no longer points into Eden, we can just drop this
+//     entry from the chain.
+//   - Surviving links in Eden get (re)allocated in new gen.
+//
+// GC roots:
+// - Class table
+// - Linked list of oldspace pointers.
+// - Active processes and their contexts.
+
+
+
+// These are internal to the GC process, and treated as registers.
+// They don't need to be saved into the memory proper, since they aren't used
+// outside the (atomic) GC operations.
+let scan, next: ptr;
+
+// The fixed memory regions are called G1 and G2. "Old" and "new" generations
+// get swapped around, so they have pointers. A minor GC allocates to the tail
+// end of the new gen.
+// TODO What happens if it doesn't fit? Can we swap to a major collection on the
+// fly? Or do we just cross our fingers and set a generous major GC fullness
+// threshold? I'm running with the latter for now.
+function minorGC() {
+  console.time('minor GC');
+  scan = next = read(MA_NEW_GEN_ALLOC); // The lowest free word of new space.
+  const __start = scan;
+
+  // Run through all the root pointers and copy them into the new space.
+  const classTop = read(MA_NEXT_CLASS_INDEX); // A raw number, not SmallInteger.
+  for (let i = 0; i < classTop; i++) {
+    const cls = classTable(i);
+    write(cls, forward(read(cls)));
+  }
+
+  // And the process table (which includes all recursively-reachable objects).
+  vm.processTable = forward(vm.processTable);
+
+  // And the chain of (possible) old->new pointers.
+  let chain = read(MA_ESCAPED_HEAD);
+  while (chain != MA_NIL) {
+    // The key (first cell) holds the non-Eden pointer that (at one time)
+    // pointed to Eden. We check if it still does, and if so we forward it.
+    // Either way, this Association is no longer needed.
+    const p = readIV(chain, ASSOC_KEY); // Old space pointer!
+    const atP = read(p); // Pointer stored there, possible aimed at Eden.
+    if (p < MEM_EDEN_BASE && atP >= MEM_EDEN_BASE) {
+      write(p, forward(atP));
+    }
+    // If p is in Eden, it's either garbage and can be ignored, or it's not and
+    // both p and atP will get copied.
+    // If atP has changed to be no longer in Eden, there's nothing to do either.
+    // Either way, the chain can be discarded.
+    chain = readIV(chain, ASSOC_VALUE);
+  }
+
+  // Now the queue is populated with all the roots. We can proceed with the
+  // breadth-first search. SCAN chases NEXT until it catches up.
+  while (scan !== next) {
+    // Scan points at the start of an object's record. It might have a long
+    // size, in which case this first word has 0xff00 in it.
+    if (readWord(scan) === 0xff00) {
+      scan += 4;
+    }
+
+    const hdr = decodeHeader(scan);
+    scan += 4; // Pointing at either the next scan or the first field.
+    if (hdr.iv) {
+      scan += hdr.iv[0] * 2;
+      forwardArray(hdr.iv[1], hdr.iv[0]);
+    }
+    if (hdr.pa) {
+      scan += hdr.pa[0] * 2;
+      forwardArray(hdr.pa[1], hdr.pa[0]);
+    }
+    if (hdr.wa) {
+      scan += (hdr.wa[0] + 1) & ~1; // Rounding up to keep it aligned.
+      // Word arrays don't need to be copied, just skipped over.
+    }
+    // Scan now points at the next object in the queue.
+  }
+
+  // Should already have been copied, just grabbing the forwarded value.
+  vm.runningProcess = forward(vm.runningProcess);
+
+  // GC complete! We're ready to start allocating into the Eden again.
+  write(MA_NEW_GEN_ALLOC, next);
+  vm.allocationPointer = MEM_EDEN_TOP;
+  console.timeEnd('minor GC');
+  console.log('copied ' + (next - __start) + ' words. NewGen at ' +
+      ((next - read(MA_NEW_GEN_START)) / (MEM_G2_TOP-MEM_G1_TOP)));
+}
+
+function forwardArray(array: ptr, count: number) {
+  for (let i = 0; i < count; i++) {
+    const x = read(array + 2*i);
+    if (!isSmallInteger(x)) {
+      write(array + 2*i, forward(x));
+    }
+  }
+}
+
+
+// Copy process
+// ============
+//
+// The copy uses the values copied into the new space as the queue for a
+// breadth-first search.
+//
+// We define two pointers: scan and next, which start at the beginning of the
+// new space. (Remember, old space is any non-Eden area; new space is the
+// generation we're copying into right now.)
+//
+// For each root pointer R, we perform the following steps, replacing R by
+// forward(R):
+// forward(R) =
+//   if R points into the Eden:
+//     if the header at [R] is already redirected (see below):
+//       return [R], since it's already forwarded.
+//     else:
+//       copy the record pointed to by R to NEXT
+//       assign NEXT into [R] and -1 into [R+2].
+//       increment NEXT to point past the copy of the record.
+//       return [R] (the old NEXT)
+//   else:
+//     return R (this pointer doesn't need to change)
+//
+// After forward() is applied to each root pointer, populating the BFS queue,
+// we start scanning that queue and recursively copying all reachable values.
+// The SCAN pointer is successively incremented over new space, and forward() is
+// applied to each pointer in it. That may of course copy more records, moving
+// NEXT. When SCAN catches up with NEXT, the copy is complete.
+//
+// Advancing SCAN needs to be smart for a few reasons:
+// - It has to handle objects with IVs, pointer arrays, and word arrays.
+// - It has to handle the length overflow words.
+//
+// Redirection:
+// Old values in the Eden get defaced by the forward() process to point to where
+// they can be found in the new space. Its header long [p] becomes the
+// redirection pointer, and its second word is all 1s to signal it's been
+// redirected. (This is impossible to confuse for a regular object since the GC
+// field in the upper 8 bits is never otherwise ff.)
+function forward(p: ptr): ptr {
+  if (p < MEM_EDEN_BASE) return p; // No need to change!
+
+  // Already redirected
+  const redirected = (readWord(p + 2) & 0xff00) == 0xff00;
+  if (redirected) return read(p);
+
+  // Needs redirecting.
+  const [dst, len] = copyObject(p, next); // dst might be next + 4 for long objs
+
+  // DEBUG: Remove me later.
+  if (dst !== next) {
+    console.log('sanity check', p, decodeHeader(p), next, dst, len);
+    console.log([p-4, p-2, p, p+2].map(x => hexPad(read(x))).join(' '));
+    console.log([dst-4, dst-2, dst, dst+2].map(x => hexPad(read(x))).join(' '));
+    console.log([next, next+2, next+4, next+6].map(x => hexPad(read(x))).join(' '));
+  }
+
+  write(p, dst);
+  write(p+2, -1);
+  next = (next + len + 1) & ~1; // Rounding up for alignment.
+  return dst;
+}
+
+const HEX_DIGITS = '0123456789abcdef';
+
+function hexPad(x: number): string {
+  const hex = [];
+  for (let i = 0; i < 8; i++) {
+    hex[i] = HEX_DIGITS[(x >>> ((7-i)*4)) & 0xf];
+  }
+  return hex.join('');
+}
 

@@ -227,8 +227,8 @@ references to new objects in old spaces. This is a vital GC root.
 
 ### GC roots
 
-The only GC roots are the VM threads' contexts, and the above "escaped pointer"
-list.
+The only GC roots are: the VM threads' contexts, the above "escaped pointer"
+list, and the class table.
 
 ### Minor GC
 
@@ -255,6 +255,9 @@ survivors continue to survive.
 This operation is the one that increments the `gggg` field in the header of all
 the objects (it's initially 0).
 That field is a counter used to decide on tenuring.
+
+**NB:** The `gggg` field can count to a max of 14/`$e`. It can't be `$f` since
+that value is used to signal redirection in the garbage collector.
 
 ### Tenuring
 

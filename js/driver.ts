@@ -97,9 +97,10 @@ export class Driver {
           writeIV(ctx, CTX_LOCALS, mkInstance(read(classTable(CLS_ARRAY)), 16));
         }
         const proc = fork(ctx);
+        vm.runningProcess = proc;
 
         while (readIV(proc, PROCESS_CONTEXT) !== MA_NIL) {
-          tick(proc);
+          tick();
         }
         break;
       default:
