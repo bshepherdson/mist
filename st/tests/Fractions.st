@@ -126,6 +126,6 @@ GCStressor new suite: (
   OrderedCollectionTests suite,
   SortedCollectionTests suite,
   FractionsTests suite
-); runGCTimes: 1.
+); runGCTimes: 4.
 
 99 halt.

@@ -897,6 +897,8 @@ function minorGC() {
 
   // Should already have been copied, just grabbing the forwarded value.
   vm.runningProcess = forward(vm.runningProcess);
+  vm.ctx = forward(vm.ctx);
+  // processTable was already done above.
 
   // GC complete! We're ready to start allocating into the Eden again.
   write(MA_NEW_GEN_ALLOC, next);
