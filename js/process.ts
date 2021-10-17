@@ -8,7 +8,8 @@ import {
   MA_NIL,
   methodFor, classTable, mkInstance,
   fromSmallInteger, toSmallInteger,
-  read, readWordArray, readIV, writeIV,
+  read, readWordArray, readIV, writeIV, writeIVNew,
+  gcTemps, gcRelease, seq,
 } from './memory';
 import {execute} from './bytecodes';
 import {vm} from './vm';
@@ -93,8 +94,8 @@ export function tick() {
 // Given the ST pointer to a new context, makes it the top of this process.
 // ASSUMES the new context's sender is already set properly!
 export function pushContext(newContext: ptr) {
-  writeIV(vm.runningProcess, PROCESS_CONTEXT, newContext);
   vm.ctx = newContext;
+  writeIV(vm.runningProcess, PROCESS_CONTEXT, vm.ctx);
 }
 
 // Pops a context off this process, making the sender of the old one the new
@@ -111,50 +112,59 @@ export function popContext(opt_ctx?: ptr): boolean {
 
   // If we're still here, this process needs removing from the table.
   // This is why processes form a doubly-linked list!
-  writeIV(vm.runningProcess, PROCESS_CONTEXT, MA_NIL);
-  const prev = readIV(vm.runningProcess, PROCESS_PREV);
-  const next = readIV(vm.runningProcess, PROCESS_NEXT);
-  if (prev != MA_NIL) {
-    writeIV(prev, PROCESS_NEXT, next);
+  writeIVNew(vm.runningProcess, PROCESS_CONTEXT, MA_NIL);
+  const [v_pt, v_prev, v_next] = seq(3);
+  const ptrs = gcTemps(3);
+  ptrs[v_prev] = readIV(vm.runningProcess, PROCESS_PREV);
+  ptrs[v_next] = readIV(vm.runningProcess, PROCESS_NEXT);
+  if (ptrs[v_prev] != MA_NIL) {
+    writeIV(ptrs[v_prev], PROCESS_NEXT, ptrs[v_next]);
   }
-  if (next != MA_NIL) {
-    writeIV(next, PROCESS_PREV, prev);
+  if (ptrs[v_next] != MA_NIL) {
+    writeIV(ptrs[v_next], PROCESS_PREV, ptrs[v_prev]);
   }
 
   // If either of those is nil, both should be, since the list is circular.
   // Either way, it's correct to make next the head of the process table's ready
   // list.
-  const pt = readIV(vm.runningProcess, PROCESS_PROCESS_TABLE);
+  ptrs[v_pt] = readIV(vm.runningProcess, PROCESS_PROCESS_TABLE);
   // Only replace the READY process if it was me!
   // This is because the driver hand-rolls threads.
-  if (readIV(pt, PROCESS_TABLE_READY) === vm.runningProcess) {
+  if (readIV(ptrs[v_pt], PROCESS_TABLE_READY) === vm.runningProcess) {
     // This process is dying, so if it was the last one in the circular list,
     // just store nil.
-    vm.runningProcess = vm.runningProcess === next ? MA_NIL : next;
-    writeIV(pt, PROCESS_TABLE_READY, vm.runningProcess);
+    vm.runningProcess = vm.runningProcess === ptrs[v_next] ?
+        MA_NIL : ptrs[v_next];
+    writeIV(ptrs[v_pt], PROCESS_TABLE_READY, vm.runningProcess);
   }
+  gcRelease(ptrs);
   return false;
 }
 
 // Adds this context as the root of a new user-priority thread.
 // Returns the new Process.
 export function fork(ctx: ptr): ptr {
-  let pt = readIV(vm.processTable, PROCESS_TABLE_NEXT_PRIORITY);
-  pt = readIV(pt, PROCESS_TABLE_NEXT_PRIORITY);
-  const proc = mkInstance(read(classTable(CLS_PROCESS)));
-  writeIV(proc, PROCESS_CONTEXT, ctx);
-  writeIV(proc, PROCESS_PROCESS_TABLE, pt);
-  const head = readIV(pt, PROCESS_TABLE_READY);
-  if (head == MA_NIL) {
-    writeIV(proc, PROCESS_NEXT, proc);
-    writeIV(proc, PROCESS_PREV, proc);
+  const [v_pt, v_proc, v_ctx, v_head, v_prev] = seq(5);
+  const ptrs = gcTemps(5);
+  ptrs[v_ctx] = ctx;
+  ptrs[v_pt] = readIV(vm.processTable, PROCESS_TABLE_NEXT_PRIORITY);
+  ptrs[v_pt] = readIV(ptrs[v_pt], PROCESS_TABLE_NEXT_PRIORITY);
+  ptrs[v_proc] = mkInstance(read(classTable(CLS_PROCESS)));
+  writeIVNew(ptrs[v_proc], PROCESS_CONTEXT, ptrs[v_ctx]);
+  writeIVNew(ptrs[v_proc], PROCESS_PROCESS_TABLE, ptrs[v_pt]);
+  ptrs[v_head] = readIV(ptrs[v_pt], PROCESS_TABLE_READY);
+  if (ptrs[v_head] == MA_NIL) {
+    writeIV(ptrs[v_proc], PROCESS_NEXT, ptrs[v_proc]);
+    writeIV(ptrs[v_proc], PROCESS_PREV, ptrs[v_proc]);
   } else {
-    const prev = readIV(head, PROCESS_PREV);
-    writeIV(proc, PROCESS_NEXT, head);
-    writeIV(head, PROCESS_PREV, proc);
-    writeIV(prev, PROCESS_NEXT, proc);
+    ptrs[v_prev] = readIV(ptrs[v_head], PROCESS_PREV);
+    writeIV(ptrs[v_proc], PROCESS_NEXT, ptrs[v_head]);
+    writeIV(ptrs[v_head], PROCESS_PREV, ptrs[v_proc]);
+    writeIV(ptrs[v_prev], PROCESS_NEXT, ptrs[v_proc]);
   }
-  writeIV(pt, PROCESS_TABLE_READY, proc);
+  writeIV(ptrs[v_pt], PROCESS_TABLE_READY, ptrs[v_proc]);
+  const proc = ptrs[v_proc];
+  gcRelease(ptrs);
   return proc;
 }
 

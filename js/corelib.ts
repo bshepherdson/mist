@@ -15,6 +15,7 @@ import {
   basicNew, classOf, classTable, mkInstance,
   fromSmallInteger, toSmallInteger, wrapSymbol,
   read, readIV, write, writeIV, writeIVNew, writeArrayNew,
+  gcTemps, gcRelease, seq,
 } from './memory';
 import {vm} from './vm';
 
@@ -87,13 +88,20 @@ for (let i = 0; i < 256; i++) {
 
 // Tricky to initialize these, so capturing it in a function.
 export function newContext(method: ptr, sender: ptr, locals: ptr, opt_hasPrimitive = false): ptr {
-  const ctx = mkInstance(read(classTable(CLS_CONTEXT)), 19);
-  writeIV(ctx, CTX_PC, toSmallInteger(opt_hasPrimitive ? 1 : 0));
-  writeIV(ctx, CTX_STACK_INDEX, toSmallInteger(0));
-  writeIV(ctx, CTX_METHOD, method);
-  writeIV(ctx, CTX_LOCALS, locals);
-  writeIV(ctx, CTX_SENDER, sender);
+  const [v_method, v_sender, v_locals, v_ctx] = seq(4);
+  const ptrs = gcTemps(4);
+  ptrs[v_method] = method;
+  ptrs[v_sender] = sender;
+  ptrs[v_locals] = locals;
+
+  ptrs[v_ctx] = mkInstance(read(classTable(CLS_CONTEXT)), 19);
+  writeIV(ptrs[v_ctx], CTX_PC, toSmallInteger(opt_hasPrimitive ? 1 : 0));
+  writeIV(ptrs[v_ctx], CTX_STACK_INDEX, toSmallInteger(0));
+  writeIV(ptrs[v_ctx], CTX_METHOD, ptrs[v_method]);
+  writeIV(ptrs[v_ctx], CTX_LOCALS, ptrs[v_locals]);
+  writeIV(ptrs[v_ctx], CTX_SENDER, ptrs[v_sender]);
+  const ctx = ptrs[v_ctx];
+  gcRelease(ptrs);
   return ctx;
 }
-
 

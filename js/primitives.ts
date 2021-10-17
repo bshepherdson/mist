@@ -16,6 +16,7 @@ import {
   read, readIV, readArray,
   write, writeIV, writeArray,
   readWordArray, writeWordArray, wordArraySize,
+  gcTemps, gcRelease, seq,
   wrapString,
 } from './memory';
 import {pushContext} from './process';
@@ -65,15 +66,16 @@ primitives[4] = function() {
 // Pop the right number of times to get at the selector, then pass it to
 // sendOp.
 function call(argc: number) {
-  const args = [];
+  const args = gcTemps(argc);
   for (let i = 0; i < argc; i++) {
-    args.push(pop(vm.ctx));
+    args[i] = pop(vm.ctx);
   }
   const selector = pop(vm.ctx);
   for (let i = 0; i < argc; i++) {
-    push(vm.ctx, args.pop()!);
+    push(vm.ctx, args[i]);
   }
   sendOp(argc, selector, false);
+  gcRelease(args);
 }
 
 //   5: perform:
@@ -104,13 +106,15 @@ primitives[8] = function() {
 primitives[9] = function() {
   // This one is special. The stack is (receiver selector argv).
   // Pop off the args array and selector, push all the args in order, and call.
-  const argv = pop(vm.ctx);
+  const ptrs = gcTemps(1); // argv
+  ptrs[0] = pop(vm.ctx);
   const selector = pop(vm.ctx);
-  const argc = arraySize(argv);
+  const argc = arraySize(ptrs[0]);
   for (let i = 0; i < argc; i++) {
-    push(vm.ctx, readArray(argv, i));
+    push(vm.ctx, readArray(ptrs[0], i));
   }
   sendOp(argc, selector, false);
+  gcRelease(ptrs);
   return true;
 };
 
@@ -153,36 +157,39 @@ function runBlock(argc: number) {
   // Stack is (block args...)
   // Allocating the context first, so we don't have values out of memory in argv
   // in case of a GC.
-  const newCtx = mkInstance(read(classTable(CLS_CONTEXT)), 19);
-  const argv = new Array(argc);
+  const ARGV = 4;
+  const [v_newCtx, v_outerCtx, v_locals, v_block] = seq(ARGV);
+  const ptrs = gcTemps(ARGV + argc); // newCtx, outerCtx, locals, block, args...
+  ptrs[v_newCtx] = mkInstance(read(classTable(CLS_CONTEXT)), 19);
   for (let i = argc - 1; i >= 0; i--) {
-    argv[i] = pop(vm.ctx);
+    ptrs[i + ARGV] = pop(vm.ctx);
   }
-  const block = pop(vm.ctx);
-  const argcWanted = fromSmallInteger(readIV(block, BLOCK_ARGC));
+  ptrs[v_block] = pop(vm.ctx);
+  const argcWanted = fromSmallInteger(readIV(ptrs[v_block], BLOCK_ARGC));
   if (argc !== argcWanted) {
     throw new BlockArgumentCountMismatchError(argcWanted, argc);
   }
 
-  const outerCtx = readIV(block, BLOCK_CONTEXT);
-  const locals = readIV(outerCtx, CTX_LOCALS);
+  ptrs[v_outerCtx] = readIV(ptrs[v_block], BLOCK_CONTEXT);
+  ptrs[v_locals] = readIV(ptrs[v_outerCtx], CTX_LOCALS);
 
   // These writes are safe because the mkInstance was the last alloc and so it's
   // gotta be in Eden.
-  writeIV(newCtx, CTX_PC, readIV(block, BLOCK_PC_START));
-  writeIV(newCtx, CTX_SENDER, vm.ctx);
-  writeIV(newCtx, CTX_METHOD, block);
-  writeIV(newCtx, CTX_STACK_INDEX, toSmallInteger(0));
-  writeIV(newCtx, CTX_LOCALS, locals);
+  writeIV(ptrs[v_newCtx], CTX_PC, readIV(ptrs[v_block], BLOCK_PC_START));
+  writeIV(ptrs[v_newCtx], CTX_SENDER, vm.ctx);
+  writeIV(ptrs[v_newCtx], CTX_METHOD, ptrs[v_block]);
+  writeIV(ptrs[v_newCtx], CTX_STACK_INDEX, toSmallInteger(0));
+  writeIV(ptrs[v_newCtx], CTX_LOCALS, ptrs[v_locals]);
 
-  const argvIndex = fromSmallInteger(readIV(block, BLOCK_ARGV));
+  const argvIndex = fromSmallInteger(readIV(ptrs[v_block], BLOCK_ARGV));
   for (let i = 0; i < argc; i++) {
-    writeArray(locals, argvIndex + i, argv[i]);
+    writeArray(ptrs[v_locals], argvIndex + i, ptrs[ARGV + i]);
   }
 
-  pushContext(newCtx); // Execute into the new stack frame.
-  // NB: Running a block consumes all the values off the stack; it will
-  // ultimately push the result of the block.
+  pushContext(ptrs[v_newCtx]); // Execute into the new stack frame.
+  gcRelease(ptrs);
+  // NB: Running a v_newCtxlock consumes all the values off the stack; it will
+  // ultimately pusv_newCtx the result of the block.
 }
 
 //  13: value
@@ -392,6 +399,8 @@ primitives[52] = function() {
 
 // 53: Character class>>value: - retrieves the Character instance for a
 // particular ASCII value.
+// TODO: This could be an array lookup on a class variable, once those are
+// sorted out.
 primitives[53] = function() {
   const num = fromSmallInteger(pop(vm.ctx));
   const asciiTable = readIV(read(classTable(CLS_CHARACTER)), CLASS_VAR1);

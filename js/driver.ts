@@ -12,6 +12,7 @@ import {
   read, readArray, readIV, readWordArray,
   wordArraySize, wrapString, wrapSymbol,
   writeArray, writeIV, writeWordArray,
+  gcTemps, gcRelease, seq,
 } from './memory';
 import {newContext} from './corelib';
 import {insert, lookup, printDict} from './dict';
@@ -82,24 +83,28 @@ export class Driver {
         break;
       case DRIVER_CMD_IMMEDIATE_CODE:
         // Create a pseudo-method to hold the literals, argc, etc.
-        const method = mkInstance(read(classTable(CLS_COMPILED_METHOD)));
-        writeIV(method, METHOD_BYTECODE, readArray(array, 1));
-        writeIV(method, METHOD_LITERALS, readArray(array, 2));
-        writeIV(method, METHOD_LOCALS, toSmallInteger(0));
-        writeIV(method, METHOD_ARGC, toSmallInteger(0));
+        const [v_method, v_ctx, v_locals] = seq(3);
+        const ptrs = gcTemps(3); // method, ctx, locals
+        ptrs[v_method] = mkInstance(read(classTable(CLS_COMPILED_METHOD)));
+        writeIV(ptrs[v_method], METHOD_BYTECODE, readArray(array, 1));
+        writeIV(ptrs[v_method], METHOD_LITERALS, readArray(array, 2));
+        writeIV(ptrs[v_method], METHOD_LOCALS, toSmallInteger(0));
+        writeIV(ptrs[v_method], METHOD_ARGC, toSmallInteger(0));
 
-        const bcs = readIV(method, METHOD_BYTECODE);
+        const bcs = readIV(ptrs[v_method], METHOD_BYTECODE);
         const bcLen = wordArraySize(bcs);
-        const ctx = newContext(method, MA_NIL, MA_NIL);
+        ptrs[v_ctx] = newContext(ptrs[v_method], MA_NIL, MA_NIL);
         // The context is missing a locals field, so we create a fake one to
         // support any block args or locals. We assume 16 slots suffices.
-        if (readIV(ctx, CTX_LOCALS) === MA_NIL) {
-          writeIV(ctx, CTX_LOCALS, mkInstance(read(classTable(CLS_ARRAY)), 16));
+        if (readIV(ptrs[v_ctx], CTX_LOCALS) === MA_NIL) {
+          ptrs[v_locals] = mkInstance(read(classTable(CLS_ARRAY)), 16);
+          writeIV(ptrs[v_ctx], CTX_LOCALS, ptrs[v_locals]);
         }
-        const proc = fork(ctx);
-        vm.runningProcess = proc;
+        vm.runningProcess = fork(ptrs[v_ctx]);
 
-        while (readIV(proc, PROCESS_CONTEXT) !== MA_NIL) {
+        gcRelease(ptrs);
+
+        while (vm.runningProcess !== MA_NIL) {
           tick();
         }
         break;

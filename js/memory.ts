@@ -126,7 +126,7 @@ export const CLS_PROCESS_TABLE = nextClass();
 
 
 // Returns an array of ordered indexes.
-function seq(n: number): Array<number> {
+export function seq(n: number): Array<number> {
   const ret = [];
   for (let i = 0; i < n; i++) {
     ret.push(i);
@@ -421,11 +421,15 @@ export function isSmallInteger(p: ptr): boolean {
 // Working with the stack on a MethodContext. The stack pointer is in an IV,
 // giving a 0-based index into the variable portion.
 export function push(ctx: ptr, value: stl) {
-  const sp = fromSmallInteger(readIV(ctx, CTX_STACK_INDEX));
+  const ptrs = gcTemps(2);
+  ptrs[0] = ctx;
+  ptrs[1] = value;
+  const sp = fromSmallInteger(readIV(ptrs[0], CTX_STACK_INDEX));
   if (sp >= STACK_MAX_SIZE) throw new Error('VM stack overflow');
-  writeArray(ctx, sp, value);
+  writeArray(ptrs[0], sp, ptrs[1]);
   // Always a number, safe to skip the checks.
-  writeIVNew(ctx, CTX_STACK_INDEX, toSmallInteger(sp + 1));
+  writeIVNew(ptrs[0], CTX_STACK_INDEX, toSmallInteger(sp + 1));
+  gcRelease(ptrs);
 }
 
 export function pop(ctx: ptr): stl {
@@ -638,11 +642,15 @@ export function checkOldToNew(p: ptr, target: ptr) {
   const isNew = target >= MEM_EDEN_BASE;
   if (isOld && isNew) {
     // We store these records as Associations, which have 2 IVs.
-    const link = mkInstance(read(classTable(CLS_ASSOCIATION)));
-    const head = read(MA_ESCAPED_HEAD);
-    writeIV(link, ASSOC_KEY, p);
-    writeIV(link, ASSOC_VALUE, head);
-    write(MA_ESCAPED_HEAD, link);
+    const [v_input, v_head, v_link] = seq(3);
+    const ptrs = gcTemps(3);
+    ptrs[v_input] = p;
+    ptrs[v_link] = mkInstance(read(classTable(CLS_ASSOCIATION)));
+    ptrs[v_head] = read(MA_ESCAPED_HEAD);
+    writeIV(ptrs[v_link], ASSOC_KEY, ptrs[v_input]);
+    writeIV(ptrs[v_link], ASSOC_VALUE, ptrs[v_head]);
+    write(MA_ESCAPED_HEAD, ptrs[v_link]);
+    gcRelease(ptrs);
   }
 }
 
@@ -655,7 +663,23 @@ function copyObject(src: ptr, dst: ptr): [ptr, number] {
     writeWord(dst + i, readWord(hdr.start + i));
   }
 
-  return [src === hdr.start ? dst : dst + 4, hdr.length];
+  const realDst = src === hdr.start ? dst : dst + 4;
+  gcMap[realDst] = {
+    origin: src,
+    ptrFields: [],
+  };
+  if (hdr.iv) {
+    for (let i = 0; i < hdr.iv[0]; i++) {
+      gcMap[realDst].ptrFields.push(read(hdr.iv[1] + 2*i));
+    }
+  }
+  if (hdr.pa) {
+    for (let i = 0; i < hdr.pa[0]; i++) {
+      gcMap[realDst].ptrFields.push(read(hdr.pa[1] + 2*i));
+    }
+  }
+
+  return [realDst, hdr.length];
 }
 
 // Given a pointer to a variable-sized object, return the length of its variable
@@ -822,7 +846,25 @@ vm.allocationPointer = MEM_EDEN_TOP;
 // - Class table
 // - Linked list of oldspace pointers.
 // - Active processes and their contexts.
+// - The chain of temporaries inside the VM.
 
+const gcTempList: Array<ptr[]> = [];
+
+export function gcTemps(size: number): ptr[] {
+  const list: ptr[] = [];
+  for (let i = 0; i < size; i++) {
+    list.push(MA_NIL);
+  }
+  gcTempList.push(list);
+  return list;
+}
+
+export function gcRelease(temps: ptr[]) {
+  if (gcTempList[gcTempList.length - 1] !== temps) {
+    throw new Error('temp list stacking error');
+  }
+  gcTempList.pop();
+}
 
 
 // These are internal to the GC process, and treated as registers.
@@ -850,6 +892,7 @@ function minorGC() {
 
   // And the process table (which includes all recursively-reachable objects).
   vm.processTable = forward(vm.processTable);
+  write(MA_CLASS_DICT, forward(read(MA_CLASS_DICT)));
 
   // And the chain of (possible) old->new pointers.
   let chain = read(MA_ESCAPED_HEAD);
@@ -868,14 +911,23 @@ function minorGC() {
     // Either way, the chain can be discarded.
     chain = readIV(chain, ASSOC_VALUE);
   }
+  write(MA_ESCAPED_HEAD, MA_NIL);
+
+  for (let i = 0; i < gcTempList.length; i++) {
+    for (let j = 0; j < gcTempList[i].length; j++) {
+      gcTempList[i][j] = forward(gcTempList[i][j]);
+    }
+  }
 
   // Now the queue is populated with all the roots. We can proceed with the
   // breadth-first search. SCAN chases NEXT until it catches up.
   while (scan !== next) {
     // Scan points at the start of an object's record. It might have a long
     // size, in which case this first word has 0xff00 in it.
+    let longLength = false;
     if (readWord(scan) === 0xff00) {
       scan += 4;
+      longLength = true;
     }
 
     const hdr = decodeHeader(scan);
@@ -892,6 +944,7 @@ function minorGC() {
       scan += (hdr.wa[0] + 1) & ~1; // Rounding up to keep it aligned.
       // Word arrays don't need to be copied, just skipped over.
     }
+    if (scan % 2 === 1) debugger;
     // Scan now points at the next object in the queue.
   }
 
@@ -906,6 +959,10 @@ function minorGC() {
   console.timeEnd('minor GC');
   console.log('copied ' + (next - __start) + ' words. NewGen at ' +
       ((next - read(MA_NEW_GEN_START)) / (MEM_G2_TOP-MEM_G1_TOP)));
+
+  // Sanity-check time: all copied objects should have had their pointers
+  // forwarded properly. We can use gcMap to check them all.
+  gcSanityCheck(__start);
 }
 
 function forwardArray(array: ptr, count: number) {
@@ -958,6 +1015,11 @@ function forwardArray(array: ptr, count: number) {
 // redirection pointer, and its second word is all 1s to signal it's been
 // redirected. (This is impossible to confuse for a regular object since the GC
 // field in the upper 8 bits is never otherwise ff.)
+interface gcObj {
+  origin: ptr;
+  ptrFields: ptr[];
+}
+const gcMap: {[dstPtr: ptr]: gcObj} = {};
 function forward(p: ptr): ptr {
   if (p < MEM_EDEN_BASE) return p; // No need to change!
 
@@ -966,21 +1028,32 @@ function forward(p: ptr): ptr {
   if (redirected) return read(p);
 
   // Needs redirecting.
+  //if ((readWord(p+2) & 0x0f00) === 0x700) debugger;
   const [dst, len] = copyObject(p, next); // dst might be next + 4 for long objs
 
   // DEBUG: Remove me later.
-  if (dst !== next) {
-    console.log('sanity check', p, decodeHeader(p), next, dst, len);
-    console.log([p-4, p-2, p, p+2].map(x => hexPad(read(x))).join(' '));
-    console.log([dst-4, dst-2, dst, dst+2].map(x => hexPad(read(x))).join(' '));
-    console.log([next, next+2, next+4, next+6].map(x => hexPad(read(x))).join(' '));
-  }
+  //if (dst !== next) {
+  //  console.log('sanity check', p, decodeHeader(p), next, dst, len);
+  //  console.log([p-4, p-2, p, p+2].map(x => hexPad(read(x))).join(' '));
+  //  console.log([dst-4, dst-2, dst, dst+2].map(x => hexPad(read(x))).join(' '));
+  //  console.log([next, next+2, next+4, next+6].map(x => hexPad(read(x))).join(' '));
+  //}
 
   write(p, dst);
   write(p+2, -1);
+  const oldNext = next;
   next = (next + len + 1) & ~1; // Rounding up for alignment.
+  // DEBUG: Sanity checks
+  if (next - oldNext < len) debugger;
+  if (next % 2 === 1) debugger;
   return dst;
 }
+
+// start-9    $03 000404     length 3
+// start-7    $07 00001c     format 7 = words odd
+// start-5    two words
+// start-3    two words
+// start-1    last word + padding
 
 const HEX_DIGITS = '0123456789abcdef';
 
@@ -990,5 +1063,54 @@ function hexPad(x: number): string {
     hex[i] = HEX_DIGITS[(x >>> ((7-i)*4)) & 0xf];
   }
   return hex.join('');
+}
+
+function gcSanityCheck(start: ptr) {
+  const end = read(MA_NEW_GEN_ALLOC); // The lowest free word of new space.
+  while (start < end) {
+    // Advance over values with lengths.
+    if (readWord(start) === 0xff00) {
+      start += 4;
+    }
+
+    // start is a destination pointer, the key of gcMap.
+    const original = gcMap[start];
+    if (!original) throw new Error('unknown dest pointer!?');
+
+    // Now we compare the pointer fields. All the pointer fields of this
+    // copied object at start should correspond with the saved values.
+    if (((readWord(start+2) >> 8) & 0xf) >= 8) debugger;
+    const hdr = decodeHeader(start);
+    let ix = 0;
+    for (const [len, arr] of [hdr.iv || [0, 0], hdr.pa || [0, 0]]) {
+      for (let i = 0; i < len; i++) {
+        const dstPtr = read(arr + 2*i);
+        const oldCounterpart = original.ptrFields[ix++];
+
+        // Either there was no copying (dstPtr === oldCounterpart) or
+        // oldCounterpart should be gcMap[dstPtr].origin.
+        if (dstPtr !== oldCounterpart) {
+          // They're not equal, so check the copying is sound.
+          const mapped = gcMap[dstPtr];
+          if (!mapped) {
+            throw new Error('Could not find source record for ' + dstPtr);
+          }
+          if (mapped.origin !== oldCounterpart) {
+            throw new Error(`Mismatch! ${oldCounterpart} copied wrong`);
+          }
+        }
+
+        if (dstPtr >= MEM_EDEN_BASE) {
+          debugger;
+        }
+      }
+    }
+
+    const delta = hdr.start < start ?
+        // If there's a bonus length, we need to knock 4 off.
+        hdr.length - 4 : hdr.length;
+    start += (delta + 1) & ~1; // Rounding up.
+  }
+  console.log('GC sanity check complete');
 }
 

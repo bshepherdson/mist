@@ -14,6 +14,7 @@ import {
   asJSString, fromSmallInteger, toSmallInteger,
   read, readArray, readIV, readWordArray,
   writeArray, writeIV, writeIVNew,
+  gcTemps, gcRelease, seq,
 } from './memory';
 import {ArgumentCountMismatchError} from './errors';
 import {lookup, printDict} from './dict';
@@ -138,12 +139,12 @@ export function sendOp(count: number, selector: ptr, isSuper: boolean): void {
   // 2    3    4    5
   // So SP = 5; we want 2. That's SP - argc - 1.
   const ixReceiver = fromSmallInteger(readIV(vm.ctx, CTX_STACK_INDEX)) - count - 1;
-  const receiver = readArray(vm.ctx, ixReceiver);
+  const [v_receiver, v_method, v_locals] = seq(3);
+  const ptrs = gcTemps(3); // receiver, method, locals
+  ptrs[v_receiver] = readArray(vm.ctx, ixReceiver);
 
   // We need to look up the method we're wanting to call.
-  let method = null;
-
-  let cls = classOf(receiver);
+  let cls = classOf(ptrs[v_receiver]);
   if (isSuper) {
     // Super sends begin the search at the super of the owner of current method.
     cls = readIV(methodFor(vm.ctx), METHOD_CLASS);
@@ -155,7 +156,7 @@ export function sendOp(count: number, selector: ptr, isSuper: boolean): void {
     //printDict(dict);
     const found = lookup(dict, selector);
     if (found && found !== MA_NIL) {
-      method = found;
+      ptrs[v_method] = found;
       break;
     }
 
@@ -163,11 +164,11 @@ export function sendOp(count: number, selector: ptr, isSuper: boolean): void {
     cls = readIV(cls, BEHAVIOR_SUPERCLASS);
   }
 
-  if (!method) {
-    const receiverClass = classOf(receiver);
+  if (!ptrs[v_method]) {
+    const receiverClass = classOf(ptrs[v_receiver]);
     let className;
     if (hasClass(receiverClass, CLS_METACLASS)) {
-      className = asJSString(readIV(receiver, CLASS_NAME)) + ' class';
+      className = asJSString(readIV(ptrs[v_method], CLASS_NAME)) + ' class';
     } else {
       className = asJSString(readIV(receiverClass, CLASS_NAME));
     }
@@ -178,14 +179,14 @@ export function sendOp(count: number, selector: ptr, isSuper: boolean): void {
   // Now we have all the pieces: receiver, target method, the superobject and
   // class where we found it, arguments, and local count.
   // Check that the argument count matches the method.
-  const expectedArgs = fromSmallInteger(readIV(method, METHOD_ARGC));
+  const expectedArgs = fromSmallInteger(readIV(ptrs[v_method], METHOD_ARGC));
   if (expectedArgs !== count) {
     throw new ArgumentCountMismatchError('FIXME', asJSString(selector),
         expectedArgs, count);
   }
 
   // Now there are two cases: primitive or proper call.
-  const firstBC = readWordArray(readIV(method, METHOD_BYTECODE), 0);
+  const firstBC = readWordArray(readIV(ptrs[v_method], METHOD_BYTECODE), 0);
   const hasPrimitive = (firstBC & 0xf000) === 0x7000;
 
   if (hasPrimitive) {
@@ -198,7 +199,10 @@ export function sendOp(count: number, selector: ptr, isSuper: boolean): void {
     // Primitives that fail do actually execute the Smalltalk code. It's usually
     // a fallback implementation. Primitives that succeed have done their work,
     // including consuming the inputs on the stack.
-    if (success) return;
+    if (success) {
+      gcRelease(ptrs);
+      return;
+    }
   }
 
   // We need to pop those off the stack. Conveniently, the empty-ascending new
@@ -206,23 +210,23 @@ export function sendOp(count: number, selector: ptr, isSuper: boolean): void {
   writeIV(vm.ctx, CTX_STACK_INDEX, toSmallInteger(ixReceiver));
 
   // Get the number of locals needed.
-  const nLocals = fromSmallInteger(readIV(method, METHOD_LOCALS));
+  const nLocals = fromSmallInteger(readIV(ptrs[v_method], METHOD_LOCALS));
   // Create an array of 1 + argc + nLocals.
-  const locals = mkInstance(read(classTable(CLS_ARRAY)), 1 + count + nLocals);
+  ptrs[v_locals] = mkInstance(read(classTable(CLS_ARRAY)), 1 + count + nLocals);
   // Re-fetching the receiver in case it's moved.
-  writeArray(locals, 0, readArray(vm.ctx, ixReceiver));
+  writeArray(ptrs[v_locals], 0, readArray(vm.ctx, ixReceiver));
   for (let i = 0; i < count; i++) {
     const arg = readArray(vm.ctx, ixReceiver + i + 1);
-    writeArray(locals, 1 + i, arg);
+    writeArray(ptrs[v_locals], 1 + i, arg);
   }
   // Locals are already initialized to nil.
 
   // Create a context.
-  const newCtx = newContext(method, vm.ctx, locals, hasPrimitive);
+  vm.ctx = newContext(ptrs[v_method], vm.ctx, ptrs[v_locals], hasPrimitive);
+  gcRelease(ptrs);
 
   // Our new context is ready. Push it onto the current process as the new top.
-  writeIV(vm.runningProcess, PROCESS_CONTEXT, newCtx);
-  vm.ctx = newCtx;
+  writeIV(vm.runningProcess, PROCESS_CONTEXT, vm.ctx);
 }
 
 // Begins a block, whose bytecodes are inlined after this one.
@@ -236,13 +240,15 @@ export function sendOp(count: number, selector: ptr, isSuper: boolean): void {
 function startBlock(argc: number, argStart: number) {
   const len = readPC(vm.ctx); // PC now points at the first opcode of the block.
 
-  const block = mkInstance(read(classTable(CLS_BLOCK_CLOSURE)));
-  writeIV(block, BLOCK_ARGC, toSmallInteger(argc));
+  const [v_block] = seq(1);
+  const ptrs = gcTemps(1);
+  ptrs[v_block] = mkInstance(read(classTable(CLS_BLOCK_CLOSURE)));
+  writeIV(ptrs[v_block], BLOCK_ARGC, toSmallInteger(argc));
   // Index into the parent locals where my args and locals are.
-  writeIV(block, BLOCK_ARGV, toSmallInteger(argStart));
+  writeIV(ptrs[v_block], BLOCK_ARGV, toSmallInteger(argStart));
   // No need to read and reallocate numbers, this can be a pointer copy if
   // they're pointers.
-  writeIV(block, BLOCK_PC_START, readIV(vm.ctx, CTX_PC));
+  writeIV(ptrs[v_block], BLOCK_PC_START, readIV(vm.ctx, CTX_PC));
 
   // Need to find the containing context. That's ctx if this is a top-level
   // block. If ctx is a block, though, pull its method field.
@@ -256,7 +262,7 @@ function startBlock(argc: number, argStart: number) {
   // Proof: the parent method must have been called before the block, so the
   // parentCtx is older than this new BlockClosure, this always a new -> new or
   // new -> old pointer, even if a BlockClosure long outlives the original call.
-  writeIVNew(block, BLOCK_CONTEXT, parentCtx);
+  writeIVNew(ptrs[v_block], BLOCK_CONTEXT, parentCtx);
 
   // Final steps:
   // Advance PC past the block's code.
@@ -264,7 +270,8 @@ function startBlock(argc: number, argStart: number) {
   writeIV(vm.ctx, CTX_PC, toSmallInteger(pc + len));
 
   // And push the new block onto the stack.
-  push(vm.ctx, block);
+  push(vm.ctx, ptrs[v_block]);
+  gcRelease(ptrs);
 }
 
 export function answer(value: ptr) {
@@ -272,11 +279,15 @@ export function answer(value: ptr) {
   // the value onto its stack.
   // Special case: top-level return to an empty chain. If the sender context is
   // nil, don't try to push!
-  const parentCtx = readIV(vm.ctx, CTX_SENDER);
+  const [v_parentCtx, v_value] = seq(2);
+  const ptrs = gcTemps(2); // parentCtx, value
+  ptrs[v_parentCtx] = readIV(vm.ctx, CTX_SENDER);
+  ptrs[v_value] = value;
   popContext();
-  if (parentCtx !== MA_NIL) {
-    push(parentCtx, value); // Can be an old -> new store, but push() checks.
+  if (ptrs[v_parentCtx] !== MA_NIL) {
+    push(ptrs[v_parentCtx], ptrs[v_value]); // Can be an old -> new store, but push() checks.
   }
+  gcRelease(ptrs);
 }
 
 function blockAnswer() {
@@ -301,10 +312,13 @@ function blockAnswer() {
   // If we got to here, we know this is a legal block return.
   // Push the value to the containing method's *parent's* stack, then pop to
   // be running that context.
-  const targetCtx = readIV(container, CTX_SENDER);
-  push(targetCtx, pop(vm.ctx));
-  popContext(targetCtx);
-  vm.ctx = targetCtx;
+  const [v_sender] = seq(1);
+  const ptrs = gcTemps(1);
+  ptrs[v_sender] = readIV(container, CTX_SENDER);
+  push(ptrs[v_sender], pop(vm.ctx));
+  popContext(ptrs[v_sender]);
+  vm.ctx = ptrs[v_sender];
+  gcRelease(ptrs);
 }
 
 function skip(delta: number) {
@@ -313,11 +327,15 @@ function skip(delta: number) {
 }
 
 function maybeSkip(on: ptr, toPush: ptr, delta: number) {
-  const tos = pop(vm.ctx);
-  if (tos === on) {
-    push(vm.ctx, toPush);
+  const [v_on, v_toPush] = seq(2);
+  const ptrs = gcTemps(2);
+  ptrs[v_on] = on;
+  ptrs[v_toPush] = toPush;
+  if (pop(vm.ctx) === ptrs[v_on]) {
+    push(vm.ctx, ptrs[v_toPush]);
     skip(delta);
   }
+  gcRelease(ptrs);
   // If it wasn't on, then continue normally and don't push.
 }
 

@@ -20,7 +20,7 @@ import {
   classOf, classTable, mkInstance,
   behaviorToInstVars, fixedInstVarsFormat,
   read, readIV, write, writeIV, writeIVNew,
-  fromSmallInteger, toSmallInteger,
+  fromSmallInteger, toSmallInteger, gcTemps, gcRelease, seq,
 } from './memory';
 
 // Bootstrapping proceeds in several phases:
@@ -99,9 +99,14 @@ export const lateBinding = {
 //   - ie. The class field of Transparent is Transparent class!
 export function defClass(clsIndex: IdentityHash, name: string|ptr,
     superclass: ptr, instVars = 0, classVars = 0): ptr {
+  const [v_metaclass, v_supermeta, v_superclass, v_name, v_symbol, v_class] =
+      seq(6);
+  const ptrs = gcTemps(6);
+  ptrs[v_superclass] = superclass;
+  ptrs[v_name] = typeof name === 'string' ? MA_NIL : name;
   // First we set up the metaclass, Transparent class in the example.
   // This is an instance of Metaclass.
-  const metaclass = mkInstance(read(classTable(CLS_METACLASS)));
+  ptrs[v_metaclass] = mkInstance(read(classTable(CLS_METACLASS)));
 
   // See the diagram above: the new metaclass (Transparent class)'s superclass
   // is the superclass's (Color's) metaclass (Color class).
@@ -109,47 +114,51 @@ export function defClass(clsIndex: IdentityHash, name: string|ptr,
   //
   // Special case for ProtoObject (where superclass is nil). This is the root
   // of the regular object hierachy, ie. ProtoObject has no superclass.
-  const supermeta = superclass === MA_NIL ?
+  ptrs[v_supermeta] = ptrs[v_superclass] === MA_NIL ?
       // However, ProtoObject class's superclass is Class!
       read(classTable(CLS_CLASS)) :
       // Otherwise, look up the superclass and get *its* class.
-      classOf(superclass);
+      classOf(ptrs[v_superclass]);
 
   // All the writes here are to freshly allocated classes, so we can safely use
   // the *New forms.
-  writeIVNew(metaclass, BEHAVIOR_SUPERCLASS, supermeta);
-  writeIVNew(metaclass, BEHAVIOR_METHODS, lateBinding.dictFactory());
+  writeIVNew(ptrs[v_metaclass], BEHAVIOR_SUPERCLASS, ptrs[v_supermeta]);
+  writeIVNew(ptrs[v_metaclass], BEHAVIOR_METHODS, lateBinding.dictFactory());
 
-  const upstreamClassVars = behaviorToInstVars(supermeta);
+  const upstreamClassVars = behaviorToInstVars(ptrs[v_supermeta]);
   const metaFormat = fixedInstVarsFormat(upstreamClassVars + classVars);
-  writeIVNew(metaclass, BEHAVIOR_FORMAT, toSmallInteger(metaFormat));
+  writeIVNew(ptrs[v_metaclass], BEHAVIOR_FORMAT, toSmallInteger(metaFormat));
 
   // Add the metaclass to the class table.
-  addClassToTable(metaclass);
+  addClassToTable(ptrs[v_metaclass]);
 
   // With the metaclass now properly defined, we can make an instance of it:
   // our new class!
-  const cls = mkInstance(metaclass);
+  ptrs[v_class] = mkInstance(ptrs[v_metaclass]);
 
   // Set its instance variables: name and subclasses.
   // TODO: Set subclasses, now or later.
   // Name might be a string (bootstrapping) or a pointer to a Symbol already.
-  const symbol = typeof name === 'string' ? lateBinding.symbolize(name) : name;
-  writeIVNew(cls, CLASS_NAME, symbol);
-  writeIVNew(cls, BEHAVIOR_SUPERCLASS, superclass);
-  writeIVNew(cls, BEHAVIOR_METHODS, lateBinding.dictFactory());
+  ptrs[v_symbol] = typeof name === 'string' ?
+      lateBinding.symbolize(name) : ptrs[v_name];
+  writeIVNew(ptrs[v_class], CLASS_NAME, ptrs[v_symbol]);
+  writeIVNew(ptrs[v_class], BEHAVIOR_SUPERCLASS, ptrs[v_superclass]);
+  writeIVNew(ptrs[v_class], BEHAVIOR_METHODS, lateBinding.dictFactory());
 
-  const upstreamInstVars = behaviorToInstVars(superclass);
+  const upstreamInstVars = behaviorToInstVars(ptrs[v_superclass]);
   const format = fixedInstVarsFormat(upstreamInstVars + instVars);
-  writeIVNew(cls, BEHAVIOR_FORMAT, toSmallInteger(format));
+  writeIVNew(ptrs[v_class], BEHAVIOR_FORMAT, toSmallInteger(format));
 
-  addClassToTable(cls, clsIndex);
+  addClassToTable(ptrs[v_class], clsIndex);
 
   // Finally Metaclass itself has an instance variable to set: thisClass.
-  writeIVNew(metaclass, METACLASS_THIS_CLASS, cls);
+  writeIVNew(ptrs[v_metaclass], METACLASS_THIS_CLASS, ptrs[v_class]);
 
-  lateBinding.addToClassDict(symbol, cls);
-  lateBinding.register(cls, name);
+  lateBinding.addToClassDict(ptrs[v_symbol], ptrs[v_class]);
+  lateBinding.register(ptrs[v_class], name);
+
+  const cls = ptrs[v_class];
+  gcRelease(ptrs);
   return cls;
 }
 
