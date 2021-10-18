@@ -10,6 +10,10 @@ Morph subclass: #CrossMorph.
   aCanvas fillRectangle: self horizontalBar color: self color.
   (self verticalBar areasOutside: self horizontalBar) do: [:rect |
     aCanvas fillRectangle: rect color: self color]
+
+! containsPoint: aPoint
+  ^ (self horizontalBar containsPoint: aPoint) or: [
+    self verticalBar containsPoint: aPoint]
 !!
 
 CrossMorph new

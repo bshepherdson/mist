@@ -315,6 +315,9 @@ Warning subclass: #Deprecated.
   nextHandler := handlerContext nextHandlerContext.
   handlerContext := nil.
   nextHandler handleSignal: self
+
+! freeze
+  "Does nothing right now. TODO in the case I rebuild stacks."
 !!
 
 

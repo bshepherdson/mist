@@ -1,5 +1,5 @@
 Object subclass: #Morph
-  instanceVariableNames: 'bounds color submorphs owner'.
+  instanceVariableNames: 'bounds color submorphs owner drawError'.
 
 ! Morph
 ! initialize
@@ -28,7 +28,6 @@ Object subclass: #Morph
 ! extent: aPoint
   bounds := bounds origin extent: aPoint
 
-
 ! color: aColor
   color := aColor
 
@@ -38,9 +37,34 @@ Object subclass: #Morph
 ! changed
   "TODO"
 
+! fullDrawOn: aCanvas
+  self visible ifFalse: [^ self].
+  (aCanvas isVisible: self fullBounds) ifFalse: [^ self].
+  [
+    (aCanvas isVisible: self bounds) ifTrue: [aCanvas drawMorph: self].
+    self drawSubmorphsOn: aCanvas
+    ] on: Error do: [:e |
+      drawError := e freeze.
+      self drawErrorOn: aCanvas]
+  "TODO Drag and drop is highlighted here if I ever add that."
+
+! drawErrorOn: aCanvas
+  Transcript show: self class name, ' error: ', drawError printString.
+
 ! drawOn: aCanvas
   ^aCanvas fillRectangle: bounds color: color
 
+! containsPoint: aPoint
+  ^ bounds containsPoint: aPoint
+
+! fullContainsPoint: aPoint
+  ^ bounds containsPoint: aPoint
+
+
+! handlesMouseDown: anEvent
+  ^ false
+! mouseDown: anEvent
+  "Do nothing."
 !!
 
 
@@ -102,4 +126,53 @@ Morph subclass: #StringMorph
 ! asMorph
   ^ StringMorph new contents: self; yourself
 !!
+
+
+Morph subclass: #BorderedMorph
+  instanceVariableNames: 'borderWidth borderColor'.
+
+
+BorderedMorph subclass: #PasteUpMorph
+  instanceVariableNames: 'backgroundMorph worldState'.
+
+PasteUpMorph subclass: #WorldMorph.
+
+! PasteUpMorph
+! drawOn: aCanvas
+  super drawOn: aCanvas.
+  backgroundMorph ifNotNil: [backgroundMorph drawOn: aCanvas]
+
+! drawSubmorphsOn: aCanvas
+  submorphs isEmpty ifTrue: [^ self].
+  submorphs reverseDo: [:m |
+    m ~~ backgroundMorph ifTrue: [aCanvas fullDrawMorph: m]]
+!!
+
+
+! WorldMorph
+! isWorld
+  ^ true
+! isWorldMorph
+  ^ true
+!!
+
+! WorldMorph class
+! theWorld
+  self error: 'I should be a global variable - fix that!'
+!!
+
+"The top-level flow is:
+World doOneCycle
+   |
+   v
+WorldState >> doOneCycleFor: aWorld    (waits a bit before calling)
+   |
+   allHands do: [:h |
+     ActiveHand := h.
+     h processEvents].
+   aWorld runStepMethods.
+   self displayWorldSafely: aWorld
+
+HandMorph queues up events; processEvents drains that queue."
+
 

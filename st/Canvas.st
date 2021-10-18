@@ -148,6 +148,13 @@ Object subclass: #Canvas.
   "TODO: Maybe check if the Morph intersects with my bounds?"
   ^self draw: aMorph
 
+! fullDrawMorph: aMorph
+  "This is a hook for possible overrides."
+  self fullDraw: aMorph
+
+! fullDraw: anObject
+  anObject fullDrawOn: self
+
 ! drawPolygon: vertices fillStyle: aFillStyle
   self drawPolygon: vertices fillStyle: aFillStyle borderWidth: 0
       borderColor: Color transparent
