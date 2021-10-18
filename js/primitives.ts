@@ -7,14 +7,15 @@ import {
   sti, ptr,
   arraySize, behaviorToInstVars, classOf, identityHash,
   MA_NEXT_CLASS_INDEX, MA_NIL, MA_TRUE, MA_FALSE,
-  CLS_CHARACTER, CLS_CONTEXT, CLS_STRING, CLS_SYMBOL,
+  CLS_CHARACTER, CLS_CONTEXT, CLS_STRING, CLS_SYMBOL, CLS_ARRAY,
   BLOCK_CONTEXT, BLOCK_ARGV, BLOCK_ARGC, BLOCK_PC_START,
   CTX_LOCALS, CTX_SENDER, CTX_PC, CTX_METHOD, CTX_STACK_INDEX,
+  COLOR_STRING, POINT_X, POINT_Y, RECT_ORIGIN,
   CLASS_VAR1,
   classTable, hasClass, fromSmallInteger, toSmallInteger, isSmallInteger,
   asJSString, mkInstance, push, pop, peek,
   read, readIV, readArray,
-  write, writeIV, writeArray,
+  write, writeIV, writeArray, writeArrayNew,
   readWordArray, writeWordArray, wordArraySize,
   gcTemps, gcRelease, seq,
   wrapString,
@@ -405,6 +406,87 @@ primitives[53] = function() {
   const num = fromSmallInteger(pop(vm.ctx));
   const asciiTable = readIV(read(classTable(CLS_CHARACTER)), CLASS_VAR1);
   push(vm.ctx, readArray(asciiTable, num));
+  return true;
+};
+
+function point(p: ptr): [number, number] {
+  return [
+    fromSmallInteger(readIV(p, POINT_X)),
+    fromSmallInteger(readIV(p, POINT_Y)),
+  ];
+}
+
+declare global {
+  var __ui: CanvasRenderingContext2D;
+}
+
+// 60: Canvas>>privDrawPolygon:color:borderWidth:borderColor:
+primitives[60] = function() {
+  globalThis.__ui.strokeStyle = asJSString(readIV(pop(vm.ctx), COLOR_STRING));
+  globalThis.__ui.lineWidth = fromSmallInteger(pop(vm.ctx));
+  globalThis.__ui.fillStyle = asJSString(readIV(pop(vm.ctx), COLOR_STRING));
+
+  const verts = pop(vm.ctx);
+  const len = arraySize(verts);
+  if (len < 2) return false;
+  globalThis.__ui.beginPath();
+  globalThis.__ui.moveTo.apply(__ui, point(readArray(verts, 0)));
+  for (let i = 1; i < len; i++) {
+    globalThis.__ui.lineTo.apply(__ui, point(readArray(verts, i)));
+  }
+  globalThis.__ui.closePath();
+  globalThis.__ui.stroke();
+  globalThis.__ui.fill();
+
+  push(vm.ctx, self(vm.ctx));
+  return true;
+};
+
+// 61: Canvas>>privFillRectX:y:width:height:color:
+primitives[61] = function() {
+  globalThis.__ui.fillStyle = asJSString(readIV(pop(vm.ctx), COLOR_STRING));
+  const h = fromSmallInteger(pop(vm.ctx));
+  const w = fromSmallInteger(pop(vm.ctx));
+  const y = fromSmallInteger(pop(vm.ctx));
+  const x = fromSmallInteger(pop(vm.ctx));
+  globalThis.__ui.fillRect(x, y, w, h);
+  return true;
+};
+
+// 62: Canvas>>privMeasureText:font:
+primitives[62] = function() {
+  globalThis.__ui.font = asJSString(pop(vm.ctx));
+  const fm = globalThis.__ui.measureText(asJSString(pop(vm.ctx)));
+  const ascent = Math.ceil(fm.actualBoundingBoxAscent);
+  const descent = Math.ceil(fm.actualBoundingBoxDescent);
+  const width = Math.ceil(fm.width);
+  const extent = mkInstance(read(classTable(CLS_ARRAY)), 2);
+  writeArrayNew(extent, 0, toSmallInteger(width));
+  writeArrayNew(extent, 1, toSmallInteger(ascent + descent));
+  push(vm.ctx, extent);
+  return true;
+};
+
+// 63: Canvas>>drawString:from:to:in:font:color:
+primitives[63] = function() {
+  globalThis.__ui.fillStyle = asJSString(readIV(pop(vm.ctx), COLOR_STRING));
+  const font = pop(vm.ctx);
+  globalThis.__ui.font = font === MA_NIL ? '10px sans-serif' : asJSString(font);
+  const origin = readIV(pop(vm.ctx), RECT_ORIGIN);
+
+  // These are Smalltalk indices.
+  const end = fromSmallInteger(pop(vm.ctx));
+  const start = fromSmallInteger(pop(vm.ctx));
+  const s = asJSString(pop(vm.ctx));
+  const x = fromSmallInteger(readIV(origin, POINT_X));
+  const y = fromSmallInteger(readIV(origin, POINT_Y));
+  push(vm.ctx, self(vm.ctx));
+
+  // The Smalltalk y value is the top corner, but fillText draws from
+  // the baseline. So we measure and adjust y by the ascender.
+  const text = s.substring(start - 1, end);
+  const fm = globalThis.__ui.measureText(text);
+  globalThis.__ui.fillText(text, x, y + fm.actualBoundingBoxAscent);
   return true;
 };
 

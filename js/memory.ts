@@ -186,6 +186,10 @@ export const [BLOCK_CONTEXT, BLOCK_PC_START, BLOCK_ARGC, BLOCK_ARGV, BLOCK_HANDL
 export const [DICT_ARRAY, DICT_TALLY] = seq(2);
 export const [ASSOC_KEY, ASSOC_VALUE] = seq(2);
 
+export const [POINT_X, POINT_Y] = seq(2);
+export const [COLOR_STRING] = seq(1);
+export const [RECT_ORIGIN, RECT_EXTENT] = seq(2);
+
 
 // Functions for accessing the memory.
 // Longs are stored big-endian, ie. the high word is at the lower address.

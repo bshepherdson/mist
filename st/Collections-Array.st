@@ -115,6 +115,10 @@
 
 ! first
   ^ self at: 1
+! second
+  ^ self at: 2
+! third
+  ^ self at: 3
 ! last
   ^ self at: self size
 

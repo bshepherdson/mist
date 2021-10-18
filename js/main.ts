@@ -11,6 +11,9 @@ function main() {
     const stream = new WordStream(input);
     const driver = new Driver(stream);
 
+    const canvas = document.getElementById('ui');
+    window.__ui = (canvas as HTMLCanvasElement).getContext('2d')!;
+
     const debug = new DebugDriver(new WordStream(input)).allCommands();
     while (!stream.atEnd()) {
       driver.interpret();

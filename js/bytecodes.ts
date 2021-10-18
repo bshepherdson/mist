@@ -164,7 +164,7 @@ export function sendOp(count: number, selector: ptr, isSuper: boolean): void {
     cls = readIV(cls, BEHAVIOR_SUPERCLASS);
   }
 
-  if (!ptrs[v_method]) {
+  if (ptrs[v_method] === MA_NIL) {
     const receiverClass = classOf(ptrs[v_receiver]);
     let className;
     if (hasClass(receiverClass, CLS_METACLASS)) {

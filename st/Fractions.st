@@ -91,5 +91,8 @@ Number subclass: #Fraction instanceVariableNames: 'n d'.
   f := aNumber asFraction.
   ^ n * f denominator < (d * f numerator)
 
+! asSmallInteger
+  ^ n // d
+
 !!
 

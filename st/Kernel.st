@@ -370,6 +370,9 @@ Object subclass: #Transcript.
 
 
 ! Number
+! asSmallInteger
+  self subclassResponsibility
+
 ! = aValue
   "Subclasses should be handling this - if they've failed to, we come here."
   ^ self == aValue
@@ -465,6 +468,9 @@ they're the most flexible."
 ! bitInvert
   <primitive: 41>
   ^ super bitInvert
+
+! asSmallInteger
+  ^ self
 
 ! nextPowerOf2
   | c |
