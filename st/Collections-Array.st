@@ -99,6 +99,14 @@
 !!
 
 
+! SequenceableCollection class
+! new: size streamContents: aBlock
+  | s |
+  s := (self new: size) writeStream.
+  aBlock value: s.
+  ^ s contents
+!!
+
 ! SequenceableCollection
 ! initialize: aSize
   self initialize

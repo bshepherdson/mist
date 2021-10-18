@@ -168,7 +168,7 @@ export function sendOp(count: number, selector: ptr, isSuper: boolean): void {
     const receiverClass = classOf(ptrs[v_receiver]);
     let className;
     if (hasClass(receiverClass, CLS_METACLASS)) {
-      className = asJSString(readIV(ptrs[v_method], CLASS_NAME)) + ' class';
+      className = asJSString(readIV(ptrs[v_receiver], CLASS_NAME)) + ' class';
     } else {
       className = asJSString(readIV(receiverClass, CLASS_NAME));
     }

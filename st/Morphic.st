@@ -13,6 +13,14 @@ Object subclass: #Morph
 ! bounds
   ^ bounds
 
+! width
+  ^ bounds extent x
+! height
+  ^ bounds extent y
+
+! color
+  ^ color
+
 ! position: aPoint
   bounds := aPoint extent: bounds extent
 ! bounds: aRect

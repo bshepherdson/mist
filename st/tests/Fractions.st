@@ -128,14 +128,3 @@ Object subclass: #GCStressor instanceVariableNames: 'suite'.
   FractionsTests suite
 ); runGCTimes: 100."
 
-"Canvas new
-  drawPolygon: {200@20. 280@20. 300@80. 220@80}
-    color: Color transparent
-    borderWidth: 0
-    borderColor: Color red;
-  draw: Morph new;
-  fillRectangle: (60@120 extent: 105@40) color: Color blue;
-  drawString: 'asdf text' at: 30@60 font: '24px sans-serif' color: Color green."
-
-('string morph' asMorph backgroundColor: Color green; yourself) drawOn: Canvas new.
-

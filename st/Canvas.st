@@ -41,9 +41,9 @@ Object subclass: #Point instanceVariableNames: 'x y'.
   ^ x
 ! y
   ^ y
-! x: aNumber
+! privX: aNumber
   x := aNumber
-! y: aNumber
+! privY: aNumber
   y := aNumber
 
 ! printOn: aStream
@@ -56,10 +56,15 @@ Object subclass: #Point instanceVariableNames: 'x y'.
   aPointOrNumber class == Point
     ifTrue: [^(x + aPointOrNumber x) @ (y + aPointOrNumber y)].
   ^ (x + aPointOrNumber) @ (y + aPointOrNumber)
+! - aPointOrNumber
+  ^ self + aPointOrNumber negated
 ! * aPointOrNumber
   aPointOrNumber class == Point
     ifTrue: [^(x * aPointOrNumber x) @ (y * aPointOrNumber y)].
   ^ (x * aPointOrNumber) @ (y * aPointOrNumber)
+
+! negated
+  ^ x negated @ y negated
 
 ! extent: aPoint
   ^Rectangle new origin: self; extent: aPoint; yourself
@@ -69,32 +74,65 @@ Object subclass: #Point instanceVariableNames: 'x y'.
 
 ! Number
 ! @ aNumber
-  ^ Point new x: self; y: aNumber; yourself
+  ^ Point new privX: self; privY: aNumber; yourself
 !!
 
-Object subclass: #Rectangle instanceVariableNames: 'origin extent'.
+Object subclass: #Rectangle instanceVariableNames: 'origin corner'.
 
 ! Rectangle
 ! origin
   ^ origin
 ! extent
-  ^ extent
+  ^ corner - origin
 ! corner
-  ^ origin + extent
+  ^ corner
 
 ! origin: aPoint
   origin := aPoint
-! extent: aPoint
-  extent := aPoint
 ! corner: aPoint
-  extent := (aPoint x - origin x) @ (aPoint y - origin y)
+  corner := aPoint
+! extent: aPoint
+  corner := origin + aPoint
+
+! insetBy: aPoint
+  ^ origin + aPoint corner: corner - aPoint
+
+! intersects: aRect
+  | rOrigin rCorner |
+  rOrigin := aRect origin.
+  rCorner := aRect corner.
+  corner x <= origin x ifTrue: [^false].
+  corner y <= origin y ifTrue: [^false].
+  rOrigin x >= corner x ifTrue: [^false].
+  rOrigin y >= corner y ifTrue: [^false].
+  ^ true
 
 ! = aRect
   self class == aRect class ifFalse: [^false].
-  ^origin = aRect origin and: [extent = aRect extent]
+  ^origin = aRect origin and: [corner = aRect corner]
+
+! areasOutside: aRect
+  "Returns an Array of Rectangles for all the areas of self that don't overlap
+  with aRect. Returns an array of just self if there's no overlap."
+  (self intersects: aRect) ifFalse: [^Array with: self].
+  ^ Array new: 4 streamContents: [:aStream |
+    | yOrigin yCorner |
+    aRect origin y > origin y
+      ifTrue: [
+        aStream nextPut: (origin corner: corner x @ (yOrigin := aRect origin y))]
+      ifFalse: [yOrigin := origin y].
+    aRect corner y < corner y
+      ifTrue: [
+        aStream nextPut: (origin x @ (yCorner := aRect corner y) corner: corner)]
+      ifFalse: [yCorner := corner y].
+
+    aRect origin x > origin x ifTrue: [
+      aStream nextPut: (origin x @ yOrigin corner: aRect origin x @ yCorner)].
+    aRect corner x < corner x ifTrue: [
+      aStream nextPut: (aRect corner x @ yOrigin corner: corner x @ yCorner)] ]
 
 ! printOn: aStream
-  aStream << '(' << origin << ' extent: ' << extent << ')'
+  aStream << '(' << origin << ' corner: ' << corner << ')'
 ! putOn: aStream
   self printOn: aStream
 !!

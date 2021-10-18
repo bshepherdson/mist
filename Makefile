@@ -15,7 +15,7 @@ ST_FILES=st/Kernel.st st/Exceptions.st \
 ST_TESTS=st/tests/Basics.st st/tests/Collections.st st/tests/Dictionaries.st \
 				 st/tests/SequenceableArrays.st st/tests/SequenceableOCs.st \
 				 st/tests/OrderedCollections.st st/tests/SortedCollections.st \
-				 st/tests/Fractions.st
+				 st/tests/Fractions.st st/tests/Morphic.st
 
 plain.bin: st/*.st st/tests/*.st $(PARSER_FILES)
 	$(PARSER) plain.bin $(ST_FILES)
