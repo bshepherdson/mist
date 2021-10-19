@@ -4,7 +4,7 @@ import {
   CLS_STRING,
   BEHAVIOR_METHODS, CLASS_NAME, CLASS_VAR1, METHOD_NAME, METHOD_CLASS,
   PROCESS_CONTEXT, PROCESS_PROCESS_TABLE, PROCESS_TABLE_NEXT_PRIORITY,
-  MA_NIL, MA_TRUE, MA_FALSE, MA_CLASS_DICT,
+  MA_NIL, MA_TRUE, MA_FALSE, MA_GLOBALS,
   METHOD_BYTECODE, METHOD_LITERALS, METHOD_LOCALS, METHOD_ARGC,
   CTX_LOCALS,
   arraySize, classOf, classTable, mkInstance,
@@ -177,7 +177,7 @@ export class Driver {
     // The array is a pointer array containing: cmd, class name, methods...
     const className = readArray(array, 1);
     const name = asJSString(className);
-    const classDict = read(MA_CLASS_DICT);
+    const classDict = read(MA_GLOBALS);
     const classNode = lookup(classDict, className);
     //console.log('Adding methods to ' + asJSString(className));
     if (classNode === MA_NIL) {

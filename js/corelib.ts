@@ -9,7 +9,7 @@ import {
   CLS_CONTEXT, CLS_BLOCK_CLOSURE, CLS_MAGNITUDE,
   CLS_ARRAY, CLS_CHARACTER, CLS_PROCESS, CLS_PROCESS_TABLE, CLS_OBJECT,
   CTX_PC, CTX_STACK_INDEX, CTX_METHOD, CTX_LOCALS, CTX_SENDER,
-  MA_TRUE, MA_FALSE, MA_CLASS_DICT, MA_NIL,
+  MA_TRUE, MA_FALSE, MA_GLOBALS, MA_NIL,
   BEHAVIOR_FORMAT, BEHAVIOR_METHODS, CLASS_NAME,
   CLASS_VAR1, PROCESS_TABLE_NEXT_PRIORITY, IV_BLOCK,
   basicNew, classOf, classTable, mkInstance,
@@ -26,11 +26,11 @@ lateBinding.register = (cls, name) => {};
 // And the class dictionary appender.
 
 lateBinding.addToClassDict = (sym, cls) => {
-  const dict = read(MA_CLASS_DICT);
+  const dict = read(MA_GLOBALS);
   insert(dict, sym, cls);
 };
 
-write(MA_CLASS_DICT, mkDict(256));
+write(MA_GLOBALS, mkDict(256));
 
 // And update the nil method dictioaries we just created for those classes (and
 // their metaclasses).

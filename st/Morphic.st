@@ -1,5 +1,6 @@
 Object subclass: #Morph
-  instanceVariableNames: 'bounds color submorphs owner drawError'.
+  instanceVariableNames:
+    'bounds fullBounds color submorphs owner drawError extension'.
 
 ! Morph
 ! initialize
@@ -21,6 +22,9 @@ Object subclass: #Morph
 ! color
   ^ color
 
+! name
+  ^self printString
+
 ! position: aPoint
   bounds := aPoint extent: bounds extent
 ! bounds: aRect
@@ -34,8 +38,77 @@ Object subclass: #Morph
 ! addMorph: aMorph
   submorphs add: aMorph
 
+! removeMorph: aMorph
+  submorphs remove: aMorph
+
+! submorphs
+  ^ submorphs asArray
+
+! submorphCount
+  ^ submorphs size
+
+! morphsDo: aBlock
+  submorphs do: aBlock
+
+! allMorphsDo: aBlock
+  aBlock value: self.
+  submorphs do: aBlock
+
+! isInWorld
+  ^ owner isNil not
+! world
+  ^ self isWorldMorph ifTrue: [self] ifFalse: [owner world]
+
+! delete
+  "Removes this morph from its owner."
+  owner removeMorph: self
+
+! copy
+  ^ self class new bounds: bounds; color: color; yourself
+! fullcopy
+  | copy |
+  copy := self copy.
+  submorphs do: [:m | copy addMorph: m fullcopy].
+  ^ copy
+
 ! changed
   "TODO"
+
+
+"Layout"
+! layoutChanged
+  | layout |
+  fullBounds := nil.
+  layout := self layoutPolicy.
+  layout ifNotNil: [layout flushLayoutCache].
+  owner ifNotNil: [owner layoutChanged]
+
+! layoutProperties
+  ^ extension ifNotNil: [extension layoutProperties]
+! layoutPolicy
+  ^ extension ifNotNil: [extension layoutPolicy]
+! layoutInset
+  self layoutProperties ifNil: [0] ifNotNil: [:props | props layoutInset]
+
+! layoutProperties: aProperties
+  self layoutProperties == aProperties ifTrue: [^self].
+  self assureExtension layoutProperties: aProperties
+
+! layoutPolicy: aLayoutPolicy
+  self layoutPolicy == aLayoutPolicy ifTrue: [^self].
+  self assureExtension layoutPolicy: aLayoutPolicy.
+  self layoutChanged
+
+! assureExtension
+  ^ extension ifNil: [extension := MorphExtension new]
+
+! fullBounds
+  fullBounds ifNotNil: [^fullBounds].
+  self computeFullBounds.
+  ^ fullBounds
+
+
+
 
 ! fullDrawOn: aCanvas
   self visible ifFalse: [^ self].
@@ -68,11 +141,27 @@ Object subclass: #Morph
 !!
 
 
-
 ! Object
 ! asMorph
   ^self printString asMorph
 !!
+
+
+Object subclass: #MorphExtension
+  instanceVariableNames: 'layoutPolicy'.
+
+! MorphExtension
+! layoutPolicy
+  ^ layoutPolicy
+! layoutPolicy: aLayoutPolicy
+  layoutPolicy := aLayoutPolicy
+
+! layoutProperties
+  ^ layoutProperties
+! layoutProperties: aProperties
+  layoutProperties := aProperties
+!!
+
 
 
 Morph subclass: #StringMorph
@@ -146,6 +235,9 @@ PasteUpMorph subclass: #WorldMorph.
   submorphs isEmpty ifTrue: [^ self].
   submorphs reverseDo: [:m |
     m ~~ backgroundMorph ifTrue: [aCanvas fullDrawMorph: m]]
+
+! owner
+  ^ nil
 !!
 
 

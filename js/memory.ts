@@ -37,7 +37,7 @@ const MA_TENURE_ALLOC: ptr = 0x1008;
 // Points to the first escaped pointer linked list entry; see GC design.
 const MA_ESCAPED_HEAD: ptr = 0x100a;
 // Class dictionary.
-export const MA_CLASS_DICT: ptr = 0x100c;
+export const MA_GLOBALS: ptr = 0x100c;
 export const MA_NEXT_CLASS_INDEX: ptr = 0x100e;
 
 export const MASK_CLASS_INDEX: ptr = 0x3fffff;
@@ -896,7 +896,7 @@ function minorGC() {
 
   // And the process table (which includes all recursively-reachable objects).
   vm.processTable = forward(vm.processTable);
-  write(MA_CLASS_DICT, forward(read(MA_CLASS_DICT)));
+  write(MA_GLOBALS, forward(read(MA_GLOBALS)));
 
   // And the chain of (possible) old->new pointers.
   let chain = read(MA_ESCAPED_HEAD);

@@ -8,7 +8,7 @@ import {
   CLS_ARRAY, CLS_BLOCK_CLOSURE, CLS_METACLASS,
   METHOD_LITERALS, METHOD_ARGC, METHOD_CLASS, METHOD_LOCALS, METHOD_BYTECODE,
   PROCESS_CONTEXT,
-  MA_CLASS_DICT,
+  MA_GLOBALS,
   MA_NIL, MA_TRUE, MA_FALSE,
   mkInstance, peek, pop, push,
   asJSString, fromSmallInteger, toSmallInteger,
@@ -101,7 +101,7 @@ function pushOp(count: number, operand: number) {
     case 2: // Push instance variable whose number is the operand.
       return push(vm.ctx, readIV(self(vm.ctx), operand));
     case 3: // Push global by looking up the literal symbol in SystemDictionary.
-      const dict = read(MA_CLASS_DICT);
+      const dict = read(MA_GLOBALS);
       const g = lookup(dict, readLiteral(vm.ctx, operand));
       return push(vm.ctx, g);
     case 4: // Push global by the class index.

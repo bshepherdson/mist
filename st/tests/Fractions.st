@@ -110,7 +110,7 @@ Object subclass: #GCStressor instanceVariableNames: 'suite'.
 !!
 
 
-"GCStressor new suite: (
+GCStressor new suite: (
   ArithmeticBasics suite,
   LogicBasics suite,
   CollectionsGeneralArrays suite,
@@ -126,5 +126,5 @@ Object subclass: #GCStressor instanceVariableNames: 'suite'.
   OrderedCollectionTests suite,
   SortedCollectionTests suite,
   FractionsTests suite
-); runGCTimes: 100."
+); runGCTimes: 1.
 
