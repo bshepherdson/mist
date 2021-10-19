@@ -6,6 +6,7 @@ import {
   CTX_METHOD, CTX_LOCALS, CTX_SENDER, CTX_PC, CTX_STACK_INDEX,
   CLASS_NAME, METACLASS_THIS_CLASS,
   CLS_ARRAY, CLS_BLOCK_CLOSURE, CLS_METACLASS,
+  ASSOC_KEY, ASSOC_VALUE,
   METHOD_LITERALS, METHOD_ARGC, METHOD_CLASS, METHOD_LOCALS, METHOD_BYTECODE,
   PROCESS_CONTEXT,
   MA_GLOBALS,
@@ -17,8 +18,8 @@ import {
   gcTemps, gcRelease, seq,
 } from './memory';
 import {ArgumentCountMismatchError} from './errors';
-import {lookup, printDict} from './dict';
-import {newContext} from './corelib';
+import {lookupAssoc, lookup, printDict} from './dict';
+import {SYM_SYSTEM_DICTIONARY, newContext} from './corelib';
 import {vm} from './vm';
 import {popContext, readPC} from './process';
 
@@ -102,8 +103,12 @@ function pushOp(count: number, operand: number) {
       return push(vm.ctx, readIV(self(vm.ctx), operand));
     case 3: // Push global by looking up the literal symbol in SystemDictionary.
       const dict = read(MA_GLOBALS);
-      const g = lookup(dict, readLiteral(vm.ctx, operand));
-      return push(vm.ctx, g);
+      const key = readLiteral(vm.ctx, operand);
+
+      // Special case: If the symbol is SystemDictionary itself, push the
+      // globals map itself.
+      return push(vm.ctx,
+            key === SYM_SYSTEM_DICTIONARY ? dict : lookup(dict, key));
     case 4: // Push global by the class index.
       const classIndex = operand;
       return push(vm.ctx, read(classTable(classIndex)));
@@ -125,6 +130,12 @@ function storeOp(count: number, operand: number) {
   } else if (count === 1) {
     const me = self(vm.ctx);
     writeIV(me, operand, value);
+  } else if (count === 2) {
+    const dict = read(MA_GLOBALS);
+    const key = readLiteral(vm.ctx, operand);
+    const assoc = lookupAssoc(dict, key);
+    if (assoc === MA_NIL) throw new Error('Unknown global: ' + asJSString(key));
+    writeIV(assoc, ASSOC_VALUE, pop(vm.ctx));
   } else {
     throw new Error('Invalid store destination ' + count);
   }

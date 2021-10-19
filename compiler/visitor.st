@@ -235,7 +235,9 @@ STAssignments extend [
     value compileInto: method.
     targets reverseDo: [:each |
       method compile: 16r6000. "dup"
-      target := method lookup: each x.
+      target := each x first isUppercase
+        ifTrue: [GlobalVar new index: (method addLiteral: each x)]
+        ifFalse: [method lookup: each x].
       target ifNil: [self error: 'unknown store location: ', each x].
       method compile: target store]
   ]

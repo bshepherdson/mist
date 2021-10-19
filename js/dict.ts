@@ -28,6 +28,11 @@ export function mkDict(size = 16): ptr {
 
 // IdentityDictionary, so we're comparing the pointers of keys and values.
 export function lookup(dict: ptr, key: ptr): ptr {
+  const asc = lookupAssoc(dict, key);
+  return asc === MA_NIL ? MA_NIL : readIV(asc, ASSOC_VALUE);
+}
+
+export function lookupAssoc(dict: ptr, key: ptr): ptr {
   const arr = readIV(dict, DICT_ARRAY);
   const tally = fromSmallInteger(readIV(dict, DICT_TALLY));
   const hash = identityHash(key);
@@ -37,7 +42,7 @@ export function lookup(dict: ptr, key: ptr): ptr {
   while (true) {
     const asc = readArray(arr, index);
     if (asc === MA_NIL) return MA_NIL; // Not found.
-    if (readIV(asc, ASSOC_KEY) === key) return readIV(asc, ASSOC_VALUE);
+    if (readIV(asc, ASSOC_KEY) === key) return asc;
     index = (index + 1) & mask;
   }
 }

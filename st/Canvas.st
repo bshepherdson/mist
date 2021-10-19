@@ -15,7 +15,12 @@ Object subclass: #Color instanceVariableNames: 'str'.
   ^ Color new jsString: 'green'
 ! yellow
   ^ Color new jsString: 'yellow'
+! grey
+  ^ Color new jsString: 'grey'
+! gray
+  ^ Color new jsString: 'gray'
 !!
+
 
 ! Color
 ! jsString

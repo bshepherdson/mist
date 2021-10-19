@@ -105,3 +105,8 @@ export function newContext(method: ptr, sender: ptr, locals: ptr, opt_hasPrimiti
   return ctx;
 }
 
+
+export const SYM_SYSTEM_DICTIONARY = wrapSymbol('SystemDictionary');
+
+
+

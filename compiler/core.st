@@ -297,6 +297,13 @@ LocalVar subclass: MethodArg [
   ]
 ]
 
+Var subclass: GlobalVar [
+  | index |
+  index: x [index := x]
+  push  [^ 16r0300 bitOr: index]
+  store [^ 16r1200 bitOr: index]
+]
+
 
 Object subclass: Scope [
   | vars parent |

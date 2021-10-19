@@ -25,6 +25,11 @@ Object subclass: #Morph
 ! name
   ^self printString
 
+! owner
+  ^ owner
+! owner: aMorph
+  owner := aMorph
+
 ! position: aPoint
   bounds := aPoint extent: bounds extent
 ! bounds: aRect
@@ -72,42 +77,43 @@ Object subclass: #Morph
   ^ copy
 
 ! changed
-  "TODO"
-
-
-"Layout"
-! layoutChanged
-  | layout |
-  fullBounds := nil.
-  layout := self layoutPolicy.
-  layout ifNotNil: [layout flushLayoutCache].
-  owner ifNotNil: [owner layoutChanged]
-
-! layoutProperties
-  ^ extension ifNotNil: [extension layoutProperties]
-! layoutPolicy
-  ^ extension ifNotNil: [extension layoutPolicy]
-! layoutInset
-  self layoutProperties ifNil: [0] ifNotNil: [:props | props layoutInset]
-
-! layoutProperties: aProperties
-  self layoutProperties == aProperties ifTrue: [^self].
-  self assureExtension layoutProperties: aProperties
-
-! layoutPolicy: aLayoutPolicy
-  self layoutPolicy == aLayoutPolicy ifTrue: [^self].
-  self assureExtension layoutPolicy: aLayoutPolicy.
-  self layoutChanged
-
-! assureExtension
-  ^ extension ifNil: [extension := MorphExtension new]
+  "Reports that redrawing is necessary."
+  ^ fullBounds
+    ifNil: [self invalidRect: self outerBounds]
+    ifNotNil: [self invalidRect: fullBounds]
 
 ! fullBounds
   fullBounds ifNotNil: [^fullBounds].
   self computeFullBounds.
   ^ fullBounds
 
+! ownerChanged
+  "Do nothing by default."
 
+! invalidRect: aRect from: aMorph
+  | damageRect |
+  self visible ifFalse: [^self].
+  aRect hasPositiveExtent ifFalse: [^self].
+  damageRect := aRect.
+  aMorph == self ifFalse: [
+    self clipSubmorphs
+      ifTrue: [damageRect := aRect intersect: self clippingBounds]].
+  owner ifNotNil: [owner invalidRect: damageRect from: self]
+
+! clipSubmorphs
+  ^ false
+! clippingBounds
+  ^ self bounds
+
+
+! assureExtension
+  ^ extension ifNil: [extension := MorphExtension new]
+
+! borderStyle
+  ^ extension ifNotNil: [extension borderStyle]
+! borderStyle: anObject
+  self borderStyle == anObject ifTrue: [^self].
+  self assureExtension borderStyle: anObject
 
 
 ! fullDrawOn: aCanvas
@@ -148,7 +154,7 @@ Object subclass: #Morph
 
 
 Object subclass: #MorphExtension
-  instanceVariableNames: 'layoutPolicy'.
+  instanceVariableNames: 'layoutPolicy layoutProperties borderStyle'.
 
 ! MorphExtension
 ! layoutPolicy
@@ -157,9 +163,14 @@ Object subclass: #MorphExtension
   layoutPolicy := aLayoutPolicy
 
 ! layoutProperties
-  ^ layoutProperties
+  ^ layoutProperties ifNil: [layoutProperties := IdentityDictionary new]
 ! layoutProperties: aProperties
   layoutProperties := aProperties
+
+! borderStyle
+  ^ borderStyle
+! borderStyle: anObject
+  borderStyle := anObject
 !!
 
 
@@ -242,16 +253,36 @@ PasteUpMorph subclass: #WorldMorph.
 
 
 ! WorldMorph
+! initialize
+  backgroundMorph := Morph new
+    bounds: (0@0 corner: 10000@10000);
+    color: Color grey;
+    yourself.
+  worldState := WorldState new
+
 ! isWorld
   ^ true
 ! isWorldMorph
   ^ true
 !!
 
-! WorldMorph class
-! theWorld
-  self error: 'I should be a global variable - fix that!'
+Object subclass: #WorldState instanceVariableNames: 'hands cursor'.
+
+! WorldState
+! cursor
+  ^ cursor ifNil: [cursor := HandMorph new owner: self; yourself]
 !!
+
+Morph subclass: #HandMorph instanceVariableNames: 'eventQueue'.
+
+! HandMorph
+! initialize
+  eventQueue := OrderedCollection new
+! handleEvent: anEvent
+  eventQueue add: anEvent
+!!
+
+SystemDictionary at: #World put: WorldMorph new.
 
 "The top-level flow is:
 World doOneCycle
