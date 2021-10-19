@@ -1,0 +1,11 @@
+; Register allocation
+; ===================
+;
+; 8 general-purpose registers, plus SP.
+; - SP has fancy instructions, so we use it for Smalltalk push and pop,
+;   pointing it into the Smalltalk stacks.
+; - J is the context being executed.
+; - I is the Smalltalk PC.
+; - Z is the allocation pointer.
+; - Y is the next identity hash.
+; I think those are the most vital. nextIdentityHash is used ~as much.

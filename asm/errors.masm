@@ -1,0 +1,3 @@
+.def err_iv_index_overflow, 1
+.def err_array_index_overflow, 2
+

@@ -1,0 +1,284 @@
+; Memory
+; ======
+; For now I'm hard-coding 16MW. It's organized as 2MW for special stuff and
+; tenured values, 2MW old gen, 2MW new gen, 10MW Eden.
+.include "errors.masm"
+.def mem_special_top, 0x10000
+
+.def mem_chunk, 2 * 1024 * 1024
+.def mem_tenured_top, mem_chunk
+.def mem_g1_top, mem_tenured_top + mem_chunk
+.def mem_g2_top, mem_g1_top + mem_chunk
+
+.def mem_eden_base, mem_g2_top
+.def mem_eden_top, 16 * 1024 * 1024
+
+
+.org 0x1000
+:ma_old_gen_start .dat 0, 0
+:ma_old_gen_alloc .dat 0, 0
+:ma_new_gen_start .dat 0, 0
+:ma_new_gen_alloc .dat 0, 0
+:ma_tenure_alloc  .dat 0, 0
+
+:ma_escaped_head  .dat 0, 0
+:ma_globals       .dat 0, 0
+
+; Special objects - 4 words = 64 bits.
+:ma_nil           .dat 0, 0, 0, 0
+:ma_true          .dat 0, 0, 0, 0
+:ma_false         .dat 0, 0, 0, 0
+
+
+
+.org 0x2000
+:classtable
+.reserve 31*2
+.def cls_proto_object            , 0
+.def cls_object                  , 1
+.def cls_behavior                , 2
+.def cls_class_description       , 3
+.def cls_class                   , 4
+.def cls_metaclass               , 5
+.def cls_undefined_object        , 6
+.def cls_collection              , 7
+.def cls_sequenceable_collection , 8
+.def cls_arrayed_collection      , 9
+.def cls_array                   , 10
+.def cls_string                  , 11
+.def cls_symbol                  , 12
+.def cls_hashed_collection       , 13
+.def cls_dictionary              , 14
+.def cls_identity_dictionary     , 15
+.def cls_context                 , 16
+.def cls_compiled_method         , 17
+.def cls_block_closure           , 18
+.def cls_boolean                 , 19
+.def cls_true                    , 20
+.def cls_false                   , 21
+.def cls_magnitude               , 22
+.def cls_character               , 23
+.def cls_number                  , 24
+.def cls_integer                 , 25
+.def cls_small_integer           , 26
+.def cls_association             , 27
+.def cls_word_array              , 28
+.def cls_process                 , 29
+.def cls_process_table           , 30
+
+
+
+.def behavior_superclass, 0
+.def behavior_methods,    1
+.def behavior_format,     2
+.def class_name,          3
+.def class_subclasses,    4
+.def class_var1,          5
+
+.def metaclass_this_class, class_name
+
+.def process_table_ready,         0
+.def process_table_blocked,       1
+.def process_table_next_priority, 2
+
+.def process_context,       0
+.def process_next,          1
+.def process_prev,          2
+.def process_process_table, 3
+
+.def character_ascii_value, 0
+
+
+.def ctx_method,      0
+.def ctx_locals,      1
+.def ctx_pc,          2
+.def ctx_sender,      3
+.def ctx_stack_index, 4
+
+.def stack_max_size, 19
+
+.def iv_method, 6
+.def method_bytecode, 0
+.def method_literals, 1
+.def method_name,     2
+.def method_class,    3
+.def method_argc,     4
+.def method_locals,   5
+
+.def iv_block, 5
+.def block_context,        0
+.def block_pc_start,       1
+.def block_argc,           2
+.def block_argv,           3
+.def block_handler_active, 4
+
+.def dict_array, 0
+.def dict_tally, 1
+.def assoc_key,   0
+.def assoc_value, 1
+
+.def point_x, 0
+.def point_y, 1
+
+
+
+; These macros and functions help to hide some implementation details, as well
+; as make downstream code more compact.
+
+; Reads a class index in %1 into a pointer to the class in %0.
+.macro read_class_table=setl %0, [%1 * 2 + classtable]
+; Reads the class index into %0, given an object pointer in %1.
+.macro read_class_index=setl %0, [%1 + 2] %n andl %0, mask_class_index
+; Reads the class pointer into %0, given an object pointer in %1.
+.macro read_class=read_class_index %0, %1 %n read_class_table %0, %0
+
+; Object header format
+; ssssssss __hhhhhh hhhhhhhh hhhhhhhh
+; ggggffff __cccccc cccccccc cccccccc
+
+
+; Small integers!
+; They're identified by being negative.
+.macro jmp_si=bngl %0, %1
+
+.def mask_class_index, 0x3fffff
+
+:class_of ; (obj) -> class ptr
+jmp_si a, class_of_si
+read_class_index a, a
+:class_of_tail
+read_class_table a, a
+pop {pc}
+
+:class_of_si
+setl a, cls_small_integer
+setl pc, class_of_tail
+
+
+
+:has_class ; (obj, class_index) -> bool
+jmp_si a, has_class_si
+read_class_index a, a
+brel a, b, has_class_match
+setl a, 0
+pop {pc}
+
+:has_class_match
+setl a, 1
+pop {pc}
+
+
+; Reads the format tag from object pointer in %1 into %0.
+.macro format=setl %0, [%1+2] %n shrl %0, 24 %n andw %0, 15
+
+.def format_zero, 0
+.def format_fixed_iv, 1
+.def format_variable, 2
+.def format_variable_iv, format_fixed_iv|format_variable
+.def format_words_even, 6
+.def format_words_odd, 7
+
+; Header decoding to figure the format.
+; The length is in pointers for IVs and arrays; words for word arrays.
+:decode_header_iv ; (obj) -> array, len
+setl b, [a]
+shrl b, 24 ; B is the size
+format c, a
+brel c, format_fixed_iv, decode_header_iv_fixed
+brel c, format_variable_iv, decode_header_iv_mixed
+; No IVs
+setl a, 0
+setl b, 0
+pop {pc}
+
+:decode_header_iv_fixed ; obj, size, format
+ifel b, 255
+  setl b, [a-2]
+:decode_header_iv_mixed ; IVs always in the short part, in B, for mixed.
+addl a, 4
+pop {pc}
+
+
+
+:decode_header_array ; (obj) -> array, len
+setl b, [a]
+shrl b, 24 ; B is the size.
+format c, a
+brel c, format_variable, decode_header_array_normal
+brel c, format_variable_iv, decode_header_array_mixed
+; Still here? Not an array.
+setl a, 0
+setl b, 0
+pop {pc}
+
+:decode_header_array_normal ; obj, size, format
+ifel b, 255
+  setl b, [a-2]
+; Short form: length already in B.
+addl a, 4
+pop {pc}
+
+; In mixed mode, the IV count is in B and the variable length always in the
+; overflow part.
+:decode_header_array_mixed ; obj, IVs, format
+setl c, b
+shll c, 1 ; Shift it to length in words.
+addl c, a
+addl c, 4 ; C is the start of the variable portion.
+setl b, [a-2]
+setl a, c
+pop {pc}
+
+
+
+:decode_header_word_array ; (obj) -> array, len
+setl b, [a]
+shrl b, 24 ; B is the size
+format c, a
+brll c, format_words_even, decode_header_word_array_bad
+ifel b, 255
+  setl b, [a-2] ; Read the long size.
+shll b, 1       ; Size in words, not pointers.
+ifel c, format_words_odd ; Odd word arrays are 1 shorter.
+  subl b, 1
+addl a, 4
+pop {pc}
+
+:decode_header_word_array_bad
+setl a, 0
+setl b, 0
+pop {pc}
+
+; START HERE ifll here and below is busted, rework that logic.
+; Probably tweak write_iv to take advantage of the leftover values in
+; registers after write_iv_new.
+
+:read_iv ; (obj, index) -> value
+push {b}
+jsrl decode_header_iv ; array, len
+ifll b, peek
+  brk err_iv_index_overflow
+setl b, pop
+shll b, 1
+setl a, [a+b]
+pop {pc}
+
+:write_iv_new ; (obj, index, value) -> nil
+push {b, c}
+jsrl decode_header_iv ; array, len
+ifll b, peek
+  brk err_iv_index_overflow
+pop {b, c}
+shll b, 1
+setl [a+b], c
+pop {pc}
+
+:write_iv ; (obj, index, value) -> nil
+push {a, b, c}
+jsrl decode_header_iv ; array, len
+ifll b, 
+  brk err_iv_index_overflow
+
+
+
+
