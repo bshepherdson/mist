@@ -31,7 +31,7 @@ Link subclass: #Process
   NB. If oldList is a LinkedList then the process is runnable. If it is a
   Semaphore (et al) then the process is blocked, and if it is nil then the
   process is already suspended."
-  oldlist := self suspend.
+  oldList := self suspend.
   suspendedContext ifNotNil: [
     "If terminating a process halfway through an unwind, try to complete that
     unwind block first."
@@ -107,8 +107,8 @@ Link subclass: #Process
 "
 
 
-Object subclass: #ProcessorScheduler
-  instanceVariableNames: 'quiescentProcesses activeProcess'.
+"Object subclass: #ProcessorScheduler
+  instanceVariableNames: 'quiescentProcesses activeProcess'."
 
 ! ProcessorScheduler
 ! initialize
@@ -164,13 +164,13 @@ Object subclass: #Semaphore instanceVariableNames: 'queue count'.
 
 ! Semaphore
 ! initialize
-  super initialize
+  super initialize.
   queue := LinkedList new
 
 ! signal
   [
     queue isEmpty
-      ifTrue: [count := count + 1].
+      ifTrue: [count := count + 1]
       ifFalse: [queue removeFirst resume]
   ] valueNoContextSwitch
 
