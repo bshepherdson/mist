@@ -522,6 +522,8 @@ they're the most flexible."
   ^ selector
 ! owningClass
   ^ class
+! bytecode
+  ^ bytecode
 !!
 
 ! Character class

@@ -6,20 +6,25 @@ import {BlockArgumentCountMismatchError} from './errors';
 import {
   sti, ptr,
   arraySize, behaviorToInstVars, classOf, identityHash,
-  MA_NEXT_CLASS_INDEX, MA_NIL, MA_TRUE, MA_FALSE,
+  MA_NEXT_CLASS_INDEX, MA_NIL, MA_TRUE, MA_FALSE, MA_GLOBALS,
   CLS_CHARACTER, CLS_CONTEXT, CLS_STRING, CLS_SYMBOL, CLS_ARRAY,
   BLOCK_CONTEXT, BLOCK_ARGV, BLOCK_ARGC, BLOCK_PC_START,
   CTX_LOCALS, CTX_SENDER, CTX_PC, CTX_METHOD, CTX_STACK_INDEX,
   COLOR_STRING, POINT_X, POINT_Y, RECT_ORIGIN,
   CLASS_VAR1,
+  LINKED_LIST_HEAD, LINKED_LIST_TAIL,
+  PROCESS_LINK, PROCESS_MY_LIST, PROCESS_SUSPENDED_CONTEXT, PROCESS_PRIORITY,
+  PROCESSOR_SCHEDULER_QUIESCENT_PROCESSES,
   classTable, hasClass, fromSmallInteger, toSmallInteger, isSmallInteger,
   asJSString, mkInstance, push, pop, peek,
   read, readIV, readArray,
-  write, writeIV, writeArray, writeArrayNew,
+  write, writeIV, writeArray, writeArrayNew, writeIVNew,
   readWordArray, writeWordArray, wordArraySize,
   gcTemps, gcRelease, seq,
-  wrapString,
+  wrapString, wrapSymbol,
 } from './memory';
+import {SYM_PROCESSOR} from './corelib';
+import {lookup} from './dict';
 import {pushContext} from './process';
 import {vm} from './vm';
 
@@ -408,6 +413,66 @@ primitives[53] = function() {
   push(vm.ctx, readArray(asciiTable, num));
   return true;
 };
+
+
+
+// 54: Process>>resume
+// Allows the receiver (a Process) to continue. Put the receiver in line to
+// become the activeProcess. Fail if the receiver is already waiting in a queue
+// (like a Semaphore or ProcessorScheduler). Fail if the receiver's
+// suspendedContext is nil, since there's nowhere to return to.
+primitives[54] = function() {
+  const [v_proc, v_scheduler, v_list, v_tail] = seq(4);
+  const ptrs = gcTemps(4);
+  ptrs[v_proc] = peek(vm.ctx);
+  if (readIV(ptrs[v_proc], PROCESS_MY_LIST) !== MA_NIL) return false;
+  if (readIV(ptrs[v_proc], PROCESS_SUSPENDED_CONTEXT) === MA_NIL) return false;
+  ptrs[v_scheduler] = lookup(read(MA_GLOBALS), SYM_PROCESSOR);
+  ptrs[v_list] = readArray(
+      readIV(ptrs[v_scheduler], PROCESSOR_SCHEDULER_QUIESCENT_PROCESSES),
+      fromSmallInteger(readIV(ptrs[v_proc], PROCESS_PRIORITY)) - 1);
+
+  writeIVNew(ptrs[v_proc], PROCESS_LINK, MA_NIL);
+  ptrs[v_tail] = readIV(ptrs[v_list], LINKED_LIST_TAIL);
+  if (ptrs[v_tail] === MA_NIL) {
+    writeIV(ptrs[v_list], LINKED_LIST_HEAD, ptrs[v_proc]);
+    writeIV(ptrs[v_list], LINKED_LIST_TAIL, ptrs[v_proc]);
+  } else {
+    writeIV(ptrs[v_tail], PROCESS_LINK, ptrs[v_proc]);
+    writeIV(ptrs[v_list], LINKED_LIST_TAIL, ptrs[v_proc]);
+  }
+  gcRelease(ptrs);
+  return true;
+};
+
+// 55: Process>>suspend
+// Stop the process that the receiver represents, in such a way that it can be
+// resumed later with #resume. If the receiver represents the activeProcess,
+// suspend it. Otherwise remove the receiver from the list of waiting processes.
+// The return value of this method is the list the receiver was previously on
+// (if any).
+// Suspended processes are in no list.
+primitives[55] = function() {
+  const [v_proc, v_list] = seq(2);
+  const ptrs = gcTemps(2);
+  ptrs[v_proc] = pop(vm.ctx);
+  ptrs[v_list] = readIV(ptrs[v_proc], PROCESS_MY_LIST);
+
+  // If we're in a list, rig up a call to removeLink:
+  push(vm.ctx, ptrs[v_list]);
+  push(vm.ctx, ptrs[v_proc]);
+  sendOp(1, wrapSymbol('removeLink:'), false);
+  // proc on the stack.
+
+  writeIVNew(ptrs[v_proc], PROCESS_MY_LIST, MA_NIL);
+  writeIVNew(ptrs[v_proc], PROCESS_LINK, MA_NIL);
+
+  // Need to put the list on the stack, or nil.
+  gcRelease(ptrs);
+  return true;
+};
+
+
 
 function point(p: ptr): [number, number] {
   return [

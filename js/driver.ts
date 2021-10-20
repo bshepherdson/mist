@@ -16,7 +16,7 @@ import {
 } from './memory';
 import {newContext} from './corelib';
 import {insert, lookup, printDict} from './dict';
-import {fork, tick} from './process';
+import {executeImmediate, tick} from './process';
 import {vm} from './vm';
 import * as debug from './debug';
 
@@ -100,11 +100,11 @@ export class Driver {
           ptrs[v_locals] = mkInstance(read(classTable(CLS_ARRAY)), 16);
           writeIV(ptrs[v_ctx], CTX_LOCALS, ptrs[v_locals]);
         }
-        vm.runningProcess = fork(ptrs[v_ctx]);
-
+        executeImmediate(ptrs[v_ctx]);
+        vm.ctx = ptrs[v_ctx];
         gcRelease(ptrs);
 
-        while (vm.runningProcess !== MA_NIL) {
+        while (vm.ctx !== MA_NIL) {
           tick();
         }
         break;

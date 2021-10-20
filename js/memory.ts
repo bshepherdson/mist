@@ -120,8 +120,10 @@ export const CLS_ASSOCIATION = nextClass();
 
 // Class index 28:
 export const CLS_WORD_ARRAY = nextClass();
+export const CLS_LINK = nextClass();
 export const CLS_PROCESS = nextClass();
-export const CLS_PROCESS_TABLE = nextClass();
+export const CLS_PROCESSOR_SCHEDULER = nextClass();
+export const CLS_LINKED_LIST = nextClass();
 // BE CAREFUL REORDERING - see above note.
 
 
@@ -189,6 +191,21 @@ export const [ASSOC_KEY, ASSOC_VALUE] = seq(2);
 export const [POINT_X, POINT_Y] = seq(2);
 export const [COLOR_STRING] = seq(1);
 export const [RECT_ORIGIN, RECT_EXTENT] = seq(2);
+
+export const [LINKED_LIST_HEAD, LINKED_LIST_TAIL] = seq(2);
+
+export const [
+  PROCESS_LINK,
+  PROCESS_SUSPENDED_CONTEXT,
+  PROCESS_PRIORITY,
+  PROCESS_MY_LIST,
+  PROCESS_THREAD_ID,
+] = seq(5);
+
+export const [
+  PROCESSOR_SCHEDULER_QUIESCENT_PROCESSES,
+  PROCESSOR_SCHEDULER_ACTIVE_PROCESS,
+] = seq(2);
 
 // Functions for accessing the memory.
 // Longs are stored big-endian, ie. the high word is at the lower address.
@@ -894,7 +911,6 @@ function minorGC() {
   }
 
   // And the process table (which includes all recursively-reachable objects).
-  vm.processTable = forward(vm.processTable);
   write(MA_GLOBALS, forward(read(MA_GLOBALS)));
 
   // And the chain of (possible) old->new pointers.
@@ -952,9 +968,7 @@ function minorGC() {
   }
 
   // Should already have been copied, just grabbing the forwarded value.
-  vm.runningProcess = forward(vm.runningProcess);
   vm.ctx = forward(vm.ctx);
-  // processTable was already done above.
 
   // GC complete! We're ready to start allocating into the Eden again.
   write(MA_NEW_GEN_ALLOC, next);

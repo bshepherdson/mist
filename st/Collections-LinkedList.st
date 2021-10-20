@@ -1,5 +1,4 @@
-Object subclass: #Link instanceVariableNames: 'link'.
-"TODO: Make Process and ProcessTable subclasses of this."
+"Object subclass: #Link instanceVariableNames: 'link'."
 
 ! Link class
 ! nextLink: aLink
@@ -14,8 +13,8 @@ Object subclass: #Link instanceVariableNames: 'link'.
 !!
 
 
-SequenceableCollection subclass: #LinkedList
-  instanceVariableNames: 'head tail count'.
+"SequenceableCollection subclass: #LinkedList
+  instanceVariableNames: 'head tail'."
 
 ! LinkedList class
 ! new: aSize
@@ -23,9 +22,6 @@ SequenceableCollection subclass: #LinkedList
 !!
 
 ! LinkedList
-! initialize
-  count := 0.
-
 ! at: anIndex ifAbsent: aBlock
   | link ix |
   anIndex > self size ifTrue: [^ aBlock value].
@@ -42,22 +38,18 @@ SequenceableCollection subclass: #LinkedList
 ! addFirst: aLink
   head ifNil: [
     head := tail := aLink.
-    count := 1.
     ^ aLink].
   aLink nextLink: head.
   head := aLink.
-  count := count + 1.
   ^ aLink
 
 ! addLast: aLink
   tail ifNil: [
     head := tail := aLink.
-    count := 1.
     ^ aLink].
   aLink nextLink: nil.
   tail nextLink: aLink.
   tail := aLink.
-  count := count + 1.
   ^ aLink
 
 ! add: aLink
@@ -69,7 +61,6 @@ SequenceableCollection subclass: #LinkedList
   el := head.
   head := head nextLink.
   el nextLink: nil.
-  count := count - 1.
   ^ el
 ! removeLast
   | el ret |
@@ -79,9 +70,28 @@ SequenceableCollection subclass: #LinkedList
   "el is now right before the tail."
   el nextLink: nil.
   ret := tail.
-  count := count - 1.
   tail := el.
   ^ ret
+
+! removeLink: aLink
+  ^ self removeLink: aLink ifAbsent: [self error: 'no such method!']
+
+! removeLink: aLink ifAbsent: aBlock
+  | tempLink |
+  aLink == head
+    ifTrue: [
+      head := aLink nextLink.
+      aLink == tail ifTrue: [tail := nil]]
+    ifFalse: [
+      tempLink := head.
+      [ tempLink ifNil: [^aBlock value].
+        tempLink nextLink == aLink ]
+          whileFalse: [tempLink := tempLink nextLink].
+      tempLink nextLink: aLink nextLink.
+      aLink == tail ifTrue: [tail := tempLink]].
+  "Not nilling the link enables us to delete while iterating."
+  ^ aLink
+
 
 ! do: aBlock
   | el |
@@ -91,6 +101,9 @@ SequenceableCollection subclass: #LinkedList
     el := el nextLink]
 
 ! size
+  | count |
+  count := 0.
+  self do: [:each | count := count + 1].
   ^ count
 !!
 

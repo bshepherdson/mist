@@ -378,12 +378,17 @@ MistClass at: 26 named: 'SmallInteger' superclass: 'Integer'.
 
 MistClass at: 28 named: 'WordArray' superclass: 'ArrayedCollection'.
 
-(MistClass at: 29 named: 'Process' superclass: 'Object')
-  addInstVar: 'context'; addInstVar: 'next'; addInstVar: 'prev';
-  addInstVar: 'processTable'.
+(MistClass at: 29 named: 'Link' superclass: 'Object')
+  addInstVar: 'link'.
+(MistClass at: 30 named: 'Process' superclass: 'Link')
+  addInstVar: 'suspendedContext'; addInstVar: 'priority';
+  addInstVar: 'myList'; addInstVar: 'threadId'.
 
-(MistClass at: 30 named: 'ProcessTable' superclass: 'Object')
-  addInstVar: 'ready'; addInstVar: 'blocked'; addInstVar: 'nextPriority'.
+(MistClass at: 31 named: 'ProcessorScheduler' superclass: 'Object')
+  addInstVar: 'quiescentProcesses'; addInstVar: 'activeProcess'.
+
+(MistClass at: 32 named: 'LinkedList' superclass: 'SequenceableCollection')
+  addInstVar: 'head'; addInstVar: 'tail'.
 
 "If I add more built-in classes, I need to update the NextIndex starting value."
 

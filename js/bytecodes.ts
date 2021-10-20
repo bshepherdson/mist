@@ -235,9 +235,6 @@ export function sendOp(count: number, selector: ptr, isSuper: boolean): void {
   // Create a context.
   vm.ctx = newContext(ptrs[v_method], vm.ctx, ptrs[v_locals], hasPrimitive);
   gcRelease(ptrs);
-
-  // Our new context is ready. Push it onto the current process as the new top.
-  writeIV(vm.runningProcess, PROCESS_CONTEXT, vm.ctx);
 }
 
 // Begins a block, whose bytecodes are inlined after this one.

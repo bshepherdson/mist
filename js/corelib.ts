@@ -7,11 +7,13 @@ import {
   ptr, Format,
   CLS_BOOLEAN, CLS_TRUE, CLS_FALSE,
   CLS_CONTEXT, CLS_BLOCK_CLOSURE, CLS_MAGNITUDE,
-  CLS_ARRAY, CLS_CHARACTER, CLS_PROCESS, CLS_PROCESS_TABLE, CLS_OBJECT,
+  CLS_ARRAY, CLS_CHARACTER, CLS_PROCESS, CLS_PROCESSOR_SCHEDULER, CLS_OBJECT,
+  CLS_LINKED_LIST, CLS_LINK,
   CTX_PC, CTX_STACK_INDEX, CTX_METHOD, CTX_LOCALS, CTX_SENDER,
   MA_TRUE, MA_FALSE, MA_GLOBALS, MA_NIL,
+  PROCESSOR_SCHEDULER_QUIESCENT_PROCESSES,
   BEHAVIOR_FORMAT, BEHAVIOR_METHODS, CLASS_NAME,
-  CLASS_VAR1, PROCESS_TABLE_NEXT_PRIORITY, IV_BLOCK,
+  CLASS_VAR1, IV_BLOCK,
   basicNew, classOf, classTable, mkInstance,
   fromSmallInteger, toSmallInteger, wrapSymbol,
   read, readIV, write, writeIV, writeIVNew, writeArrayNew,
@@ -67,17 +69,19 @@ const chr = defClass(CLS_CHARACTER, 'Character',
 const charTable = mkInstance(read(classTable(CLS_ARRAY)), 256);
 writeIV(chr, CLASS_VAR1, charTable);
 
-defClass(CLS_PROCESS, 'Process', object, 4);
-defClass(CLS_PROCESS_TABLE, 'ProcessTable', object, 3);
+const link = defClass(CLS_LINK, 'Link', object, 1);
+defClass(CLS_PROCESS, 'Process', link, 4);
+const procSched =
+    defClass(CLS_PROCESSOR_SCHEDULER, 'ProcessorScheduler', object, 2);
 
-// Populate the process table - four priorities.
-let pt = MA_NIL;
-for(let i = 0; i < 4; i++) {
-  const newPT = mkInstance(read(classTable(CLS_PROCESS_TABLE)));
-  writeIV(newPT, PROCESS_TABLE_NEXT_PRIORITY, pt);
-  pt = newPT;
+// Populate the process table.
+const scheduler = mkInstance(procSched);
+const priorities = mkInstance(read(classTable(CLS_ARRAY)), 7);
+writeIVNew(scheduler, PROCESSOR_SCHEDULER_QUIESCENT_PROCESSES, priorities);
+for(let i = 0; i < 7; i++) {
+  writeArrayNew(priorities, i, mkInstance(read(classTable(CLS_LINKED_LIST))));
 }
-vm.processTable = pt;
+
 
 // Populate the character table.
 for (let i = 0; i < 256; i++) {
@@ -107,6 +111,8 @@ export function newContext(method: ptr, sender: ptr, locals: ptr, opt_hasPrimiti
 
 
 export const SYM_SYSTEM_DICTIONARY = wrapSymbol('SystemDictionary');
+export const SYM_PROCESSOR = wrapSymbol('Processor');
 
+insert(read(MA_GLOBALS), SYM_PROCESSOR, scheduler);
 
 

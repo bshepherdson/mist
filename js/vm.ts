@@ -2,8 +2,6 @@
 
 // The virtual machine is comprised of the memory space and a handful of
 // registers:
-// - processTable
-// - runningProcess
 // - allocationPointer
 // - nextIdentityHash
 // - nextClass
@@ -22,8 +20,6 @@
 // runningThread->context->pc.
 
 export const vm = {
-  processTable: 0,
-  runningProcess: 0,
   ctx: 0,
   allocationPointer: 0,
   nextIdentityHash: 0,

@@ -114,6 +114,14 @@ Warning subclass: #Deprecated.
 
 "Pharo has ContextPart as a superclass; I don't know if that split is useful."
 ! MethodContext
+! endPC
+  ^ method bytecode size
+! pc: aNumber
+  pc := aNumber
+
+! bottomContext
+  ^ self findContextSuchThat: [:c | c sender isNil]
+
 ! nextHandlerContext
   "Finds the innermost exception handling context. That is, one with on:do:."
   ^ self sender findNextHandlerContextStarting
