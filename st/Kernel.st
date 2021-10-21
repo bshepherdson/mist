@@ -6,6 +6,8 @@ Javascript functions."
 ! Behavior
 ! basicNew
   <primitive: 0>
+! basicNew: aNumber
+  <primitive: 25>
 !  new
   ^ self basicNew initialize
 ! methodDictionary
@@ -524,6 +526,14 @@ they're the most flexible."
   ^ class
 ! bytecode
   ^ bytecode
+!!
+
+! MethodContext class
+! new
+  "This is a special case: create a mixed IV + variable."
+  ^ self new: 19
+! new: aSize
+  ^ (self basicNew: 19) initialize; yourself
 !!
 
 ! Character class

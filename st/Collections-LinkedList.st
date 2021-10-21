@@ -101,9 +101,15 @@
     el := el nextLink]
 
 ! size
-  | count |
+  | count el |
   count := 0.
-  self do: [:each | count := count + 1].
+  el := head.
+  [ el isNil ] whileFalse: [
+    count := count + 1.
+    el := el nextLink].
   ^ count
+
+! isEmpty
+  ^ head isNil
 !!
 

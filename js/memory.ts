@@ -124,6 +124,7 @@ export const CLS_LINK = nextClass();
 export const CLS_PROCESS = nextClass();
 export const CLS_PROCESSOR_SCHEDULER = nextClass();
 export const CLS_LINKED_LIST = nextClass();
+export const CLS_SEMAPHORE = nextClass();
 // BE CAREFUL REORDERING - see above note.
 
 
@@ -192,7 +193,11 @@ export const [POINT_X, POINT_Y] = seq(2);
 export const [COLOR_STRING] = seq(1);
 export const [RECT_ORIGIN, RECT_EXTENT] = seq(2);
 
-export const [LINKED_LIST_HEAD, LINKED_LIST_TAIL] = seq(2);
+export const [
+  LINKED_LIST_HEAD,
+  LINKED_LIST_TAIL,
+  SEMAPHORE_EXCESS_SIGNALS,
+] = seq(3);
 
 export const [
   PROCESS_LINK,

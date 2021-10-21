@@ -114,10 +114,23 @@ Warning subclass: #Deprecated.
 
 "Pharo has ContextPart as a superclass; I don't know if that split is useful."
 ! MethodContext
+! initialize
+  sp := 0
+
 ! endPC
   ^ method bytecode size
 ! pc: aNumber
   pc := aNumber
+
+! method
+  ^ method
+! method: aCompiledMethod
+  method := aCompiledMethod
+
+! locals
+  ^ locals
+! locals: anArray
+  locals := anArray
 
 ! bottomContext
   ^ self findContextSuchThat: [:c | c sender isNil]
@@ -139,6 +152,9 @@ Warning subclass: #Deprecated.
 ! sender
   "Returns the parent context, that sent the message that created this one."
   ^ sender
+
+! sender: aContext
+  sender := aContext
 
 ! selector
   ^ self compiledCode selector

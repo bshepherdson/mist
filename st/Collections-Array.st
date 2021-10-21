@@ -3,8 +3,6 @@
 ! Array class
 ! basicNew
   ^ self basicNew: 0
-! basicNew: aNumber
-  <primitive: 25>
 ! new: aNumber
   ^ (self basicNew: aNumber) initialize
 
@@ -78,8 +76,6 @@
 ! WordArray class
 ! basicNew
   ^ self basicNew: 0
-! basicNew: aNumber
-  <primitive: 25>
 ! new: aNumber
   ^ (self basicNew: aNumber) initialize
 !!

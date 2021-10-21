@@ -389,6 +389,8 @@ MistClass at: 28 named: 'WordArray' superclass: 'ArrayedCollection'.
 
 (MistClass at: 32 named: 'LinkedList' superclass: 'SequenceableCollection')
   addInstVar: 'head'; addInstVar: 'tail'.
+(MistClass at: 33 named: 'Semaphore' superclass: 'LinkedList')
+  addInstVar: 'excessSignals'.
 
 "If I add more built-in classes, I need to update the NextIndex starting value."
 

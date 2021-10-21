@@ -14,7 +14,8 @@ import {
   CLASS_VAR1,
   LINKED_LIST_HEAD, LINKED_LIST_TAIL,
   PROCESS_LINK, PROCESS_MY_LIST, PROCESS_SUSPENDED_CONTEXT, PROCESS_PRIORITY,
-  PROCESSOR_SCHEDULER_QUIESCENT_PROCESSES,
+  PROCESSOR_SCHEDULER_QUIESCENT_PROCESSES, PROCESSOR_SCHEDULER_ACTIVE_PROCESS,
+  SEMAPHORE_EXCESS_SIGNALS,
   classTable, hasClass, fromSmallInteger, toSmallInteger, isSmallInteger,
   asJSString, mkInstance, push, pop, peek,
   read, readIV, readArray,
@@ -25,7 +26,8 @@ import {
 } from './memory';
 import {SYM_PROCESSOR} from './corelib';
 import {lookup} from './dict';
-import {pushContext} from './process';
+import {addLast, removeFirst} from './lists';
+import {activeProcess, pushContext, resume, suspend} from './process';
 import {vm} from './vm';
 
 // NB: Primitives execute directly on the parent's context, with the receiver
@@ -206,7 +208,8 @@ primitives[13] = function() {
 
 //  14: valueNoContextSwitch
 primitives[14] = function() {
-  // TODO: Atomic operations that prevent the VM switching threads.
+  // TODO: Really capture this! It should be a Semaphore-wrapped implementation
+  // in Smalltalk, wrapping around value.
   runBlock(0);
   return true;
 };
@@ -422,52 +425,80 @@ primitives[53] = function() {
 // (like a Semaphore or ProcessorScheduler). Fail if the receiver's
 // suspendedContext is nil, since there's nowhere to return to.
 primitives[54] = function() {
-  const [v_proc, v_scheduler, v_list, v_tail] = seq(4);
-  const ptrs = gcTemps(4);
-  ptrs[v_proc] = peek(vm.ctx);
-  if (readIV(ptrs[v_proc], PROCESS_MY_LIST) !== MA_NIL) return false;
-  if (readIV(ptrs[v_proc], PROCESS_SUSPENDED_CONTEXT) === MA_NIL) return false;
-  ptrs[v_scheduler] = lookup(read(MA_GLOBALS), SYM_PROCESSOR);
-  ptrs[v_list] = readArray(
-      readIV(ptrs[v_scheduler], PROCESSOR_SCHEDULER_QUIESCENT_PROCESSES),
-      fromSmallInteger(readIV(ptrs[v_proc], PROCESS_PRIORITY)) - 1);
-
-  writeIVNew(ptrs[v_proc], PROCESS_LINK, MA_NIL);
-  ptrs[v_tail] = readIV(ptrs[v_list], LINKED_LIST_TAIL);
-  if (ptrs[v_tail] === MA_NIL) {
-    writeIV(ptrs[v_list], LINKED_LIST_HEAD, ptrs[v_proc]);
-    writeIV(ptrs[v_list], LINKED_LIST_TAIL, ptrs[v_proc]);
-  } else {
-    writeIV(ptrs[v_tail], PROCESS_LINK, ptrs[v_proc]);
-    writeIV(ptrs[v_list], LINKED_LIST_TAIL, ptrs[v_proc]);
-  }
-  gcRelease(ptrs);
+  resume(peek(vm.ctx));
   return true;
 };
 
+
+
 // 55: Process>>suspend
-// Stop the process that the receiver represents, in such a way that it can be
-// resumed later with #resume. If the receiver represents the activeProcess,
-// suspend it. Otherwise remove the receiver from the list of waiting processes.
+// Suspend the receiver (a Process).
 // The return value of this method is the list the receiver was previously on
 // (if any).
-// Suspended processes are in no list.
 primitives[55] = function() {
   const [v_proc, v_list] = seq(2);
   const ptrs = gcTemps(2);
   ptrs[v_proc] = pop(vm.ctx);
   ptrs[v_list] = readIV(ptrs[v_proc], PROCESS_MY_LIST);
 
-  // If we're in a list, rig up a call to removeLink:
+  // Push that list onto vm.ctx now, since suspend() might make it nil.
   push(vm.ctx, ptrs[v_list]);
-  push(vm.ctx, ptrs[v_proc]);
-  sendOp(1, wrapSymbol('removeLink:'), false);
-  // proc on the stack.
+  suspend(ptrs[v_proc]);
+  gcRelease(ptrs);
+  return true;
+};
 
-  writeIVNew(ptrs[v_proc], PROCESS_MY_LIST, MA_NIL);
-  writeIVNew(ptrs[v_proc], PROCESS_LINK, MA_NIL);
+// Semaphore>>signal and Semaphore>>wait are primitive since they are the
+// fundamental atomic operations on top of which many others are built.
 
-  // Need to put the list on the stack, or nil.
+// 56: Semaphore>>signal
+// Signals this Semaphore. If a process is waiting, resume it.
+// If no processes are waiting, increment the excessSignals count.
+primitives[56] = function() {
+  const [v_sem, v_proc] = seq(2);
+  const ptrs = gcTemps(2);
+  ptrs[v_sem] = peek(vm.ctx); // Signal always just returns the receiver.
+
+  if (readIV(ptrs[v_sem], LINKED_LIST_HEAD) !== MA_NIL) {
+    // There's processes waiting, so resume the first of them.
+    ptrs[v_proc] = removeFirst(ptrs[v_sem]);
+    writeIVNew(ptrs[v_proc], PROCESS_MY_LIST, MA_NIL);
+    writeIVNew(ptrs[v_proc], PROCESS_LINK, MA_NIL);
+    resume(ptrs[v_proc]);
+  } else {
+    // Nobody waiting, so make a note of the excess signal.
+    const signals =
+        fromSmallInteger(readIV(ptrs[v_sem], SEMAPHORE_EXCESS_SIGNALS));
+    writeIVNew(ptrs[v_sem], SEMAPHORE_EXCESS_SIGNALS,
+        toSmallInteger(signals + 1));
+  }
+
+  gcRelease(ptrs);
+  return true;
+};
+
+// 57: Semaphore>>wait
+// If the Semaphore has outstanding excess signals, just decrement it and return
+// normally.
+// If there are no spare signals, suspend the active process and enqueue it on
+// the Semaphore.
+primitives[57] = function() {
+  const [v_sem, v_proc] = seq(2);
+  const ptrs = gcTemps(2);
+  ptrs[v_sem] = peek(vm.ctx); // Signal always just returns the receiver.
+
+  const excess =
+      fromSmallInteger(readIV(ptrs[v_sem], SEMAPHORE_EXCESS_SIGNALS));
+  if (excess > 0) {
+    writeIVNew(ptrs[v_sem], SEMAPHORE_EXCESS_SIGNALS,
+        toSmallInteger(excess - 1));
+  } else {
+    // Need to suspend and queue up the active Process.
+    ptrs[v_proc] = activeProcess();
+    suspend(ptrs[v_proc]);
+    writeIV(ptrs[v_proc], PROCESS_MY_LIST, ptrs[v_sem]);
+    addLast(ptrs[v_sem], ptrs[v_proc]);
+  }
   gcRelease(ptrs);
   return true;
 };

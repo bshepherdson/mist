@@ -24,5 +24,6 @@ export const vm = {
   allocationPointer: 0,
   nextIdentityHash: 0,
   nextClass: 0,
+  contextSwitchLocks: 0,
 };
 

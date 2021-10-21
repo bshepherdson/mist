@@ -8,7 +8,7 @@ import {
   CLS_BOOLEAN, CLS_TRUE, CLS_FALSE,
   CLS_CONTEXT, CLS_BLOCK_CLOSURE, CLS_MAGNITUDE,
   CLS_ARRAY, CLS_CHARACTER, CLS_PROCESS, CLS_PROCESSOR_SCHEDULER, CLS_OBJECT,
-  CLS_LINKED_LIST, CLS_LINK,
+  CLS_LINKED_LIST, CLS_LINK, CLS_SEMAPHORE,
   CTX_PC, CTX_STACK_INDEX, CTX_METHOD, CTX_LOCALS, CTX_SENDER,
   MA_TRUE, MA_FALSE, MA_GLOBALS, MA_NIL,
   PROCESSOR_SCHEDULER_QUIESCENT_PROCESSES,
@@ -73,6 +73,8 @@ const link = defClass(CLS_LINK, 'Link', object, 1);
 defClass(CLS_PROCESS, 'Process', link, 4);
 const procSched =
     defClass(CLS_PROCESSOR_SCHEDULER, 'ProcessorScheduler', object, 2);
+
+defClass(CLS_SEMAPHORE, 'Semaphore', read(classTable(CLS_LINKED_LIST)), 1);
 
 // Populate the process table.
 const scheduler = mkInstance(procSched);

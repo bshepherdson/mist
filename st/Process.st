@@ -6,6 +6,14 @@ Link subclass: #Process
   instanceVariableNames: 'suspendedContext priority myList threadId'.
   "
 
+! Process class
+! forContext: aContext priority: anInteger
+  ^ self new
+    suspendedContext: aContext;
+    priority: anInteger;
+    yourself
+!!
+
 ! Process
 ! resume
   <primitive: 54>
@@ -68,6 +76,8 @@ Link subclass: #Process
 
 ! suspendingList
   ^ myList
+! suspendingList: aLinkedList
+  myList := aLinkedList
 
 ! isActiveProcess
   ^ self == Processor activeProcess
@@ -95,10 +105,49 @@ Link subclass: #Process
 
 ! BlockClosure
 ! fork
+  self newProcess resume
+
 ! forkAt: priority
+  self error: 'implement me'
+
 ! newProcess
+  ^ Process
+    forContext: [
+      self value.
+      "Since control is now at the bottom, there is no need to terminate (which
+      runs unwinds) since all unwinds have been run. Simply suspend.
+      Note that we must use this form rather than eg. Processor suspendActive
+      so that isTerminated answers true. isTerminated requires that if there is
+      a suspended context it is the bottom-most (ie. no sender), so indirecting
+      through suspendActive would make the suspendedContext not bottom-most!"
+      Processor activeProcess suspend] asContext
+    priority: Processor activePriority
+
 ! newProcessWith: argumentArray
+  ^ Process
+    forContext: [
+      self valueWithArguments: argumentArray.
+      "Since control is now at the bottom, there is no need to terminate (which
+      runs unwinds) since all unwinds have been run. Simply suspend.
+      Note that we must use this form rather than eg. Processor suspendActive
+      so that isTerminated answers true. isTerminated requires that if there is
+      a suspended context it is the bottom-most (ie. no sender), so indirecting
+      through suspendActive would make the suspendedContext not bottom-most!"
+      Processor activeProcess suspend] asContext
+    priority: Processor activePriority
+
+! asContext
+  ^ self asContextWithSender: nil
+
+! asContextWithSender: aContext
+  ^ MethodContext new
+    method: self;
+    locals: ctx locals;
+    sender: aContext;
+    pc: pc0;
+    yourself
 !!
+
 
 
 "Process scheduling:
@@ -160,31 +209,17 @@ Link subclass: #Process
 !!
 
 
-Object subclass: #Semaphore instanceVariableNames: 'queue count'.
+"LinkedList subclass: #Semaphore instanceVariableNames: 'excessSignals'."
 
 ! Semaphore
 ! initialize
   super initialize.
-  queue := LinkedList new
+  excessSignals := 0
 
 ! signal
-  [
-    queue isEmpty
-      ifTrue: [count := count + 1]
-      ifFalse: [queue removeFirst resume]
-  ] valueNoContextSwitch
-
+  <primitive: 56>
 ! wait
-  | process |
-  [
-    process := Processor activeProcess.
-    count > 0
-      ifTrue: [count := count - 1]
-      ifFalse: [
-        process := Processor activeProcess.
-        queue addLast: process.
-        process suspend]
-  ] valueNoContextSwitch
+  <primitive: 57>
 !!
 
 SystemDictionary at: #Processor put: ProcessorScheduler new.

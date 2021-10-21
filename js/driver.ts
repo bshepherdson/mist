@@ -16,7 +16,7 @@ import {
 } from './memory';
 import {newContext} from './corelib';
 import {insert, lookup, printDict} from './dict';
-import {executeImmediate, tick} from './process';
+import {executeImmediate, vmLoop} from './process';
 import {vm} from './vm';
 import * as debug from './debug';
 
@@ -104,9 +104,7 @@ export class Driver {
         vm.ctx = ptrs[v_ctx];
         gcRelease(ptrs);
 
-        while (vm.ctx !== MA_NIL) {
-          tick();
-        }
+        vmLoop();
         break;
       default:
         throw new Error('Unknown driver command');

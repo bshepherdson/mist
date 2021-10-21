@@ -1,4 +1,7 @@
 import * as m from './memory';
+import {SYM_PROCESSOR} from './corelib';
+import {lookup} from './dict';
+import {vm} from './vm';
 
 export function printStackTrace(ctx: m.ptr) {
   // Print the details of each context in the sender chain, with its method, PC etc.
@@ -102,3 +105,34 @@ export function printValue(p: m.ptr): string {
   }
   throw new Error('cant happen');
 }
+
+
+export function printProcesses() {
+  const scheduler = lookup(m.read(m.MA_GLOBALS), SYM_PROCESSOR);
+
+  console.log('active process',
+      printProcess(
+          m.readIV(scheduler, m.PROCESSOR_SCHEDULER_ACTIVE_PROCESS), true),
+      vm.ctx);
+  for (let i = 6; i >= 0; i--) {
+    console.log('priority ' + (i+1));
+    const list = m.readArray(
+        m.readIV(scheduler, m.PROCESSOR_SCHEDULER_QUIESCENT_PROCESSES),
+        i);
+    let p = m.readIV(list, m.LINKED_LIST_HEAD);
+    while (p !== m.MA_NIL) {
+      console.log(printProcess(p));
+      p = m.readIV(p, m.PROCESS_LINK);
+    }
+  }
+}
+
+function printProcess(p: m.ptr, active = false) {
+  return {
+    ptr: p,
+    ctx: p === m.MA_NIL ? m.MA_NIL : m.readIV(p, m.PROCESS_SUSPENDED_CONTEXT),
+  };
+}
+
+(window as any)['printProcesses'] = printProcesses;
+
