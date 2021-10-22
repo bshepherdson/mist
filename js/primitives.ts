@@ -161,7 +161,7 @@ primitives[12] = function() {
 };
 
 
-function runBlock(argc: number) {
+function runBlock(argc: number, opt_argv: ptr = 0) {
   // Stack is (block args...)
   // Allocating the context first, so we don't have values out of memory in argv
   // in case of a GC.
@@ -169,9 +169,17 @@ function runBlock(argc: number) {
   const [v_newCtx, v_outerCtx, v_locals, v_block] = seq(ARGV);
   const ptrs = gcTemps(ARGV + argc); // newCtx, outerCtx, locals, block, args...
   ptrs[v_newCtx] = mkInstance(read(classTable(CLS_CONTEXT)), 19);
-  for (let i = argc - 1; i >= 0; i--) {
-    ptrs[i + ARGV] = pop(vm.ctx);
+
+  if (opt_argv) {
+    for (let i = 0; i < arraySize(opt_argv); i++) {
+      ptrs[i + ARGV] = readArray(opt_argv, i);
+    }
+  } else {
+    for (let i = argc - 1; i >= 0; i--) {
+      ptrs[i + ARGV] = pop(vm.ctx);
+    }
   }
+
   ptrs[v_block] = pop(vm.ctx);
   const argcWanted = fromSmallInteger(readIV(ptrs[v_block], BLOCK_ARGC));
   if (argc !== argcWanted) {
@@ -203,6 +211,13 @@ function runBlock(argc: number) {
 //  13: value
 primitives[13] = function() {
   runBlock(0);
+  return true;
+};
+
+// 58: BlockClosure>>valueWithArguments:
+primitives[58] = function() {
+  const args = pop(vm.ctx);
+  runBlock(arraySize(args), args);
   return true;
 };
 
@@ -502,7 +517,6 @@ primitives[57] = function() {
   gcRelease(ptrs);
   return true;
 };
-
 
 
 function point(p: ptr): [number, number] {

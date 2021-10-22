@@ -108,9 +108,12 @@ Link subclass: #Process
   self newProcess resume
 
 ! forkAt: priority
-  self error: 'implement me'
+  (self newProcessAt: priority) resume
 
 ! newProcess
+  ^ self newProcessAt: Processor activePriority
+
+! newProcessAt: priority
   ^ Process
     forContext: [
       self value.
@@ -121,7 +124,7 @@ Link subclass: #Process
       a suspended context it is the bottom-most (ie. no sender), so indirecting
       through suspendActive would make the suspendedContext not bottom-most!"
       Processor activeProcess suspend] asContext
-    priority: Processor activePriority
+    priority: priority
 
 ! newProcessWith: argumentArray
   ^ Process
@@ -220,7 +223,76 @@ Link subclass: #Process
   <primitive: 56>
 ! wait
   <primitive: 57>
+
+! critical: mutexedBlock
+  "Evaluate mutexedBlock only if the receiver is not currently in the process of
+  running the critical: message. If the receiver is, evaluate mutexedBlock after
+  the other critical: message is finished."
+  self wait.
+  ^ mutexedBlock ensure: [self signal]
+
+! critical: mutexedBlock ifLocked: lockedBlock
+  0 = excessSignals ifTrue: [ ^ lockedBlock value ].
+  excessSignals := excessSignals - 1.
+  ^ mutexedBlock ensure: [ self signal ]
 !!
 
 SystemDictionary at: #Processor put: ProcessorScheduler new.
+
+
+Object subclass: #SharedQueue
+  instanceVariableNames: 'contents readPos writePos mutex empty'.
+
+! SharedQueue class
+! new
+  ^ self new: 10
+! new: size
+  ^ self basicNew initialize init: size; yourself
+!!
+
+! SharedQueue
+! init: size
+  contents := Array new: size.
+  writePos := readPos := 0.
+  mutex := Semaphore new.
+  empty := Semaphore new.
+  mutex signal
+
+! isEmpty
+  ^ readPos = writePos
+
+! next
+  | value |
+  empty wait.
+  ^ mutex critical: [
+    readPos = writePos
+      ifTrue: [
+        self error: 'SharedQueue synchronization error - queue is empty!'.
+        value := nil]
+      ifFalse: [
+        value := contents at: readPos.
+        readPos := readPos + 1].
+    value ]
+
+! nextPut: value
+  "Send a value through the receiver. If a Process has been blocked waiting to
+  receive a value through the receiver, allow it to proceed."
+  mutex critical: [
+    writePos > contents size ifTrue: [self makeRoomAtEnd].
+    contents at: writePos put: value.
+    writePos := writePos + 1].
+  empty signal.
+  ^ value
+
+! peek
+  "Answer the object that was sent through the receiver first and has not yet
+  been received by anyone; but don't remove it from the receiver. Return nil if
+  there's nothing there."
+  ^ empty
+    critical: [
+      mutex critical: [
+        readPos >= writePos ifFalse: [
+          contents at: readPos ] ] ]
+    ifLocked: [ nil ]
+!!
 

@@ -20,6 +20,7 @@ Object subclass: #Chainer instanceVariableNames: 'in out count'.
     ] fork
 !!
 
+
 ! ProcessesTests
 ! testFork
   | sem1 sem2 value |
@@ -53,6 +54,26 @@ Object subclass: #Chainer instanceVariableNames: 'in out count'.
     head key signal.
     tail key wait.
     self assert: tail value equals: ix ]
+
+"! testQueue
+  | result queue done |
+  queue := SharedQueue new.
+  result := OrderedCollection new.
+  done := Semaphore new.
+
+  1 to: 200 by: 20 do: [:base |
+    ([:b |
+      b to: b+19 do: [ :i | queue nextPut: i ].
+      done signal ] newProcessWith: {base}) resume ].
+
+  200 timesRepeat: [result add: queue next].
+  10 timesRepeat: [done wait].
+  self assert: result size equals: 200
+
+
+! testValueNCS
+"
+
 !!
 
 Transcript show: ProcessesTests suite run printString.
