@@ -55,7 +55,7 @@ Object subclass: #Chainer instanceVariableNames: 'in out count'.
     tail key wait.
     self assert: tail value equals: ix ]
 
-"! testQueue
+! testQueue
   | result queue done |
   queue := SharedQueue new.
   result := OrderedCollection new.
@@ -68,11 +68,8 @@ Object subclass: #Chainer instanceVariableNames: 'in out count'.
 
   200 timesRepeat: [result add: queue next].
   10 timesRepeat: [done wait].
-  self assert: result size equals: 200
-
-
-! testValueNCS
-"
+  self assert: result size equals: 200.
+  self assert: (result inject: 0 into: [:sum :x | sum + x]) equals: 20100
 
 !!
 

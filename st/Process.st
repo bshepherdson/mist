@@ -253,7 +253,7 @@ Object subclass: #SharedQueue
 ! SharedQueue
 ! init: size
   contents := Array new: size.
-  writePos := readPos := 0.
+  writePos := readPos := 1.
   mutex := Semaphore new.
   empty := Semaphore new.
   mutex signal
@@ -294,5 +294,25 @@ Object subclass: #SharedQueue
         readPos >= writePos ifFalse: [
           contents at: readPos ] ] ]
     ifLocked: [ nil ]
+
+! makeRoomAtEnd
+  | contentsSize newArray |
+  contentsSize := writePos - readPos.
+  newArray := contentsSize * 2 > contents size
+    ifTrue: [contents class new: contents size * 2]
+    ifFalse: [
+      (contents size > 10 and: [contents * 4 <= contents size])
+        ifTrue: [contents class new: (contentsSize * 2 max: 10)]
+        ifFalse: [contents]].
+  newArray
+    replaceFrom: 1
+    to: contentsSize
+    with: contents
+    startingAt: readPos.
+  contents == newArray
+    ifFalse: [contents := newArray]
+    ifTrue: [contents from: contentsSize + 1 to: contents size put: nil].
+  readPos := 1.
+  writePos := contentsSize + 1
 !!
 

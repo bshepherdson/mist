@@ -113,10 +113,20 @@ export function vmLoop() {
   ptrs[v_quiets] =
       readIV(ptrs[v_scheduler], PROCESSOR_SCHEDULER_QUIESCENT_PROCESSES);
   while (true) {
-    if (vm.contextSwitchLocks > 0) {
+    if (vm.blockContextSwitch) {
+      vm.blockContextSwitch = false;
       tick();
       continue;
     }
+
+    // If we still have a live context, and nothing higher-priority is ready,
+    // we can skip the expensive loop and just keep on running.
+    if (!vm.preempting && vm.ctx !== MA_NIL) {
+      tick();
+      continue;
+    }
+
+    // If we're still here, then try to find something to run.
 
     ptrs[v_proc] =
         readIV(ptrs[v_scheduler], PROCESSOR_SCHEDULER_ACTIVE_PROCESS);
@@ -273,6 +283,12 @@ export function resume(proc: ptr) {
     ptrs[v_list] = readArray(ptrs[v_list], priority - 1);
     addLast(ptrs[v_list], ptrs[v_proc]);
     writeIV(ptrs[v_proc], PROCESS_MY_LIST, ptrs[v_list]);
+
+    const active =
+        readIV(ptrs[v_scheduler], PROCESSOR_SCHEDULER_ACTIVE_PROCESS);
+    if (priority > fromSmallInteger(readIV(active, PROCESS_PRIORITY))) {
+      vm.preempting = true;
+    }
   }
 
   gcRelease(ptrs);

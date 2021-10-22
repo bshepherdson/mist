@@ -207,6 +207,8 @@ Object subclass: #Method instanceVariableNames: 'selector compiled theClass'.
   <primitive: 13>
 ! valueNoContextSwitch
   <primitive: 14>
+! valueWithArguments: argsArray
+  <primitive: 58>
 ! value: arg1
   <primitive: 15>
 ! value: arg1 value: arg2

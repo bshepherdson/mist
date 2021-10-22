@@ -223,8 +223,7 @@ primitives[58] = function() {
 
 //  14: valueNoContextSwitch
 primitives[14] = function() {
-  // TODO: Really capture this! It should be a Semaphore-wrapped implementation
-  // in Smalltalk, wrapping around value.
+  vm.blockContextSwitch = true;
   runBlock(0);
   return true;
 };

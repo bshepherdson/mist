@@ -24,6 +24,11 @@ export const vm = {
   allocationPointer: 0,
   nextIdentityHash: 0,
   nextClass: 0,
-  contextSwitchLocks: 0,
+
+  // Set by valueNoContextSwitch to make sure the block gets properly started
+  // before any context switch. Cleared after the next vmLoop iteration.
+  blockContextSwitch: false,
+  // A process of higher priority than the active one has become ready to run.
+  preempting: false,
 };
 

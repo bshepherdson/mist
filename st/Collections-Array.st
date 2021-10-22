@@ -172,6 +172,9 @@
   start to: stop do: [:ix | dst at: ix - start + 1 put: (self at: ix)].
   ^ dst
 
+! from: start to: end put: aValue
+  start to: end do: [:ix | self at: ix put: aValue]
+
 ! indexOf: anElement
   ^ self indexOf: anElement ifAbsent: [0]
 ! indexOf: anElement ifAbsent: exceptionBlock
