@@ -286,6 +286,47 @@ MistMacroWhileUnary subclass: MMWhileFalseUnary [
   ]
 ]
 
+MistMacro subclass: MMLogicBinary [
+  appliesTo: send [
+    ^ send selectorSymbol = self selectorSymbol and: [
+      send kwargs first last x isBlock]
+  ]
+
+  basicApplyTo: send [
+    "Turning 'rcvr and: [secondary]' into
+    (rcvr)               expr
+    skip + push T/F  -\  ()               T/F-short-circuit
+    body...           |  downstream       T/F-short-circuit
+    (end)     <-------/  condition-result
+    "
+    | block |
+    block := send kwargs first last x. "STLiteral[STBlock[...]]"
+    ^{send receiver.              "Original expr"
+      self shortCircuited.        "Jump if we can short-circuit"
+      STScoped new                "If it was true, run the RHS."
+        temps: block temps;
+        body: block body;
+        yourself.
+      STJumpResolver new}         "And resolve the jump."
+    "Either way the combined condition is on the stack."
+  ]
+
+  selectorSymbol [self subclassResponsibility]
+  shortCircuited [self subclassResponsibility]
+]
+
+MMLogicBinary subclass: MMAnd [
+  selectorSymbol [^ #and:]
+  shortCircuited [^ STJump skipFalsePushFalse]
+]
+
+MMLogicBinary subclass: MMOr [
+  selectorSymbol [^ #or:]
+  shortCircuited [^ STJump skipTruePushTrue]
+]
+
+
+
 STSend extend [
   checkMacros [
     self macros do: [:macro |
@@ -324,6 +365,8 @@ STKeywordSend extend [
     MMWhileFalseBinary new.
     MMWhileFalseBinary new.
     MMIfNil new.
+    MMAnd new.
+    MMOr new.
     "MMIfNotNil new." "TODO maybe? It's rarer and awkward because of the
     optional block argument."
     }.
