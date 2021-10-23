@@ -114,6 +114,10 @@ export function newContext(method: ptr, sender: ptr, locals: ptr, opt_hasPrimiti
 
 export const SYM_SYSTEM_DICTIONARY = wrapSymbol('SystemDictionary');
 export const SYM_PROCESSOR = wrapSymbol('Processor');
+export const SYM_INPUT_HAND = wrapSymbol('InputHand');
+export const SYM_MOUSE_CLICK = wrapSymbol('mouseClick');
+export const SYM_MOUSE_BUTTON_EVENT = wrapSymbol('MouseButtonEvent');
+export const SYM_POINT = wrapSymbol('Point');
 
 insert(read(MA_GLOBALS), SYM_PROCESSOR, scheduler);
 

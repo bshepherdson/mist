@@ -24,10 +24,11 @@ import {
   gcTemps, gcRelease, seq,
   wrapString, wrapSymbol,
 } from './memory';
-import {SYM_PROCESSOR} from './corelib';
+import {SYM_POINT, SYM_PROCESSOR} from './corelib';
 import {lookup} from './dict';
 import {addLast, removeFirst} from './lists';
 import {activeProcess, pushContext, resume, suspend} from './process';
+import {signal} from './semaphores';
 import {vm} from './vm';
 
 // NB: Primitives execute directly on the parent's context, with the receiver
@@ -469,25 +470,7 @@ primitives[55] = function() {
 // Signals this Semaphore. If a process is waiting, resume it.
 // If no processes are waiting, increment the excessSignals count.
 primitives[56] = function() {
-  const [v_sem, v_proc] = seq(2);
-  const ptrs = gcTemps(2);
-  ptrs[v_sem] = peek(vm.ctx); // Signal always just returns the receiver.
-
-  if (readIV(ptrs[v_sem], LINKED_LIST_HEAD) !== MA_NIL) {
-    // There's processes waiting, so resume the first of them.
-    ptrs[v_proc] = removeFirst(ptrs[v_sem]);
-    writeIVNew(ptrs[v_proc], PROCESS_MY_LIST, MA_NIL);
-    writeIVNew(ptrs[v_proc], PROCESS_LINK, MA_NIL);
-    resume(ptrs[v_proc]);
-  } else {
-    // Nobody waiting, so make a note of the excess signal.
-    const signals =
-        fromSmallInteger(readIV(ptrs[v_sem], SEMAPHORE_EXCESS_SIGNALS));
-    writeIVNew(ptrs[v_sem], SEMAPHORE_EXCESS_SIGNALS,
-        toSmallInteger(signals + 1));
-  }
-
-  gcRelease(ptrs);
+  signal(peek(vm.ctx));
   return true;
 };
 
@@ -527,6 +510,7 @@ function point(p: ptr): [number, number] {
 
 declare global {
   var __ui: CanvasRenderingContext2D;
+  var __canvas: HTMLCanvasElement;
 }
 
 // 60: Canvas>>privDrawPolygon:color:borderWidth:borderColor:
@@ -596,6 +580,18 @@ primitives[63] = function() {
   const text = s.substring(start - 1, end);
   const fm = globalThis.__ui.measureText(text);
   globalThis.__ui.fillText(text, x, y + fm.actualBoundingBoxAscent);
+  return true;
+};
+
+// 64: Canvas>>viewport
+primitives[64] = function() {
+  const width = globalThis.__canvas.width;
+  const height = globalThis.__canvas.height;
+  const pt = mkInstance(lookup(read(MA_GLOBALS), SYM_POINT));
+  writeIVNew(pt, 0, toSmallInteger(width));
+  writeIVNew(pt, 1, toSmallInteger(height));
+  pop(vm.ctx);
+  push(vm.ctx, pt);
   return true;
 };
 

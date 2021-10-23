@@ -265,8 +265,6 @@ table way, using linear probing.
   ^ anAssociation
 ! at: aKey ifAbsent: aBlock
   ^ (self associationAt: aKey ifAbsent: [^ aBlock value]) value
-! at: aKey put: aValue
-  self associationAt: aKey ifAbsentPut: [Association key: aKey value: aValue]
 ! remove: aValue
   self shouldNotImplement
 

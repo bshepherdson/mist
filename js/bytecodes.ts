@@ -135,7 +135,7 @@ function storeOp(count: number, operand: number) {
     const key = readLiteral(vm.ctx, operand);
     const assoc = lookupAssoc(dict, key);
     if (assoc === MA_NIL) throw new Error('Unknown global: ' + asJSString(key));
-    writeIV(assoc, ASSOC_VALUE, pop(vm.ctx));
+    writeIV(assoc, ASSOC_VALUE, value);
   } else {
     throw new Error('Invalid store destination ' + count);
   }

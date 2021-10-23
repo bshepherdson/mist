@@ -236,7 +236,7 @@ STAssignments extend [
     targets reverseDo: [:each |
       method compile: 16r6000. "dup"
       target := each x first isUppercase
-        ifTrue: [GlobalVar new index: (method addLiteral: each x)]
+        ifTrue: [GlobalVar new index: (method addLiteral: each x asSymbol)]
         ifFalse: [method lookup: each x].
       target ifNil: [self error: 'unknown store location: ', each x].
       method compile: target store]

@@ -75,6 +75,15 @@ Object subclass: #Point instanceVariableNames: 'x y'.
   ^Rectangle new origin: self; extent: aPoint; yourself
 ! corner: aPoint
   ^Rectangle new origin: self; corner: aPoint; yourself
+
+! min: aPointOrNumber
+  ^ aPointOrNumber class == Point
+    ifTrue:  [(x min: aPointOrNumber x) @ (y min: aPointOrNumber y)]
+    ifFalse: [(x min: aPointOrNumber)   @ (y min: aPointOrNumber)]
+! max: aPointOrNumber
+  ^ aPointOrNumber class == Point
+    ifTrue:  [(x max: aPointOrNumber x) @ (y max: aPointOrNumber y)]
+    ifFalse: [(x max: aPointOrNumber)   @ (y max: aPointOrNumber)]
 !!
 
 ! Number
@@ -111,6 +120,11 @@ Object subclass: #Rectangle instanceVariableNames: 'origin corner'.
   rOrigin x >= corner x ifTrue: [^false].
   rOrigin y >= corner y ifTrue: [^false].
   ^ true
+
+! merge: aRectangle
+  "Answer a Rectangle that contains both the receiver and aRectangle."
+  ^ (origin min: aRectangle origin)
+    corner: (corner max: aRectangle corner)
 
 ! = aRect
   self class == aRect class ifFalse: [^false].
@@ -196,5 +210,16 @@ Object subclass: #Canvas.
     font: aFontOrNil color: aColor
 ! drawString: s from: start to: end in: boundsRect font: aFontOrNil color: aColor
   <primitive: 63>
+
+! bounds
+  ^ 0@0 corner: self viewport
+
+! viewport
+  <primitive: 64>
+
+! isVisible: aRect
+  "Returns true if any part of the specified rectangle is visible in this
+  Canvas's viewport."
+  ^ self bounds intersects: aRect
 !!
 

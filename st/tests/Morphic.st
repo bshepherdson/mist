@@ -14,10 +14,17 @@ Morph subclass: #CrossMorph.
 ! containsPoint: aPoint
   ^ (self horizontalBar containsPoint: aPoint) or: [
     self verticalBar containsPoint: aPoint]
+
+! handlesClick: anEvent
+  ^ self containsPoint: anEvent position
+
+! click: anEvent
+  Transcript show: 'clicked cross!'.
+  ^ anEvent
 !!
 
 CrossMorph new
   bounds: (20@20 extent: 60@60);
   color: (Color new jsString: 'rgba(0, 0, 255, 0.6)'; yourself);
-  drawOn: Canvas new.
+  openInWorld.
 

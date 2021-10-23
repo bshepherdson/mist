@@ -100,13 +100,49 @@ function insertAssoc(dict: ptr, asc: ptr): void {
 export function printDict(dict: ptr): void {
   const arr = readIV(dict, DICT_ARRAY);
   const size = arraySize(arr);
+  const mask = size - 1;
 
   for (let i = 0; i < size; i++) {
     const asc = readArray(arr, i);
     if (asc !== MA_NIL) {
-      console.log(asJSString(readIV(asc, ASSOC_KEY)), readIV(asc, ASSOC_VALUE));
+      console.log(
+        asJSString(readIV(asc, ASSOC_KEY)),
+        readIV(asc, ASSOC_VALUE),
+        i,
+        identityHash(readIV(asc, ASSOC_KEY)) & mask,
+        identityHash(readIV(asc, ASSOC_KEY)),
+      );
     }
   }
+}
+
+export function checkHealth(dict: ptr): boolean {
+  const arr = readIV(dict, DICT_ARRAY);
+  const size = arraySize(arr);
+  let count = 0;
+
+  for (let i = 0; i < size; i++) {
+    const asc = readArray(arr, i);
+    if (asc !== MA_NIL) {
+      count++;
+      const found = lookup(dict, readIV(asc, ASSOC_KEY));
+      if (found === MA_NIL) {
+        console.log('nil found for ' + asJSString(readIV(asc, ASSOC_KEY)));
+        return false;
+      }
+      if (found !== readIV(asc, ASSOC_VALUE)) {
+        console.log('mismatch found for ' + asJSString(readIV(asc, ASSOC_KEY)));
+        return false;
+      }
+    }
+  }
+
+  const tally = fromSmallInteger(readIV(dict, DICT_TALLY));
+  if (count !== tally) {
+    console.log('length ' + count + ' and tally ' + tally + 'dont match');
+    return false;
+  }
+  return true;
 }
 
 // TODO Might as well make these dictionaries compatible with upstream

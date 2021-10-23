@@ -112,7 +112,14 @@ export function vmLoop() {
   ptrs[v_scheduler] = lookup(read(MA_GLOBALS), SYM_PROCESSOR);
   ptrs[v_quiets] =
       readIV(ptrs[v_scheduler], PROCESSOR_SCHEDULER_QUIESCENT_PROCESSES);
+  let cycles = 0;
   while (true) {
+    cycles++;
+    if (vm.bootstrapComplete && cycles % 1000 === 0 &&
+        (performance.now() - vm.frameStart) > 14) {
+      break;
+    }
+
     if (vm.blockContextSwitch) {
       vm.blockContextSwitch = false;
       tick();

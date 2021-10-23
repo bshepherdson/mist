@@ -330,6 +330,7 @@ Warning subclass: #Deprecated.
   handlerContext := aContext
 ! resume
   "TODO"
+  Transcript show: 'resume is not implemented'.
   self halt
 ! return: aValue
   handlerContext return: aValue

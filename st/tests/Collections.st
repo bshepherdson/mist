@@ -549,6 +549,16 @@ TestCase subclass: #CollectionsGeneralDictionary.
       with: (Association key: 3 value: 9)
       with: (Association key: 4 value: 10))
     equals: (Dictionary new addAll: {7. 8. 9. 10}; yourself).
+
+! testBigDict
+  | d a |
+  d := Dictionary new.
+  a := Array new: 200.
+  1 to: 200 do: [:i | a at: i put: i. d at: i put: i].
+  self assert: d size equals: 200.
+  self assert: d capacity >= 256.
+
+  1 to: 200 do: [:i | self assert: (d at: i) equals: i].
 !!
 
 

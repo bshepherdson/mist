@@ -237,7 +237,9 @@ Link subclass: #Process
   ^ mutexedBlock ensure: [ self signal ]
 !!
 
-SystemDictionary at: #Processor put: ProcessorScheduler new.
+Transcript show: 'pre-processor: ', (SystemDictionary at: #Processor) printString.
+"SystemDictionary at: #Processor put: ProcessorScheduler new."
+Transcript show: 'post-processor'.
 
 
 Object subclass: #SharedQueue
@@ -301,7 +303,7 @@ Object subclass: #SharedQueue
   newArray := contentsSize * 2 > contents size
     ifTrue: [contents class new: contents size * 2]
     ifFalse: [
-      (contents size > 10 and: [contents * 4 <= contents size])
+      (contents size > 10 and: [contentsSize * 4 <= contents size])
         ifTrue: [contents class new: (contentsSize * 2 max: 10)]
         ifFalse: [contents]].
   newArray

@@ -30,5 +30,9 @@ export const vm = {
   blockContextSwitch: false,
   // A process of higher priority than the active one has become ready to run.
   preempting: false,
+
+  // The start time of the current frame. Used to manage the frame budget.
+  frameStart: performance.now(),
+  bootstrapComplete: false,
 };
 

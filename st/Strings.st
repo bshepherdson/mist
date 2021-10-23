@@ -30,6 +30,8 @@
 ! = anObject
   "Symbols are interned, so Symbols can short-circuit with ==."
   ^ self == anObject
+! hash
+  ^ self basicHash "Not the default collection one"
 ! asSymbol
   ^self
 !!

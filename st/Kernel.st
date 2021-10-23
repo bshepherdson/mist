@@ -94,6 +94,8 @@ Object subclass: #Method instanceVariableNames: 'selector compiled theClass'.
   <primitive: 30>
 ! ~= anObject
   ^ (self = anObject) not
+! ~~ anObject
+  ^ (self == anObject) not
 
 ! = anObject
   ^ self == anObject
