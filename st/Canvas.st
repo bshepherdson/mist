@@ -111,6 +111,10 @@ Object subclass: #Rectangle instanceVariableNames: 'origin corner'.
 ! insetBy: aPoint
   ^ origin + aPoint corner: corner - aPoint
 
+! containsPoint: aPoint
+  ^ (aPoint x between: origin x and: corner x) and: [
+    (aPoint y between: origin y and: corner y)]
+
 ! intersects: aRect
   | rOrigin rCorner |
   rOrigin := aRect origin.

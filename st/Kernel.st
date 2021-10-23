@@ -280,6 +280,8 @@ Object subclass: #Method instanceVariableNames: 'selector compiled theClass'.
   ^ false
 ! isNotNil
   ^ self isNil not
+! notNil
+  ^ self isNil not
 !!
 
 

@@ -165,6 +165,8 @@ Error subclass: #NotFound
   ^ self isEmpty
 ! isNotEmpty
   ^ self isEmpty not
+! notEmpty
+  ^ self isEmpty not
 
 ! isSequenceable
   ^ false

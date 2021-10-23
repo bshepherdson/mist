@@ -70,7 +70,7 @@ Object subclass: #Morph
 ! submorphCount
   ^ submorphs size
 
-! morphsDo: aBlock
+! submorphsDo: aBlock
   submorphs do: aBlock
 
 ! allMorphsDo: aBlock
@@ -307,6 +307,10 @@ PasteUpMorph subclass: #WorldMorph.
 ! runStepMethods
   "TODO Implement these steps."
 
+! invalidRect: damageRect from: aMorph
+  self isWorldMorph ifTrue: [worldState recordDamagedRect: damageRect].
+  ^ super invalidRect: damageRect from: aMorph
+
 ! owner
   ^ nil
 !!
@@ -325,7 +329,10 @@ PasteUpMorph subclass: #WorldMorph.
   worldState doOneCycleFor: self
 
 ! cursor
-  ^ worldState cursor
+  | cursor |
+  cursor := HandMorph new owner: self; yourself.
+  worldState addHand: cursor.
+  ^ cursor
 
 ! isWorld
   ^ true
@@ -337,12 +344,19 @@ PasteUpMorph subclass: #WorldMorph.
 !!
 
 Object subclass: #WorldState
-  instanceVariableNames: 'hands cursor cycleQueue'.
+  instanceVariableNames: 'hands cycleQueue damageRecorder'.
 
 ! WorldState
 ! initialize
   super initialize.
-  self privUiUpdateProcess
+  self privUiUpdateProcess.
+  damageRecorder := DamageRecorder new.
+  "Force the first paint."
+  damageRecorder doFullRepaint
+
+! recordDamagedRect: aRect
+  damageRecorder ifNotNil: [
+    damageRecorder recordInvalidRect: aRect truncated]
 
 ! addHand: aHandMorph
   (hands ifNil: [hands := OrderedCollection new]) add: aHandMorph
@@ -352,12 +366,6 @@ Object subclass: #WorldState
   [[self doOneCycleNowFor: cycleQueue next.
     true] whileTrue ]
       forkAt: Processor userInterruptPriority
-
-! cursor
-  ^ cursor ifNil: [
-    cursor := HandMorph new owner: self; yourself.
-    self addHand: cursor.
-    cursor]
 
 ! doOneCycleFor: aWorld
   "The frame counter is coming from the outside, so call right through."
@@ -369,7 +377,70 @@ Object subclass: #WorldState
   self displayWorldSafely: aWorld
 
 ! displayWorldSafely: aWorld
-  aWorld fullDrawOn: Display
+  damageRecorder updateIsNeeded ifTrue: [
+    aWorld fullDrawOn: Display.
+    damageRecorder reset]
+!!
+
+Object subclass: #DamageRecorder
+  instanceVariableNames: 'invalidRects totalRepaint'.
+
+! DamageRecorder
+! initialize
+  super initialize.
+  self reset
+
+! doFullRepaint
+  ^ totalRepaint := true
+
+! invalidRectsFullBounds: aRect
+  "Return a collection of damaged rectangles for the given canvas. If a total
+  repaint has been requested, return the given rectangle."
+  ^ totalRepaint
+    ifTrue:  [Array with: aRect]
+    ifFalse: [invalidRects copy]
+
+! recordInvalidRect: newRect
+  "Record the given rectangle in my damage list, a list of rectangular areas
+  of the display that should redraw on the next display cycle."
+  "Details: Damaged rectangles are often identical or overlap significantly.
+  In these cases, we merge them to reduce the number of damage rectangles that
+  must be processed when the display is updated. Moreover, above a certain
+  thresold, we ignore the individual rectangles completely, and simply do a
+  complete repaint on the next cycle."
+  | mergeRect |
+  totalRepaint ifTrue: [^self]. "Don't bother if planning full repaint."
+
+  invalidRects do: [:rect |
+    | a |
+    ((a := (rect intersect: newRect) area) > 40
+        and: ["Avoid combining a vertical and horizontal rects.
+              Can make a big diff and we only test when likely."
+              a > (newRect area // 4) or: [a > (rect area // 4)]])
+      ifTrue: [
+        "Merge rectangle in place (see note below) if there is much overlap."
+        rect setOrigin: (rect origin min: newRect origin) truncated
+            corner: (rect corner max: newRect corner) truncated.
+        ^ self]].
+
+    invalidRects size >= 15 ifTrue: [
+      "If there are too many separate areas, merge them all."
+      mergeRect := Rectangle merging: invalidRects.
+      self reset.
+      invalidRects addLast: mergeRect].
+
+    "add the given rectangle to the damage list"
+    "Note we make a deep copy of all rectangles added to this list, since the
+    rectangles in this list sometimes get extended in place."
+    invalidRects addLast:
+      (newRect topLeft truncated corner: newRect bottomRight truncated).
+
+! reset
+  invalidRects := OrderedCollection new: 15.
+  totalRepaint := false
+
+! updateIsNeeded
+  ^ totalRepaint or: [invalidRects notEmpty]
 !!
 
 "These are in memory.ts, so keep them in sync!"
@@ -419,8 +490,13 @@ Morph subclass: #HandMorph
     true] whileTrue ] forkAt: Processor highIOPriority.
 ! privSpawnMouseThread
   [[mouseSem wait.
-    Transcript show: 'mouse event: ', lastMouse printString.
-    eventQueue nextPut: lastMouse.
+    eventQueue nextPut: (MouseButtonEvent new
+      type: lastMouse first;
+      timeStamp: lastMouse second;
+      position: (lastMouse at: 3) @ (lastMouse at: 4);
+      whichButton: (lastMouse at: 5);
+      nClicks: 1;
+      yourself).
     true] whileTrue ] forkAt: Processor highIOPriority.
 !!
 

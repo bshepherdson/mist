@@ -70,6 +70,9 @@
   anEvent wasIgnored ifFalse: [anEvent sentTo: self].
   ^ anEvent
 
+! handlerForClick: anEvent
+  ^ self
+
 "System-level event handlers. Users should override eg. #click: and
 #keystroke:, not these!"
 ! handleClick: anEvent
@@ -91,7 +94,6 @@ Object subclass: #MorphicEventDispatcher.
 ! MorphicEventDispatcher
 ! dispatchEvent: anEvent with: aMorph
   "Split on event type, and call the specific dispatcher."
-  Transcript show: 'MorphicEventDispatcher>>dispatchEvent:with:'.
   anEvent isMouse ifTrue: [
     anEvent isMouseButton ifTrue: [^self dispatchClick: anEvent with: aMorph].
     ^ #rejected].
@@ -104,8 +106,6 @@ Object subclass: #MorphicEventDispatcher.
   to negotiate who the true receiver is."
   | handler lastHandler |
   "Quick escapes first."
-  Transcript show: 'MorphicEventDispatcher>>dispatchClick:with:'.
-  Transcript show: 'fullBounds ', aMorph fullBounds printString, ' position ', anEvent position printString.
   anEvent wasIgnored ifTrue: [^anEvent].
   (aMorph fullBounds containsPoint: anEvent position) ifFalse: [^#rejected].
 
@@ -137,16 +137,12 @@ Object subclass: #MorphicEventDispatcher.
   - If another handler has been installed but the event was not handled, it
     means that somebody up in the hierarchy wants to handle the event."
   | result filteredEvent |
-  Transcript show: 'MorphicEventDispatcher>>dispatchEvent:withHandler:withMorph:'.
   result := self dispatchEvent: anEvent toSubmorphsOf: aMorph.
-
-  Transcript show: 'submorphs result: ', result printString.
 
   result == #rejected
     ifFalse: [filteredEvent := result]
     ifTrue: [
       "My submorphs did not want it. I might."
-      Transcript show: 'children rejected, trying myself'.
       (aMorph containsPoint: anEvent position event: anEvent)
         ifFalse: [^ #rejected].
       filteredEvent := anEvent].
@@ -167,7 +163,6 @@ Object subclass: #MorphicEventDispatcher.
     filteredEvent := child processEvent: anEvent.
     filteredEvent == #rejected ifFalse: [
       "If we got something else, eg. nil, just keep using the event."
-      Transcript show: 'MorphicEventDispatcher>>dispatchEvent:toSubmorphsOf:'.
       filteredEvent isMorphicEvent ifFalse: [filteredEvent := anEvent].
       ^ self nextFromOriginal: anEvent filtered: filteredEvent]].
 
@@ -202,6 +197,11 @@ MouseEvent subclass: #MouseButtonEvent
   ^ true
 ! isMouse
   ^ false
+
+! timeStamp
+  ^ timeStamp
+! timeStamp: anObject
+  timeStamp := anObject
 !!
 
 ! UserInputEvent
@@ -213,6 +213,11 @@ MouseEvent subclass: #MouseButtonEvent
   ^ type
 ! type: aSymbol
   type := aSymbol
+
+! handler
+  ^ handler
+! handler: anObject
+  handler := anObject
 
 ! position
   ^ position
@@ -240,5 +245,18 @@ MouseEvent subclass: #MouseButtonEvent
 ! MouseButtonEvent
 ! isMouseButton
   ^ true
+
+! whichButton
+  ^ whichButton
+! whichButton: anObject
+  whichButton := anObject
+
+! nClicks
+  ^ nClicks
+! nClicks: anObject
+  nClicks := anObject
+
+! sentTo: aMorph
+  ^ aMorph handleClick: self
 !!
 

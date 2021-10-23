@@ -11,7 +11,8 @@
 // is signaled.
 import {
   ptr, mkInstance, gcTemps, gcRelease, seq,
-  MA_GLOBALS, read, readIV, writeIV, writeIVNew,
+  CLS_ARRAY, classTable,
+  MA_GLOBALS, read, readIV, writeIV, writeIVNew, writeArrayNew,
   HAND_FRAME_COUNT, HAND_FRAME_SEM,
   HAND_LAST_KEY, HAND_KEYS_SEM,
   HAND_LAST_MOUSE, HAND_MOUSE_SEM,
@@ -60,17 +61,14 @@ export function initEvents(canvas: HTMLCanvasElement) {
     const [v_event, v_pos, v_hand] = seq(3);
     const ptrs = gcTemps(3);
     ptrs[v_hand] = hand();
-    ptrs[v_event] = mkInstance(lookup(read(MA_GLOBALS), SYM_MOUSE_BUTTON_EVENT));
-    writeIVNew(ptrs[v_event], MORPHIC_EVENT_TIMESTAMP,
-        toSmallInteger(Math.floor(e.timeStamp)));
-    writeIVNew(ptrs[v_event], USER_INPUT_EVENT_TYPE, SYM_MOUSE_CLICK);
-
-    ptrs[v_pos] = mkInstance(lookup(read(MA_GLOBALS), SYM_POINT));
-    writeIVNew(ptrs[v_pos], 0, toSmallInteger(Math.floor(e.offsetX)));
-    writeIVNew(ptrs[v_pos], 1, toSmallInteger(Math.floor(e.offsetY)));
-    writeIVNew(ptrs[v_event], USER_INPUT_EVENT_POSITION, ptrs[v_pos]);
-    // TODO: whichButton, nClicks - for now we assume left single clicks
-
+    ptrs[v_event] = mkInstance(read(classTable(CLS_ARRAY)), 5);
+    // Clicks get [#mouseClick, timestamp, x, y, buttons]
+    // where buttons is a mask with 1 = left, 2 = right, 4 = middle.
+    writeArrayNew(ptrs[v_event], 0, SYM_MOUSE_CLICK);
+    writeArrayNew(ptrs[v_event], 1, toSmallInteger(Math.floor(e.timeStamp)));
+    writeArrayNew(ptrs[v_event], 2, toSmallInteger(Math.floor(e.offsetX)));
+    writeArrayNew(ptrs[v_event], 3, toSmallInteger(Math.floor(e.offsetY)));
+    writeArrayNew(ptrs[v_event], 4, toSmallInteger(e.buttons & 7));
     writeIV(ptrs[v_hand], HAND_LAST_MOUSE, ptrs[v_event]);
     signal(readIV(ptrs[v_hand], HAND_MOUSE_SEM));
   });
