@@ -136,3 +136,5 @@ function printProcess(p: m.ptr, active = false) {
 
 (window as any)['printProcesses'] = printProcesses;
 
+(window as any)['printObject'] = m.debugObject;
+

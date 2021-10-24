@@ -833,6 +833,46 @@ export function edenFreeSpaceRatio(): number {
 }
 
 
+export interface DebugBreakdown {
+  className: string;
+  ptr: ptr;
+  format: number;
+  ivs: Array<number|string>;
+  pas: Array<number|string>;
+}
+
+export function debugObject(p: ptr): DebugBreakdown {
+  const className = asJSString(readIV(classOf(p), CLASS_NAME));
+  const hdr = decodeHeader(p);
+  const ivs = [];
+  const pas = [];
+
+  if (hdr.iv) {
+    for (let i = 0; i < hdr.iv[0]; i++) {
+      const value = read(hdr.iv[1] + 2*i);
+      ivs.push(isSmallInteger(value) ?
+          fromSmallInteger(value) : '' + value);
+    }
+  }
+
+  if (hdr.pa) {
+    for (let i = 0; i < hdr.pa[0]; i++) {
+      const value = read(hdr.pa[1] + 2*i);
+      pas.push(isSmallInteger(value) ?
+          fromSmallInteger(value) : '' + value);
+    }
+  }
+
+  return {
+    className,
+    ptr: p,
+    format: format(p),
+    ivs,
+    pas,
+  }
+}
+
+
 // Initialization
 // This sets up some key values in the special area.
 write(MA_TENURE_ALLOC, MEM_SPECIAL_TOP);
@@ -989,7 +1029,9 @@ function minorGC() {
   vm.allocationPointer = MEM_EDEN_TOP;
   console.timeEnd('minor GC');
   console.log('copied ' + (next - __start) + ' words. NewGen at ' +
-      ((next - read(MA_NEW_GEN_START)) / (MEM_G2_TOP-MEM_G1_TOP)));
+      ((next - MEM_G1_TOP) / (MEM_G2_TOP-MEM_G1_TOP)));
+  console.log(__start, next, read(MA_NEW_GEN_START), (MEM_G2_TOP-MEM_G1_TOP));
+  console.log('G1', MEM_G1_TOP, next, MEM_G2_TOP);
 
   // Sanity-check time: all copied objects should have had their pointers
   // forwarded properly. We can use gcMap to check them all.
