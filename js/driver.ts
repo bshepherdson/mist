@@ -2,7 +2,7 @@ import {
   ptr, stw, stl,
   CLS_ARRAY, CLS_CHARACTER, CLS_COMPILED_METHOD, CLS_PROCESS, CLS_WORD_ARRAY,
   CLS_STRING,
-  BEHAVIOR_METHODS, CLASS_NAME, CLASS_VAR1, METHOD_NAME, METHOD_CLASS,
+  BEHAVIOR_METHODS, CLASS_NAME, CLASS_POOL, METHOD_NAME, METHOD_CLASS,
   PROCESS_CONTEXT, PROCESS_PROCESS_TABLE, PROCESS_TABLE_NEXT_PRIORITY,
   MA_NIL, MA_TRUE, MA_FALSE, MA_GLOBALS,
   METHOD_BYTECODE, METHOD_LITERALS, METHOD_LOCALS, METHOD_ARGC,
@@ -122,7 +122,8 @@ export class Driver {
 
       case LIT_TYPE_CHARACTER:
         const ch = this.stream.next();
-        const asciiTable = readIV(read(classTable(CLS_CHARACTER)), CLASS_VAR1);
+        const pool = readIV(read(classTable(CLS_CHARACTER)), CLASS_POOL);
+        const asciiTable = lookup(pool, wrapSymbol('AsciiTable'));
         return readArray(asciiTable, ch);
 
       case LIT_TYPE_WORD_ARRAY:

@@ -13,7 +13,7 @@ import {
   MA_TRUE, MA_FALSE, MA_GLOBALS, MA_NIL,
   PROCESSOR_SCHEDULER_QUIESCENT_PROCESSES,
   BEHAVIOR_FORMAT, BEHAVIOR_METHODS, CLASS_NAME,
-  CLASS_VAR1, IV_BLOCK,
+  CLASS_POOL, IV_BLOCK,
   basicNew, classOf, classTable, mkInstance,
   fromSmallInteger, toSmallInteger, wrapSymbol,
   read, readIV, write, writeIV, writeIVNew, writeArrayNew,
@@ -65,9 +65,12 @@ mkInstance(true_, undefined, (_) => MA_TRUE);
 mkInstance(false_, undefined, (_) => MA_FALSE);
 
 const chr = defClass(CLS_CHARACTER, 'Character',
-    read(classTable(CLS_MAGNITUDE)), 1, 1);
+    read(classTable(CLS_MAGNITUDE)), 1);
 const charTable = mkInstance(read(classTable(CLS_ARRAY)), 256);
-writeIV(chr, CLASS_VAR1, charTable);
+const charTableSym = wrapSymbol('AsciiTable');
+const dict = mkDict(8);
+insert(dict, charTableSym, charTable);
+writeIV(chr, CLASS_POOL, dict);
 
 const link = defClass(CLS_LINK, 'Link', object, 1);
 defClass(CLS_PROCESS, 'Process', link, 4);

@@ -98,7 +98,7 @@ export const lateBinding = {
 // - Then the new class is an instance of the metaclass.
 //   - ie. The class field of Transparent is Transparent class!
 export function defClass(clsIndex: IdentityHash, name: string|ptr,
-    superclass: ptr, instVars = 0, classVars = 0): ptr {
+    superclass: ptr, instVars = 0): ptr {
   const [v_metaclass, v_supermeta, v_superclass, v_name, v_symbol, v_class] =
       seq(6);
   const ptrs = gcTemps(6);
@@ -126,7 +126,8 @@ export function defClass(clsIndex: IdentityHash, name: string|ptr,
   writeIVNew(ptrs[v_metaclass], BEHAVIOR_METHODS, lateBinding.dictFactory());
 
   const upstreamClassVars = behaviorToInstVars(ptrs[v_supermeta]);
-  const metaFormat = fixedInstVarsFormat(upstreamClassVars + classVars);
+  const metaFormat =
+      fixedInstVarsFormat(upstreamClassVars + 0 /*classInstVars*/);
   writeIVNew(ptrs[v_metaclass], BEHAVIOR_FORMAT, toSmallInteger(metaFormat));
 
   // Add the metaclass to the class table.
@@ -280,7 +281,7 @@ writeIVNew(arr, BEHAVIOR_FORMAT, toSmallInteger(Format.VARIABLE << 24));
 
 const wordArr = defClass(CLS_WORD_ARRAY, 'WordArray', arrColl, 0);
 const str = defClass(CLS_STRING, 'String', wordArr, 0);
-const sym = defClass(CLS_SYMBOL, 'Symbol', str, 0, 1); // 1 class var: symbol dictionary.
+const sym = defClass(CLS_SYMBOL, 'Symbol', str, 0);
 // Adjust the format! It's Format.WORDS_EVEN and the allocation code handles the
 // length.
 writeIVNew(wordArr, BEHAVIOR_FORMAT, toSmallInteger(Format.WORDS_EVEN << 24));

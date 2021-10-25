@@ -312,11 +312,17 @@ the operand field at all.
       whose index is in *operand*.
     - `$06: push inline number` Interpret *operand* as a signed 8-bit value and
       push it. That gives a range of -128 to 127, which is lots.
+    - `$07: push class variable` *operand* is a symbol, which is looked up in
+      the receiver's classPool. If it can't be found, throw an error.
 - `$1: store` Store to locals and instance variables
     - `$10: store local` Store TOS into local variable whose index is in operand
       field. NB: It's illegal to store over arguments or `self`.
     - `$11: store instance variable` Store TOS into instance variable whose
       index is in operand field.
+    - `$12: store global variable` Store TOS into the global variable
+      (in `SystemDictionary`) at the key whose symbol is *operand*.
+    - `$13: store class variable` Store TOS into the receiver's class variable
+      whose symbol is *operand*.
 - `$2: send` Fundamental message sending instruction.
     - Count is the argument count (not including `self`)
     - Operand is the index of the message selector (a `Symbol`) in the literals.

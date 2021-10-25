@@ -4,7 +4,7 @@ import {
   BEHAVIOR_METHODS, BEHAVIOR_SUPERCLASS,
   BLOCK_ARGC, BLOCK_ARGV, BLOCK_PC_START, BLOCK_CONTEXT,
   CTX_METHOD, CTX_LOCALS, CTX_SENDER, CTX_PC, CTX_STACK_INDEX,
-  CLASS_NAME, METACLASS_THIS_CLASS,
+  CLASS_NAME, CLASS_POOL, METACLASS_THIS_CLASS,
   CLS_ARRAY, CLS_BLOCK_CLOSURE, CLS_METACLASS,
   ASSOC_KEY, ASSOC_VALUE,
   METHOD_LITERALS, METHOD_ARGC, METHOD_CLASS, METHOD_LOCALS, METHOD_BYTECODE,
@@ -49,6 +49,23 @@ export function writeLocal(ctx: ptr, index: number, value: ptr) {
 // This is the actual receiver, even if the method is defined on a superclass.
 export function self(ctx: ptr): ptr {
   return readLocal(ctx, 0);
+}
+
+// Returns the Association for a class variable, or nil if it's not found.
+// p might be an Object, or it might be a class. This does the right thing
+// either way.
+function classVarAssoc(p: ptr, key: ptr): ptr {
+  let cls = classOf(p);
+
+  // If the class of p is a Metaclass, the containing method is a classy one.
+  // Therefore p (the receiver) is actually the subclass of Class, which owns
+  // the classPool instance variable we're after.
+  if (hasClass(cls, CLS_METACLASS)) {
+    cls = p;
+  }
+
+  const pool = readIV(cls, CLASS_POOL);
+  return pool !== MA_NIL ? lookupAssoc(pool, key) : MA_NIL;
 }
 
 
@@ -117,6 +134,13 @@ function pushOp(count: number, operand: number) {
     case 6: // Push inline number - signed 8-bit operand.
       let n = operand < 128 ? operand : operand - 256;
       return push(vm.ctx, toSmallInteger(n));
+    case 7: // Push class variable by a literal symbol.
+      const name = readLiteral(vm.ctx, operand);
+      const assoc2 = classVarAssoc(self(vm.ctx), name);
+      if (assoc2 === MA_NIL) {
+        throw new Error('Unknown class var: ' + asJSString(name));
+      }
+      return push(vm.ctx, readIV(assoc2, ASSOC_VALUE));
     default:
       throw new Error('Unknown push type: ' + count);
   }
@@ -135,6 +159,13 @@ function storeOp(count: number, operand: number) {
     const key = readLiteral(vm.ctx, operand);
     const assoc = lookupAssoc(dict, key);
     if (assoc === MA_NIL) throw new Error('Unknown global: ' + asJSString(key));
+    writeIV(assoc, ASSOC_VALUE, value);
+  } else if (count === 3) {
+    const key = readLiteral(vm.ctx, operand);
+    const assoc = classVarAssoc(self(vm.ctx), key);
+    if (assoc === MA_NIL) {
+      throw new Error('Unknown class var: ' + asJSString(key));
+    }
     writeIV(assoc, ASSOC_VALUE, value);
   } else {
     throw new Error('Invalid store destination ' + count);

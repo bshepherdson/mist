@@ -58,7 +58,7 @@ export const MA_FALSE: ptr = 0x2008; // Size 4, zero-size object
 // Behavior has 3 instance vars, ClassDescription 0, Class 2 and Metaclass 1.
 export const IV_BEHAVIOR = 3;
 export const IV_CLASS_DESCRIPTION = 0;
-export const IV_CLASS = 2;
+export const IV_CLASS = 3;
 export const IV_METACLASS = 1;
 
 
@@ -139,7 +139,7 @@ export function seq(n: number): Array<number> {
 
 export const [
   BEHAVIOR_SUPERCLASS, BEHAVIOR_METHODS, BEHAVIOR_FORMAT,
-  CLASS_NAME, CLASS_SUBCLASSES, CLASS_VAR1, // Index for the first class var.
+  CLASS_NAME, CLASS_SUBCLASSES, CLASS_POOL,
 ] = seq(6);
 
 export const METACLASS_THIS_CLASS = CLASS_NAME; // Same field, after Behavior.
@@ -1015,7 +1015,7 @@ function minorGC() {
     }
     if (hdr.wa) {
       scan += (hdr.wa[0] + 1) & ~1; // Rounding up to keep it aligned.
-      // Word arrays don't need to be copied, just skipped over.
+      // Word arrays don't need to be forwarded, just skipped over.
     }
     if (scan % 2 === 1) debugger;
     // Scan now points at the next object in the queue.
@@ -1104,14 +1104,6 @@ function forward(p: ptr): ptr {
   //if ((readWord(p+2) & 0x0f00) === 0x700) debugger;
   const [dst, len] = copyObject(p, next); // dst might be next + 4 for long objs
 
-  // DEBUG: Remove me later.
-  //if (dst !== next) {
-  //  console.log('sanity check', p, decodeHeader(p), next, dst, len);
-  //  console.log([p-4, p-2, p, p+2].map(x => hexPad(read(x))).join(' '));
-  //  console.log([dst-4, dst-2, dst, dst+2].map(x => hexPad(read(x))).join(' '));
-  //  console.log([next, next+2, next+4, next+6].map(x => hexPad(read(x))).join(' '));
-  //}
-
   write(p, dst);
   write(p+2, -1);
   const oldNext = next;
@@ -1122,11 +1114,6 @@ function forward(p: ptr): ptr {
   return dst;
 }
 
-// start-9    $03 000404     length 3
-// start-7    $07 00001c     format 7 = words odd
-// start-5    two words
-// start-3    two words
-// start-1    last word + padding
 
 const HEX_DIGITS = '0123456789abcdef';
 

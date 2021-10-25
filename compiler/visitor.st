@@ -146,7 +146,11 @@ STIdentifier extend [
 
     "Then try to look it up in the scope."
     var := method lookup: x.
-    var isNil ifFalse: [method compile: var push. ^nil].
+    var isNil ifFalse: [
+      var class == ClassVar ifTrue: [
+        var := ClassVar new index: (method addLiteral: x asSymbol)].
+      method compile: var push.
+      ^nil].
 
     "If we're still here, then it need to be global."
     x first isUppercase ifFalse: [self error: 'unknown identifier: ' , x].
@@ -236,7 +240,13 @@ STAssignments extend [
     targets reverseDo: [:each |
       method compile: 16r6000. "dup"
       target := each x first isUppercase
-        ifTrue: [GlobalVar new index: (method addLiteral: each x asSymbol)]
+        ifTrue: [
+          | var sym |
+          sym := each x asSymbol.
+          var := method lookup: each x.
+          var
+            ifNil: [GlobalVar new index: (method addLiteral: sym)]
+            ifNotNil: [ClassVar new index: (method addLiteral: sym)]]
         ifFalse: [method lookup: each x].
       target ifNil: [self error: 'unknown store location: ', each x].
       method compile: target store]

@@ -11,7 +11,7 @@ import {
   BLOCK_CONTEXT, BLOCK_ARGV, BLOCK_ARGC, BLOCK_PC_START,
   CTX_LOCALS, CTX_SENDER, CTX_PC, CTX_METHOD, CTX_STACK_INDEX,
   COLOR_STRING, POINT_X, POINT_Y, RECT_ORIGIN,
-  CLASS_VAR1,
+  CLASS_POOL,
   LINKED_LIST_HEAD, LINKED_LIST_TAIL,
   PROCESS_LINK, PROCESS_MY_LIST, PROCESS_SUSPENDED_CONTEXT, PROCESS_PRIORITY,
   PROCESSOR_SCHEDULER_QUIESCENT_PROCESSES, PROCESSOR_SCHEDULER_ACTIVE_PROCESS,
@@ -25,7 +25,7 @@ import {
   wrapString, wrapSymbol,
 } from './memory';
 import {SYM_POINT, SYM_PROCESSOR} from './corelib';
-import {lookup} from './dict';
+import {mkDict, insert, lookup} from './dict';
 import {addLast, removeFirst} from './lists';
 import {activeProcess, pushContext, resume, suspend} from './process';
 import {signal} from './semaphores';
@@ -135,12 +135,27 @@ function mkSubclass(hasInstVars: boolean, hasClassVars: boolean): ptr {
   const className = pop(vm.ctx); // Pointer to a symbol.
   const superclass = pop(vm.ctx);
 
-  let instVars = instVarNames.split(/ +/).length;
-  let classVars = classVarNames.split(/ +/).length;
+  let nInstVars = instVarNames.split(/ +/).length;
+  let classVars = classVarNames.split(/ +/);
 
   const classIndex = read(MA_NEXT_CLASS_INDEX);
   write(MA_NEXT_CLASS_INDEX, classIndex + 1);
-  return defClass(classIndex, className, superclass, instVars, classVars);
+
+  const ptrs = gcTemps(2);
+  const [v_class, v_vars] = seq(2);
+  ptrs[v_class] = defClass(classIndex, className, superclass, nInstVars);
+
+  if (classVars.length > 0) {
+    ptrs[v_vars] = mkDict(8);
+    for (let i = 0; i < classVars.length; i++) {
+      insert(ptrs[v_vars], wrapSymbol(classVars[i]), MA_NIL);
+    }
+    writeIV(ptrs[v_class], CLASS_POOL, ptrs[v_vars]);
+  }
+
+  const cls = ptrs[v_class];
+  gcRelease(ptrs);
+  return cls;
 }
 
 //  10: subclass:
@@ -420,18 +435,6 @@ primitives[52] = function() {
   push(vm.ctx, rawValue);
   return true;
 };
-
-// 53: Character class>>value: - retrieves the Character instance for a
-// particular ASCII value.
-// TODO: This could be an array lookup on a class variable, once those are
-// sorted out.
-primitives[53] = function() {
-  const num = fromSmallInteger(pop(vm.ctx));
-  const asciiTable = readIV(read(classTable(CLS_CHARACTER)), CLASS_VAR1);
-  push(vm.ctx, readArray(asciiTable, num));
-  return true;
-};
-
 
 
 // 54: Process>>resume

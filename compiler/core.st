@@ -169,7 +169,7 @@ MistMethod class extend [
 ]
 
 Object subclass: MistClass [
-  | name index superclass instVars classVars instVarBase classVarBase |
+  | name index superclass instVars classVars instVarBase |
   Classes := Dictionary new.
   BootstrappedCount := 30.
   NextIndex := BootstrappedCount + 1.
@@ -177,11 +177,10 @@ Object subclass: MistClass [
   name      [^name]
   index     [^index]
   instVarBase [^instVarBase]
-  classVarBase [^classVarBase]
+  classVars [^classVars]
   name:         x [name := x]
   index:        x [index := x]
   instVarBase:  x [instVarBase := x]
-  classVarBase: x [classVarBase := x]
   superclass:  aString [
     superclass := aString isNil ifFalse: [Classes at: aString]
   ]
@@ -194,10 +193,8 @@ Object subclass: MistClass [
   register [
     Classes at: name put: self.
     instVarBase := 0.
-    classVarBase := 0.
     superclass isNil ifFalse: [
-      instVarBase := superclass instVarBase.
-      classVarBase := superclass classVarBase]
+      instVarBase := superclass instVarBase]
   ]
 
   isBootstrapped [
@@ -207,12 +204,15 @@ Object subclass: MistClass [
   scope [
     | parent |
     parent := superclass isNil ifFalse: [superclass scope].
-    ^ Scope new vars: instVars; parent: parent
+    ^ Scope new
+      vars: (Dictionary new addAll: instVars; addAll: classVars; yourself);
+      parent: parent; yourself
   ]
 
   classyScope [
     | parent |
     parent := superclass isNil ifFalse: [superclass classyScope].
+    "TODO ClassInstVars eventually?"
     ^ Scope new vars: classVars; parent: parent
   ]
 
@@ -223,6 +223,13 @@ Object subclass: MistClass [
 
   addInstVars: aSpaceSeparatedString [
     aSpaceSeparatedString subStrings do: [:each | self addInstVar: each]
+  ]
+
+  addClassVar: aString [
+    classVars at: aString put: (ClassVar new name: aString asSymbol)
+  ]
+  addClassVars: aSpaceSeparatedString [
+    aSpaceSeparatedString subStrings do: [:each | self addClassVar: each]
   ]
 ]
 
@@ -304,6 +311,14 @@ Var subclass: GlobalVar [
   store [^ 16r1200 bitOr: index]
 ]
 
+Var subclass: ClassVar [
+  | name index |
+  name [^name]
+  name:  x [name := x]
+  index: x [index := x]
+  push  [^ 16r0700 bitOr: index]
+  store [^ 16r1300 bitOr: index]
+]
 
 Object subclass: Scope [
   | vars parent |
@@ -334,7 +349,7 @@ MistClass at: 1 named: 'Object' superclass: 'ProtoObject'.
   addInstVar: 'superclass'; addInstVar: 'methodDict'; addInstVar: 'format'.
 MistClass at: 3 named: 'ClassDescription' superclass: 'Behavior'.
 (MistClass at: 4 named: 'Class' superclass: 'ClassDescription')
-  addInstVar: 'name'; addInstVar: 'subclasses'.
+  addInstVar: 'name'; addInstVar: 'subclasses'; addInstVar: 'classPool'.
 (MistClass at: 5 named: 'Metaclass' superclass: 'ClassDescription')
   addInstVar: 'thisClass'.
 
@@ -368,7 +383,7 @@ MistClass at: 21 named: 'False' superclass: 'Boolean'.
 
 MistClass at: 22 named: 'Magnitude' superclass: 'Object'.
 (MistClass at: 23 named: 'Character' superclass: 'Magnitude')
-  addInstVar: 'asciiValue'.
+  addInstVar: 'asciiValue'; addClassVar: 'AsciiTable'.
 MistClass at: 24 named: 'Number' superclass: 'Magnitude'.
 MistClass at: 25 named: 'Integer' superclass: 'Number'.
 MistClass at: 26 named: 'SmallInteger' superclass: 'Integer'.

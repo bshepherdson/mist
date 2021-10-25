@@ -544,8 +544,7 @@ they're the most flexible."
 
 ! Character class
 ! value: anInteger
-  <primitive: 53>
-  ^ (self instVarAt: 1) at: anInteger
+  ^ AsciiTable at: anInteger + 1
 !!
 
 ! Character
