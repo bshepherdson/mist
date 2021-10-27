@@ -55,9 +55,9 @@ export const MA_FALSE: ptr = 0x2008; // Size 4, zero-size object
 // pointers, updated, etc. The identity hash of a class is a (pointer) index
 // into this table, and MA_NEXT_CLASS_INDEX holds the next empty slot.
 //
-// Behavior has 3 instance vars, ClassDescription 0, Class 2 and Metaclass 1.
+// Behavior has 3 instance vars, ClassDescription 1, Class 3 and Metaclass 1.
 export const IV_BEHAVIOR = 3;
-export const IV_CLASS_DESCRIPTION = 0;
+export const IV_CLASS_DESCRIPTION = 1;
 export const IV_CLASS = 3;
 export const IV_METACLASS = 1;
 
@@ -139,8 +139,9 @@ export function seq(n: number): Array<number> {
 
 export const [
   BEHAVIOR_SUPERCLASS, BEHAVIOR_METHODS, BEHAVIOR_FORMAT,
+  CLASS_DESCRIPTION_INSTANCE_VARIABLES,
   CLASS_NAME, CLASS_SUBCLASSES, CLASS_POOL,
-] = seq(6);
+] = seq(7);
 
 export const METACLASS_THIS_CLASS = CLASS_NAME; // Same field, after Behavior.
 

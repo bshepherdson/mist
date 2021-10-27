@@ -113,6 +113,7 @@ Object subclass: #GCStressor instanceVariableNames: 'suite'.
 GCStressor new suite: (
   ArithmeticBasics suite,
   LogicBasics suite,
+  ReflectionBasics suite,
   CollectionsGeneralArrays suite,
   CollectionsGeneralSets suite,
   CollectionsGeneralBags suite,

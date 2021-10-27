@@ -302,6 +302,13 @@ STDynamicArray extend [
   ]
 ]
 
+STArray extend [
+  compileInto: method [
+    "Just a literal array."
+    method compile: (16r0500 bitOr: (method addLiteral: x)).
+  ]
+]
+
 STCascade extend [
   compileInto: method [
     "Cascades begin with a receiver which gets pushed onto the stack, followed

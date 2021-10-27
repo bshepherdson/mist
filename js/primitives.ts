@@ -135,7 +135,7 @@ function mkSubclass(hasInstVars: boolean, hasClassVars: boolean): ptr {
   const className = pop(vm.ctx); // Pointer to a symbol.
   const superclass = pop(vm.ctx);
 
-  let nInstVars = instVarNames.split(/ +/).length;
+  let instVars = instVarNames.split(/ +/);
   let classVars = classVarNames.split(/ +/);
 
   const classIndex = read(MA_NEXT_CLASS_INDEX);
@@ -143,7 +143,7 @@ function mkSubclass(hasInstVars: boolean, hasClassVars: boolean): ptr {
 
   const ptrs = gcTemps(2);
   const [v_class, v_vars] = seq(2);
-  ptrs[v_class] = defClass(classIndex, className, superclass, nInstVars);
+  ptrs[v_class] = defClass(classIndex, className, superclass, instVars);
 
   if (classVars.length > 0) {
     ptrs[v_vars] = mkDict(8);

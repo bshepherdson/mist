@@ -13,9 +13,9 @@ import {
   MA_TRUE, MA_FALSE, MA_GLOBALS, MA_NIL,
   PROCESSOR_SCHEDULER_QUIESCENT_PROCESSES,
   BEHAVIOR_FORMAT, BEHAVIOR_METHODS, CLASS_NAME,
-  CLASS_POOL, IV_BLOCK,
+  CLASS_DESCRIPTION_INSTANCE_VARIABLES, CLASS_POOL, IV_BLOCK,
   basicNew, classOf, classTable, mkInstance,
-  fromSmallInteger, toSmallInteger, wrapSymbol,
+  fromSmallInteger, toSmallInteger, wrapSymbol, wrapString,
   read, readIV, write, writeIV, writeIVNew, writeArrayNew,
   gcTemps, gcRelease, seq,
 } from './memory';
@@ -23,6 +23,17 @@ import {vm} from './vm';
 
 lateBinding.dictFactory = () => mkDict();
 lateBinding.symbolize = wrapSymbol;
+lateBinding.varArray = (name: ptr|string, names: string[]): ptr => {
+  const [v_array] = seq(1);
+  const ptrs = gcTemps(1);
+  ptrs[v_array] = mkInstance(read(classTable(CLS_ARRAY)), names.length);
+  for (let i = 0; i < names.length; i++) {
+    writeArrayNew(ptrs[v_array], i, wrapString(names[i]));
+  }
+  const array = ptrs[v_array];
+  gcRelease(ptrs);
+  return array;
+};
 lateBinding.register = (cls, name) => {};
 
 // And the class dictionary appender.
@@ -38,46 +49,52 @@ write(MA_GLOBALS, mkDict(256));
 // their metaclasses).
 
 for (const name of Object.keys(impoverishedClasses)) {
-  const cls = impoverishedClasses[name];
+  const {cls, vars} = impoverishedClasses[name];
   writeIV(cls, BEHAVIOR_METHODS, mkDict());
   const metaclass = classOf(cls);
   writeIV(metaclass, BEHAVIOR_METHODS, lateBinding.dictFactory());
   const symbol = wrapSymbol(name);
   writeIV(cls, CLASS_NAME, symbol);
   lateBinding.addToClassDict(symbol, cls);
+  writeIV(cls, CLASS_DESCRIPTION_INSTANCE_VARIABLES,
+      lateBinding.varArray(name, vars || []));
 }
 
 const object = read(classTable(CLS_OBJECT));
-defClass(CLS_BLOCK_CLOSURE, 'BlockClosure', object, IV_BLOCK);
+defClass(CLS_BLOCK_CLOSURE, 'BlockClosure', object,
+    ['ctx', 'pc0', 'argc', 'argv', 'handlerActive']);
 
-const ctx = defClass(CLS_CONTEXT, 'MethodContext', object, 5);
+const ctx = defClass(CLS_CONTEXT, 'MethodContext', object,
+    ['method', 'locals', 'pc', 'sender', 'sp']);
 const fmt = fromSmallInteger(readIV(ctx, BEHAVIOR_FORMAT));
 writeIVNew(ctx, BEHAVIOR_FORMAT,
     toSmallInteger((fmt & 0xffffff) | (Format.VARIABLE_IV << 24)));
 
 
-const bool = defClass(CLS_BOOLEAN, 'Boolean', object, 0);
-const true_ = defClass(CLS_TRUE, 'True', bool, 0);
-const false_ = defClass(CLS_FALSE, 'False', bool, 0);
+const bool = defClass(CLS_BOOLEAN, 'Boolean', object, []);
+const true_ = defClass(CLS_TRUE, 'True', bool, []);
+const false_ = defClass(CLS_FALSE, 'False', bool, []);
 
 // Create the built-in instances.
 mkInstance(true_, undefined, (_) => MA_TRUE);
 mkInstance(false_, undefined, (_) => MA_FALSE);
 
 const chr = defClass(CLS_CHARACTER, 'Character',
-    read(classTable(CLS_MAGNITUDE)), 1);
+    read(classTable(CLS_MAGNITUDE)), ['asciiValue']);
 const charTable = mkInstance(read(classTable(CLS_ARRAY)), 256);
 const charTableSym = wrapSymbol('AsciiTable');
 const dict = mkDict(8);
 insert(dict, charTableSym, charTable);
 writeIV(chr, CLASS_POOL, dict);
 
-const link = defClass(CLS_LINK, 'Link', object, 1);
-defClass(CLS_PROCESS, 'Process', link, 4);
-const procSched =
-    defClass(CLS_PROCESSOR_SCHEDULER, 'ProcessorScheduler', object, 2);
+const link = defClass(CLS_LINK, 'Link', object, ['link']);
+defClass(CLS_PROCESS, 'Process', link,
+    ['suspendedContext', 'priority', 'myList', 'threadId']);
+const procSched = defClass(CLS_PROCESSOR_SCHEDULER, 'ProcessorScheduler',
+    object, ['quiescentProcesses', 'activeProcess']);
 
-defClass(CLS_SEMAPHORE, 'Semaphore', read(classTable(CLS_LINKED_LIST)), 1);
+defClass(CLS_SEMAPHORE, 'Semaphore', read(classTable(CLS_LINKED_LIST)),
+    ['excessSignals']);
 
 // Populate the process table.
 const scheduler = mkInstance(procSched);

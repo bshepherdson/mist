@@ -15,6 +15,7 @@ import {
   CLS_ASSOCIATION, CLS_ARRAY, CLS_WORD_ARRAY, CLS_SYMBOL, CLS_STRING,
   CLS_MAGNITUDE, CLS_NUMBER, CLS_INTEGER, CLS_SMALL_INTEGER,
   IV_BEHAVIOR, IV_CLASS_DESCRIPTION, IV_CLASS, IV_METACLASS, IV_METHOD,
+  CLASS_DESCRIPTION_INSTANCE_VARIABLES,
   MA_NIL,
   addClassToTable, alloc, allocObject,
   classOf, classTable, mkInstance,
@@ -39,14 +40,26 @@ import {
 // Slight hack: we can't define the method dictionaries until the superclasses
 // have been created, so this starts out as a dummy that returns nil. It gets
 // replaced later and the existing dictionaries updated.
-export const impoverishedClasses: {[name: string]: ptr} = {};
+interface ImpoverishedClass {
+  cls: ptr;
+  vars?: string[];
+}
+
+export const impoverishedClasses: {[name: string]: ImpoverishedClass} = {};
+
 export const lateBinding = {
   dictFactory: () => MA_NIL,
   addToClassDict: (sym: ptr, cls: ptr) => {},
   symbolize: (name: string) => MA_NIL,
+  varArray: (name: ptr|string, names: string[]): ptr => {
+    if (typeof name === 'string') {
+      impoverishedClasses[name].vars = names;
+    }
+    return MA_NIL;
+  },
   register: (cls: ptr, name: ptr|string) => {
     if (typeof name === 'string') {
-      impoverishedClasses[name] = cls;
+      impoverishedClasses[name] = {cls};
     }
   },
 };
@@ -98,7 +111,7 @@ export const lateBinding = {
 // - Then the new class is an instance of the metaclass.
 //   - ie. The class field of Transparent is Transparent class!
 export function defClass(clsIndex: IdentityHash, name: string|ptr,
-    superclass: ptr, instVars = 0): ptr {
+    superclass: ptr, instVars: string[]): ptr {
   const [v_metaclass, v_supermeta, v_superclass, v_name, v_symbol, v_class] =
       seq(6);
   const ptrs = gcTemps(6);
@@ -120,15 +133,15 @@ export function defClass(clsIndex: IdentityHash, name: string|ptr,
       // Otherwise, look up the superclass and get *its* class.
       classOf(ptrs[v_superclass]);
 
-  // All the writes here are to freshly allocated classes, so we can safely use
-  // the *New forms.
-  writeIVNew(ptrs[v_metaclass], BEHAVIOR_SUPERCLASS, ptrs[v_supermeta]);
-  writeIVNew(ptrs[v_metaclass], BEHAVIOR_METHODS, lateBinding.dictFactory());
+  writeIV(ptrs[v_metaclass], BEHAVIOR_SUPERCLASS, ptrs[v_supermeta]);
+  writeIV(ptrs[v_metaclass], BEHAVIOR_METHODS, lateBinding.dictFactory());
+
+  const classInstVars = mkInstance
 
   const upstreamClassVars = behaviorToInstVars(ptrs[v_supermeta]);
   const metaFormat =
       fixedInstVarsFormat(upstreamClassVars + 0 /*classInstVars*/);
-  writeIVNew(ptrs[v_metaclass], BEHAVIOR_FORMAT, toSmallInteger(metaFormat));
+  writeIV(ptrs[v_metaclass], BEHAVIOR_FORMAT, toSmallInteger(metaFormat));
 
   // Add the metaclass to the class table.
   addClassToTable(ptrs[v_metaclass]);
@@ -142,21 +155,23 @@ export function defClass(clsIndex: IdentityHash, name: string|ptr,
   // Name might be a string (bootstrapping) or a pointer to a Symbol already.
   ptrs[v_symbol] = typeof name === 'string' ?
       lateBinding.symbolize(name) : ptrs[v_name];
-  writeIVNew(ptrs[v_class], CLASS_NAME, ptrs[v_symbol]);
-  writeIVNew(ptrs[v_class], BEHAVIOR_SUPERCLASS, ptrs[v_superclass]);
-  writeIVNew(ptrs[v_class], BEHAVIOR_METHODS, lateBinding.dictFactory());
+  writeIV(ptrs[v_class], CLASS_NAME, ptrs[v_symbol]);
+  writeIV(ptrs[v_class], BEHAVIOR_SUPERCLASS, ptrs[v_superclass]);
+  writeIV(ptrs[v_class], BEHAVIOR_METHODS, lateBinding.dictFactory());
 
   const upstreamInstVars = behaviorToInstVars(ptrs[v_superclass]);
-  const format = fixedInstVarsFormat(upstreamInstVars + instVars);
+  const format = fixedInstVarsFormat(upstreamInstVars + instVars.length);
   writeIVNew(ptrs[v_class], BEHAVIOR_FORMAT, toSmallInteger(format));
 
   addClassToTable(ptrs[v_class], clsIndex);
 
   // Finally Metaclass itself has an instance variable to set: thisClass.
-  writeIVNew(ptrs[v_metaclass], METACLASS_THIS_CLASS, ptrs[v_class]);
+  writeIV(ptrs[v_metaclass], METACLASS_THIS_CLASS, ptrs[v_class]);
 
   lateBinding.addToClassDict(ptrs[v_symbol], ptrs[v_class]);
   lateBinding.register(ptrs[v_class], name);
+  const p: ptr = lateBinding.varArray(name, instVars);
+  writeIVNew(ptrs[v_class], CLASS_DESCRIPTION_INSTANCE_VARIABLES, p);
 
   const cls = ptrs[v_class];
   gcRelease(ptrs);
@@ -259,46 +274,48 @@ const metaclassClass = bootstrapMetaclass(CLS_METACLASS, classDescClass);
 
 
 // Now I think we can start declaring regular classes!
-const nilObj = defClass(CLS_UNDEFINED_OBJECT, 'UndefinedObject', object, 0);
+const nilObj = defClass(CLS_UNDEFINED_OBJECT, 'UndefinedObject', object, []);
 mkInstance(nilObj, undefined /* arrayLength */, (_) => MA_NIL);
 
 
 // TODO This could probably be sped up by inlining, but it adds a lot of
 // complexity. Nested (word)arrays will probably do.
-defClass(CLS_COMPILED_METHOD, 'CompiledMethod', object, IV_METHOD);
+defClass(CLS_COMPILED_METHOD, 'CompiledMethod', object,
+    ['bytecode', 'literals', 'selector', 'class', 'argc', 'locals']);
 
 // Collections, far enough for Symbol and String.
-const collection = defClass(CLS_COLLECTION, 'Collection', object, 0);
+const collection = defClass(CLS_COLLECTION, 'Collection', object, []);
 const seqColl = defClass(CLS_SEQUENCEABLE_COLLECTION, 'SequenceableCollection',
-    collection, 0);
+    collection, []);
 const arrColl =
-    defClass(CLS_ARRAYED_COLLECTION, 'ArrayedCollection', seqColl, 0);
-const linkedList = defClass(CLS_LINKED_LIST, 'LinkedList', seqColl, 2);
+    defClass(CLS_ARRAYED_COLLECTION, 'ArrayedCollection', seqColl, []);
+const linkedList = defClass(CLS_LINKED_LIST, 'LinkedList', seqColl,
+    ['head', 'tail']);
 
-const arr = defClass(CLS_ARRAY, 'Array', arrColl, 0);
+const arr = defClass(CLS_ARRAY, 'Array', arrColl, []);
 // Fix the format. It should be Format.VARIABLE.
 writeIVNew(arr, BEHAVIOR_FORMAT, toSmallInteger(Format.VARIABLE << 24));
 
-const wordArr = defClass(CLS_WORD_ARRAY, 'WordArray', arrColl, 0);
-const str = defClass(CLS_STRING, 'String', wordArr, 0);
-const sym = defClass(CLS_SYMBOL, 'Symbol', str, 0);
+const wordArr = defClass(CLS_WORD_ARRAY, 'WordArray', arrColl, []);
+const str = defClass(CLS_STRING, 'String', wordArr, []);
+const sym = defClass(CLS_SYMBOL, 'Symbol', str, []);
 // Adjust the format! It's Format.WORDS_EVEN and the allocation code handles the
 // length.
 writeIVNew(wordArr, BEHAVIOR_FORMAT, toSmallInteger(Format.WORDS_EVEN << 24));
 writeIVNew(str, BEHAVIOR_FORMAT, toSmallInteger(Format.WORDS_EVEN << 24));
 writeIVNew(sym, BEHAVIOR_FORMAT, toSmallInteger(Format.WORDS_EVEN << 24));
 
-const mag = defClass(CLS_MAGNITUDE, 'Magnitude', object, 0);
-const num = defClass(CLS_NUMBER, 'Number', mag, 0);
-const integer = defClass(CLS_INTEGER, 'Integer', num, 0);
-const smallInteger = defClass(CLS_SMALL_INTEGER, 'SmallInteger', integer, 0);
+const mag = defClass(CLS_MAGNITUDE, 'Magnitude', object, []);
+const num = defClass(CLS_NUMBER, 'Number', mag, []);
+const integer = defClass(CLS_INTEGER, 'Integer', num, []);
+const smallInteger = defClass(CLS_SMALL_INTEGER, 'SmallInteger', integer, []);
 
 
-const hashed =
-    defClass(CLS_HASHED_COLLECTION, 'HashedCollection', collection, 2);
-const dict = defClass(CLS_DICTIONARY, 'Dictionary', hashed, 0);
-const idDict = defClass(CLS_IDENTITY_DICTIONARY, 'IdentityDictionary', dict, 0);
-defClass(CLS_ASSOCIATION, 'Association', object, 2);
+const hashed = defClass(CLS_HASHED_COLLECTION, 'HashedCollection', collection,
+      ['array', 'tally']);
+const dict = defClass(CLS_DICTIONARY, 'Dictionary', hashed, []);
+const idDict = defClass(CLS_IDENTITY_DICTIONARY, 'IdentityDictionary', dict, []);
+defClass(CLS_ASSOCIATION, 'Association', object, ['key', 'value']);
 
 // We need the hobo implementation of "dictionaries" in dict.mjs. They're
 // not really dictionaries, just arrays with [k1, v1, k2, v2, ...] in arbitrary

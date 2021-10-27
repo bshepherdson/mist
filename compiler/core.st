@@ -347,7 +347,8 @@ MistClass at: 0 named: 'ProtoObject' superclass: nil.
 MistClass at: 1 named: 'Object' superclass: 'ProtoObject'.
 (MistClass at: 2 named: 'Behavior' superclass: 'Object')
   addInstVar: 'superclass'; addInstVar: 'methodDict'; addInstVar: 'format'.
-MistClass at: 3 named: 'ClassDescription' superclass: 'Behavior'.
+(MistClass at: 3 named: 'ClassDescription' superclass: 'Behavior')
+  addInstVar: 'instanceVariables'.
 (MistClass at: 4 named: 'Class' superclass: 'ClassDescription')
   addInstVar: 'name'; addInstVar: 'subclasses'; addInstVar: 'classPool'.
 (MistClass at: 5 named: 'Metaclass' superclass: 'ClassDescription')

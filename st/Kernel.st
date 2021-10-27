@@ -16,6 +16,24 @@ Javascript functions."
 ! superclass
   ^ superclass
 
+! allInstVarNames
+  | vars |
+  superclass == nil
+    ifTrue: [vars := self instVarNames copy]
+    ifFalse: [vars := superclass allInstVarNames, self instVarNames].
+  ^ vars
+
+! instVarNames
+  "Answer an Array of the instance variable names. Behaviors must make up fake
+  local instance variable names since they don't have instance variable names."
+  | mySize superSize |
+  mySize := self instSize.
+  superSize := superclass == nil
+    ifTrue: [0]
+    ifFalse: [superclass instSize].
+  mySize = superSize ifTrue: [^#()].
+  ^ (superSize + 1 to: mySize) collect: [:i | 'inst', i printString]
+
 ! methods
   ^ self methodDictionary associations collect: [:asc |
     | m |
@@ -47,6 +65,22 @@ Javascript functions."
 
 ! instSize
   <primitive: 29>
+!!
+
+
+! ClassDescription
+! instVarNames
+  ^ instanceVariables == nil ifTrue: [#()] ifFalse: [instanceVariables]
+!!
+
+! Class
+! allClassVarNames
+  ^ superclass
+    ifNil: [self classVarNames copy]
+    ifNotNil: [super allClassVarNames, self classVarNames]
+
+! classVarNames
+  ^ classPool keys
 !!
 
 

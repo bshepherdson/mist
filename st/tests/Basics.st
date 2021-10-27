@@ -136,4 +136,20 @@ TestCase subclass: #LogicBasics.
 !!
 
 
+TestCase subclass: #ReflectionBasics.
+
+! ReflectionBasics
+! testInstVarNames
+  | b cd c |
+  b := {'superclass'. 'methodDict'. 'format'}. "Behavior's vars"
+  cd := {'instanceVariables'}. "ClassDescription's vars"
+  c := {'name'. 'subclasses'. 'classPool'}. "Class's vars"
+  self assert: Behavior instVarNames equals: b.
+  self assert: ClassDescription instVarNames equals: cd.
+  self assert: Class instVarNames equals: c.
+  self assert: Behavior allInstVarNames equals: b.
+  self assert: ClassDescription allInstVarNames equals: b, cd.
+  self assert: Class allInstVarNames equals: b, cd, c.
+!!
+
 
